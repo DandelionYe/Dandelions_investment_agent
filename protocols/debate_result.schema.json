@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/debate_result.schema.json",
+  "title": "DebateResult",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["bull_case", "bear_case", "risk_review", "committee_conclusion"],
+  "properties": {
+    "bull_case": {
+      "type": "object",
+      "required": ["thesis", "key_arguments", "catalysts", "invalidation_conditions"],
+      "additionalProperties": true,
+      "properties": {
+        "thesis": {"type": "string", "minLength": 1},
+        "key_arguments": {"type": "array", "items": {"type": "string"}},
+        "catalysts": {"type": "array", "items": {"type": "string"}},
+        "invalidation_conditions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "bear_case": {
+      "type": "object",
+      "required": ["thesis", "key_arguments", "main_concerns", "invalidation_conditions"],
+      "additionalProperties": true,
+      "properties": {
+        "thesis": {"type": "string", "minLength": 1},
+        "key_arguments": {"type": "array", "items": {"type": "string"}},
+        "main_concerns": {"type": "array", "items": {"type": "string"}},
+        "invalidation_conditions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "risk_review": {
+      "type": "object",
+      "required": ["risk_level", "blocking", "risk_summary", "max_position", "risk_triggers"],
+      "additionalProperties": true,
+      "properties": {
+        "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+        "blocking": {"type": "boolean"},
+        "risk_summary": {"type": "string", "minLength": 1},
+        "max_position": {"type": "string", "minLength": 1},
+        "risk_triggers": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "committee_conclusion": {
+      "type": "object",
+      "required": ["stance", "action", "confidence", "final_opinion"],
+      "additionalProperties": true,
+      "properties": {
+        "stance": {"type": "string", "minLength": 1},
+        "action": {
+          "type": "string",
+          "enum": ["买入", "分批买入", "持有", "观察", "回避", "回调关注", "谨慎观察"]
+        },
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "final_opinion": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

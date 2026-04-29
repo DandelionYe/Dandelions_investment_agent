@@ -1,0 +1,4 @@
+base_url: https://api.deepseek.com
+fast_model: deepseek-v4-flash
+reasoning_model: deepseek-v4-pro
+json_output: true

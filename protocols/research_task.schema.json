@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/research_task.schema.json",
+  "title": "ResearchTask",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "asset_type",
+    "symbol",
+    "market",
+    "horizon",
+    "objective",
+    "outputs",
+    "constraints"
+  ],
+  "properties": {
+    "task_id": {"type": "string", "minLength": 1},
+    "asset_type": {"type": "string", "enum": ["stock", "etf"]},
+    "symbol": {"type": "string", "minLength": 1},
+    "market": {"type": "string", "enum": ["CN_A"]},
+    "horizon": {"type": "string", "minLength": 1},
+    "objective": {"type": "string", "minLength": 1},
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["dashboard", "json_result", "markdown_report", "html_report", "pdf_report"]
+      },
+      "minItems": 1
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allow_qmt",
+        "allow_akshare_fallback",
+        "allow_web_search",
+        "allow_trading",
+        "show_debate"
+      ],
+      "properties": {
+        "allow_qmt": {"type": "boolean"},
+        "allow_akshare_fallback": {"type": "boolean"},
+        "allow_web_search": {"type": "boolean"},
+        "allow_trading": {"type": "boolean", "const": false},
+        "show_debate": {"type": "boolean"}
+      }
+    }
+  }
+}

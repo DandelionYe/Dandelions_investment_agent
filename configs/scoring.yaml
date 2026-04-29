@@ -1,0 +1,16 @@
+total_score: 100
+
+weights:
+  trend_momentum: 20
+  liquidity: 15
+  fundamental_quality: 20
+  valuation: 15
+  risk_control: 20
+  event_policy: 10
+
+ratings:
+  A: ">= 90"
+  B+: ">= 80"
+  B: ">= 70"
+  C: ">= 60"
+  D: "< 60"

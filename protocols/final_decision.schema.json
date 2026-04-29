@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/final_decision.schema.json",
+  "title": "FinalDecision",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "symbol",
+    "name",
+    "asset_type",
+    "as_of",
+    "data_source",
+    "price_data",
+    "fundamental_data",
+    "valuation_data",
+    "event_data",
+    "source_metadata",
+    "score",
+    "rating",
+    "action",
+    "score_breakdown",
+    "final_opinion",
+    "max_position",
+    "decision_guard"
+  ],
+  "properties": {
+    "symbol": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "asset_type": {"type": "string", "enum": ["stock", "etf"]},
+    "as_of": {"type": "string", "minLength": 1},
+    "data_source": {"type": "string", "enum": ["qmt", "akshare", "mock"]},
+    "data_source_chain": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "price_data": {"type": "object"},
+    "fundamental_data": {"type": "object"},
+    "valuation_data": {"type": "object"},
+    "event_data": {"type": "object"},
+    "source_metadata": {"type": "object"},
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "rating": {"type": "string", "enum": ["A", "B+", "B", "C", "D"]},
+    "action": {
+      "type": "string",
+      "enum": ["买入", "分批买入", "回调关注", "持有", "观察", "谨慎观察", "回避"]
+    },
+    "score_breakdown": {"type": "object"},
+    "debate_result": {"type": "object"},
+    "final_opinion": {"type": "string", "minLength": 1},
+    "max_position": {"type": "string", "minLength": 1},
+    "decision_guard": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "score",
+        "rating",
+        "llm_action",
+        "max_allowed_action",
+        "final_action"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "rating": {"type": "string"},
+        "risk_level": {"type": ["string", "null"]},
+        "llm_action": {"type": "string"},
+        "max_allowed_action": {"type": "string"},
+        "final_action": {"type": "string"}
+      }
+    }
+  }
+}

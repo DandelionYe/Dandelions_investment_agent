@@ -1,0 +1,22 @@
+primary: qmt
+fallback: akshare
+offline_test: mock
+
+qmt:
+  enabled: true
+  role: primary
+  fields:
+    - daily_kline
+    - amount
+    - basic_info
+
+akshare:
+  enabled: true
+  role: fallback
+  fields:
+    - daily_kline
+    - amount
+
+mock:
+  enabled: true
+  role: offline_test

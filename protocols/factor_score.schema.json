@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/factor_score.schema.json",
+  "title": "FactorScore",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["total_score", "rating", "action", "score_breakdown"],
+  "properties": {
+    "total_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "rating": {
+      "type": "string",
+      "enum": ["A", "B+", "B", "C", "D"]
+    },
+    "action": {
+      "type": "string",
+      "enum": ["买入", "分批买入", "回调关注", "持有", "观察", "谨慎观察", "回避"]
+    },
+    "score_breakdown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trend_momentum",
+        "liquidity",
+        "fundamental_quality",
+        "valuation",
+        "risk_control",
+        "event_policy"
+      ],
+      "properties": {
+        "trend_momentum": {"type": "integer", "minimum": 0, "maximum": 20},
+        "liquidity": {"type": "integer", "minimum": 0, "maximum": 15},
+        "fundamental_quality": {"type": "integer", "minimum": 0, "maximum": 20},
+        "valuation": {"type": "integer", "minimum": 0, "maximum": 15},
+        "risk_control": {"type": "integer", "minimum": 0, "maximum": 20},
+        "event_policy": {"type": "integer", "minimum": 0, "maximum": 10}
+      }
+    }
+  }
+}

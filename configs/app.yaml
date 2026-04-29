@@ -1,0 +1,5 @@
+app_name: Dandelions Investment Agent
+default_symbol: 600519.SH
+default_horizon: 1-3m
+allow_trading: false
+report_dir: storage/reports
