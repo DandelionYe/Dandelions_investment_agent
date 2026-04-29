@@ -23,6 +23,13 @@ python -m pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
+如需使用 QMT 主数据源，还需要安装 `xtquant` 并启动本机 QMT mini 服务。完整步骤见 [QMT_SETUP.md](QMT_SETUP.md)。
+
+```powershell
+python -m pip install xtquant
+python -c "from xtquant import xtdata; xtdata.connect(); print('qmt connected')"
+```
+
 复制环境变量模板：
 
 ```powershell
@@ -51,6 +58,21 @@ python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf
 python main.py --symbol 600519.SH --data-source qmt
 ```
 
+成功走 QMT 时，输出 JSON 应包含：
+
+```json
+"data_source": "qmt",
+"data_source_chain": ["qmt"],
+"source_metadata": {
+  "price_data": {
+    "source": "qmt",
+    "vendor": "qmt"
+  }
+}
+```
+
+如果看到 `"data_source_chain": ["qmt_failed", "akshare_fallback"]`，说明 QMT 未成功提供行情，项目已回退 AKShare。
+
 显式使用 AKShare 调试：
 
 ```powershell
@@ -78,3 +100,10 @@ python -m pytest
 ## 数据可信度
 
 当前 QMT 和 AKShare provider 只负责行情、成交额和基础信息。基本面、估值、事件字段在真实数据源接入前由 `services/data/supplemental_provider.py` 补低置信度占位数据，并在 `source_metadata` 中标记为 `mock_placeholder`。报告和 LLM 输入必须保留这些来源标记。
+
+当前已验证 QMT 日 K 接入链路：
+
+- `xtdata.connect()` 可连接本地 `127.0.0.1:58610` QMT 服务。
+- `xtdata.download_history_data('600519.SH', '1d', '20250101', '')` 可下载日线。
+- 项目使用 `--data-source qmt` 后可读取 QMT 的 `close`、`volume`、`amount` 并进入评分。
+- 财务、估值、事件数据仍未接入真实源。
