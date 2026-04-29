@@ -1,20 +1,71 @@
 from datetime import date
 
+from services.data.normalizers.fundamental_normalizer import FundamentalNormalizer
+from services.data.providers.qmt_financial_provider import QMTFinancialProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
 
 
 class FundamentalService:
+    def __init__(self):
+        self.qmt_provider = QMTFinancialProvider()
+        self.normalizer = FundamentalNormalizer()
+
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
+        symbol_info = asset_data.get("symbol_info", {})
+
+        if asset_data.get("data_source") == "mock":
+            return self._placeholder_result(symbol, "mock data source selected")
+
+        provider_result = self.qmt_provider.fetch_fundamental(symbol_info)
+
+        if provider_result.metadata.success:
+            normalized = self.normalizer.normalize_qmt(provider_result.to_dict())
+            fundamental_data = normalized["normalized"]
+            if self._has_core_fields(fundamental_data):
+                metadata = {
+                    "source": "qmt_financial",
+                    "confidence": 0.78,
+                    "as_of": str(date.today()),
+                    "provider": provider_result.provider,
+                    "dataset": provider_result.dataset,
+                    "field_sources": normalized["field_sources"],
+                }
+                return self._build_result(
+                    symbol=symbol,
+                    fundamental_data=fundamental_data,
+                    metadata=metadata,
+                    status="success",
+                    rows=sum(len(rows) for rows in provider_result.data.values()),
+                    error=None,
+                )
+
+        error = provider_result.metadata.error or "QMT financial data did not include usable core fields."
+        return self._placeholder_result(symbol, error)
+
+    def _placeholder_result(self, symbol: str, error: str | None) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)
-        fundamental_data = dict(asset_data.get("fundamental_data") or supplemental["fundamental_data"])
-        metadata = dict(
-            asset_data.get("source_metadata", {}).get("fundamental_data")
-            or supplemental["source_metadata"]["fundamental_data"]
+        fundamental_data = dict(supplemental["fundamental_data"])
+        metadata = dict(supplemental["source_metadata"]["fundamental_data"])
+        return self._build_result(
+            symbol=symbol,
+            fundamental_data=fundamental_data,
+            metadata=metadata,
+            status="fallback_placeholder",
+            rows=0,
+            error=error,
         )
 
+    def _build_result(
+        self,
+        symbol: str,
+        fundamental_data: dict,
+        metadata: dict,
+        status: str,
+        rows: int,
+        error: str | None,
+    ) -> dict:
         analysis = self._analyze(fundamental_data, metadata)
-
         return {
             "data": {
                 "fundamental_data": fundamental_data,
@@ -26,13 +77,16 @@ class FundamentalService:
                     "provider": metadata.get("source", "unknown"),
                     "dataset": "fundamental_data",
                     "symbol": symbol,
-                    "status": "placeholder" if metadata.get("source") == "mock_placeholder" else "success",
-                    "rows": 1 if fundamental_data else 0,
-                    "error": None,
+                    "status": status,
+                    "rows": rows,
+                    "error": error,
                     "as_of": str(date.today()),
                 }
             ],
         }
+
+    def _has_core_fields(self, data: dict) -> bool:
+        return any(data.get(field) is not None for field in ("roe", "net_profit_ttm", "revenue_ttm"))
 
     def _analyze(self, data: dict, metadata: dict) -> dict:
         roe = data.get("roe")

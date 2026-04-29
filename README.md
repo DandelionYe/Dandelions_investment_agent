@@ -37,6 +37,7 @@ QMT_AUTO_DOWNLOAD=true
 QMT_HISTORY_DAYS=420
 QMT_PERIOD=1d
 QMT_DIVIDEND_TYPE=front
+QMT_FINANCIAL_AUTO_DOWNLOAD=false
 ```
 
 复制环境变量模板：
@@ -108,11 +109,27 @@ python -m pytest
 
 ## 数据可信度
 
-当前 QMT 和 AKShare provider 只负责行情、成交额和基础信息。基本面、估值、事件字段在真实数据源接入前由 `services/data/supplemental_provider.py` 补低置信度占位数据，并在 `source_metadata` 中标记为 `mock_placeholder`。报告和 LLM 输入必须保留这些来源标记。
+当前 QMT 是主数据源：行情、成交额、基础信息已经走 `xtdata`；基本面会优先读取 QMT 本地财务表 `Balance`、`Income`、`CashFlow`、`PershareIndex`；估值会优先使用 QMT 收盘价、股本和财务表派生总市值、PE、PB、PS。AKShare/东方财富只作为 fallback 或公告事件源使用。
+
+QMT 财务表不会在每次启动时强制下载，因为 `xtdata.download_financial_data()` 在首次拉取时可能较慢。默认行为是只读本地已下载财务表：
+
+```text
+QMT_FINANCIAL_AUTO_DOWNLOAD=false
+```
+
+如果你希望项目自动尝试下载 QMT 财务表，可在 `.env` 中设置：
+
+```text
+QMT_FINANCIAL_AUTO_DOWNLOAD=true
+```
+
+事件/公告数据目前没有在 `xtdata` 中发现稳定的公告查询接口，因此第一版使用 AKShare/东方财富公告接口作为真实事件源；如果该接口失败，会降级为 `mock_placeholder`，并通过 `data_quality` 和 `decision_guard` 限制建议强度。
 
 当前已验证 QMT 日 K 接入链路：
 
 - `xtdata.connect()` 可连接本地 `127.0.0.1:58610` QMT 服务。
 - `xtdata.download_history_data('600519.SH', '1d', '20250101', '')` 可下载日线。
 - 项目使用 `--data-source qmt` 后会自动连接 QMT；若本地日 K 为空，会自动下载一次，然后读取 QMT 的 `close`、`volume`、`amount` 并进入评分。
-- 财务、估值、事件数据仍未接入真实源。
+- QMT 财务表已接入读取链路；本地未下载财务表时会显式降级为 placeholder。
+- 估值已支持 QMT 派生核心字段；PE/PB 历史分位仍待后续实现。
+- 公告事件暂用 AKShare/东方财富接口；QMT 未确认有稳定公告 API。

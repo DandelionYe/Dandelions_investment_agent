@@ -35,10 +35,17 @@ class ResearchDataAggregator:
             provider_run_log.extend(etf_result["provider_run_log"])
 
         fundamental_result = self.fundamental_service.build(merged)
-        valuation_result = self.valuation_service.build(merged)
-        event_result = self.event_service.build(merged)
+        merged.update(fundamental_result["data"])
+        source_metadata.update(fundamental_result["source_metadata"])
+        provider_run_log.extend(fundamental_result["provider_run_log"])
 
-        for result in (fundamental_result, valuation_result, event_result):
+        valuation_result = self.valuation_service.build(merged)
+        merged.update(valuation_result["data"])
+        source_metadata.update(valuation_result["source_metadata"])
+        provider_run_log.extend(valuation_result["provider_run_log"])
+
+        event_result = self.event_service.build(merged)
+        for result in (event_result,):
             merged.update(result["data"])
             source_metadata.update(result["source_metadata"])
             provider_run_log.extend(result["provider_run_log"])

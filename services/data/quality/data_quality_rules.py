@@ -45,8 +45,13 @@ class DataQualityService:
             blocking_issues.append("price_data 缺失。")
         if asset_type == "stock" and source_metadata.get("fundamental_data", {}).get("source") == "mock_placeholder":
             blocking_issues.append("股票 fundamental_data 仍为 placeholder。")
-        if not asset_data.get("valuation_data"):
+        valuation_data = asset_data.get("valuation_data", {})
+        if not valuation_data:
             blocking_issues.append("valuation_data 缺失。")
+        elif not any(valuation_data.get(field) is not None for field in ("pe_ttm", "pb_mrq", "market_cap")):
+            blocking_issues.append("valuation_data 核心字段全部缺失。")
+        if source_metadata.get("event_data", {}).get("source") == "mock_placeholder":
+            warnings.append("event_data 未能确认近90日真实公告风险，当前为 placeholder。")
 
         event_data = asset_data.get("event_data", {})
         if event_data.get("event_summary", {}).get("critical_count", 0) > 0:

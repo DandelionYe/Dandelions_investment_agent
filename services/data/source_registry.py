@@ -1,5 +1,8 @@
 SOURCE_SCORES = {
     "qmt": 0.95,
+    "qmt_financial": 0.80,
+    "qmt_derived": 0.72,
+    "qmt_derived+akshare": 0.78,
     "tushare": 0.90,
     "cninfo": 0.95,
     "sse": 0.95,

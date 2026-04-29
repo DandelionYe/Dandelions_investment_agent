@@ -13,6 +13,8 @@ cd J:\Dandelions_investment_agent
 .\.venv\Scripts\Activate.ps1
 ```
 
+
+
 ## 2. 安装 xtquant
 
 ```powershell
@@ -165,22 +167,36 @@ python main.py --symbol 600519.SH --data-source qmt --no-llm --no-pdf
 - 成交量 `volume`
 - 成交额 `amount`
 - 基础证券信息 `get_instrument_detail`
+- 本地 QMT 财务表读取链路：`Balance`、`Income`、`CashFlow`、`PershareIndex`
+- QMT 派生估值核心字段：总市值、流通市值、PE、PB、PS
 
 尚未接入：
 
-- 财务数据
-- 估值分位
-- 新闻、公告、政策事件
+- 自动稳定下载 QMT 财务表。首次下载可能较慢，默认不在主流程里强制执行。
+- PE/PB 历史分位
+- QMT 官方公告/新闻/政策事件。当前 `xtdata` 未确认有稳定公告查询接口。
 - QMT 下单或交易接口
 
-因此当前报告中 `fundamental_data`、`valuation_data`、`event_data` 仍会标记为：
+财务表默认只读本地已下载数据：
+
+```text
+QMT_FINANCIAL_AUTO_DOWNLOAD=false
+```
+
+如需让项目自动尝试下载财务表，可在 `.env` 中改为：
+
+```text
+QMT_FINANCIAL_AUTO_DOWNLOAD=true
+```
+
+如果本地 QMT 财务表为空，报告中的 `fundamental_data` 仍会降级为：
 
 ```json
 "source": "mock_placeholder",
 "confidence": 0.25
 ```
 
-这表示它们只是保持 MVP 流程可运行的低置信度占位数据，不应当当作真实投研证据。
+这表示它只是保持流程可运行的低置信度占位数据，不应当当作真实投研证据。事件数据目前使用 AKShare/东方财富公告接口作为真实 fallback；若接口不可用，同样会降级并触发数据质量提示。
 
 ## 8. 常见问题
 

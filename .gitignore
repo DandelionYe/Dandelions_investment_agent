@@ -21,3 +21,4 @@ dist/
 .streamlit/secrets.toml
 playwright-report/
 test-results/
+QMT/

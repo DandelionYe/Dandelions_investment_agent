@@ -38,15 +38,16 @@ def score_asset(asset_data: dict) -> dict:
 
     # 3. 基本面质量：20分
     fundamental_score = 0
-    if fundamental["roe"] > 0.15:
+    if (fundamental.get("roe") or 0) > 0.15:
         fundamental_score += 6
-    if fundamental["gross_margin"] > 0.4:
+    if (fundamental.get("gross_margin") or 0) > 0.4:
         fundamental_score += 4
-    if fundamental["net_profit_growth"] > 0:
+    if (fundamental.get("net_profit_growth") or 0) > 0:
         fundamental_score += 4
-    if fundamental["revenue_growth"] > 0:
+    if (fundamental.get("revenue_growth") or 0) > 0:
         fundamental_score += 3
-    if fundamental["debt_ratio"] < 0.5:
+    debt_ratio = fundamental.get("debt_ratio")
+    if debt_ratio is not None and debt_ratio < 0.5:
         fundamental_score += 3
     fundamental_score = _cap_placeholder_score(
         asset_data,
@@ -57,14 +58,18 @@ def score_asset(asset_data: dict) -> dict:
 
     # 4. 估值性价比：15分
     valuation_score = 15
-    if valuation["pe_percentile"] > 0.8:
+    pe_percentile = valuation.get("pe_percentile")
+    pb_percentile = valuation.get("pb_percentile")
+    if pe_percentile is None and pb_percentile is None:
+        valuation_score = 8
+    elif pe_percentile is not None and pe_percentile > 0.8:
         valuation_score -= 5
-    elif valuation["pe_percentile"] > 0.6:
+    elif pe_percentile is not None and pe_percentile > 0.6:
         valuation_score -= 3
 
-    if valuation["pb_percentile"] > 0.8:
+    if pb_percentile is not None and pb_percentile > 0.8:
         valuation_score -= 3
-    elif valuation["pb_percentile"] > 0.6:
+    elif pb_percentile is not None and pb_percentile > 0.6:
         valuation_score -= 1
     valuation_score = _cap_placeholder_score(
         asset_data,
@@ -87,9 +92,9 @@ def score_asset(asset_data: dict) -> dict:
 
     # 6. 事件/政策：10分
     event_score = 6
-    if event["recent_news_sentiment"] == "neutral_positive":
+    if event.get("recent_news_sentiment") == "neutral_positive":
         event_score += 2
-    if event["policy_risk"] == "low":
+    if event.get("policy_risk") == "low":
         event_score += 2
     event_score = _cap_placeholder_score(
         asset_data,

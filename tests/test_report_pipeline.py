@@ -1,9 +1,13 @@
 import json
+import pytest
 from pathlib import Path
 
 import pandas as pd
 
 from services.data.akshare_provider import get_akshare_asset_data
+from services.data.normalizers.event_normalizer import EventNormalizer
+from services.data.normalizers.fundamental_normalizer import FundamentalNormalizer
+from services.data.normalizers.valuation_normalizer import ValuationNormalizer
 from services.data.qmt_provider import get_qmt_asset_data
 from services.orchestrator.single_asset_research import run_single_asset_research
 from services.report.html_builder import save_html_report
@@ -113,6 +117,76 @@ def test_qmt_provider_auto_downloads_when_local_history_is_empty(monkeypatch):
     assert result["source_metadata"]["qmt_status"]["download_attempted"] is True
     assert result["source_metadata"]["qmt_status"]["download_success"] is True
     assert result["source_metadata"]["qmt_status"]["row_count"] == rows
+
+
+def test_qmt_fundamental_normalizer_converts_ratios_and_amounts():
+    provider_result = {
+        "data": {
+            "PershareIndex": [
+                {
+                    "m_timetag": "20251231",
+                    "m_anntime": "20260428",
+                    "ROE": 18.2,
+                    "销售毛利率": 52.1,
+                    "营业收入同比增长率": 9.3,
+                    "净利润同比增长率": 11.8,
+                    "每股净资产": 28.4,
+                }
+            ],
+            "Income": [{"营业收入": 123456789000, "净利润": 23456789000}],
+            "Balance": [{"资产总计": 1000, "负债合计": 417}],
+            "CashFlow": [{"经营活动产生的现金流量净额": 26200000000}],
+        }
+    }
+
+    normalized = FundamentalNormalizer().normalize_qmt(provider_result)["normalized"]
+
+    assert normalized["roe"] == 0.182
+    assert normalized["gross_margin"] == 0.521
+    assert normalized["revenue_growth"] == pytest.approx(0.093)
+    assert normalized["net_profit_growth"] == pytest.approx(0.118)
+    assert normalized["debt_ratio"] == 0.417
+    assert normalized["operating_cashflow_quality"] > 1
+
+
+def test_valuation_normalizer_derives_market_cap_from_qmt_fields():
+    asset_data = {
+        "as_of": "2026-04-29",
+        "price_data": {"close": 10.0},
+        "basic_info": {"total_volume": 1000, "float_volume": 800},
+        "fundamental_data": {"net_profit_ttm": 500, "revenue_ttm": 2000, "bps": 4},
+    }
+
+    valuation = ValuationNormalizer().derive_from_qmt(asset_data)
+
+    assert valuation["market_cap"] == 10000
+    assert valuation["float_market_cap"] == 8000
+    assert valuation["pe_ttm"] == 20
+    assert valuation["ps_ttm"] == 5
+    assert valuation["pb_mrq"] == 2.5
+
+
+def test_event_normalizer_classifies_announcement_risk():
+    provider_result = {
+        "data": [
+            {
+                "公告标题": "关于收到交易所问询函的公告",
+                "公告时间": "2026-04-20",
+                "公告链接": "https://example.com/a.pdf",
+            },
+            {
+                "公告标题": "2025年年度权益分派实施公告",
+                "公告时间": "2026-04-21",
+            },
+        ]
+    }
+
+    events = EventNormalizer().normalize_akshare(provider_result, "600519.SH")
+
+    assert events[0]["event_type"] == "regulatory_inquiry"
+    assert events[0]["severity"] == "medium"
+    assert events[1]["event_type"] == "dividend"
+    assert events[1]["sentiment"] == "neutral_positive"
 
 
 def test_scoring_result_matches_protocol():

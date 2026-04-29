@@ -11,6 +11,15 @@ def _format_percent(value: Any) -> str:
         return str(value)
 
 
+def _format_number(value: Any) -> str:
+    if value is None:
+        return "暂无"
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 class EvidenceBuilder:
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
@@ -103,6 +112,9 @@ class EvidenceBuilder:
     def _add_valuation_items(self, items: list[dict], asset_data: dict) -> None:
         valuation = asset_data.get("valuation_data", {})
         for field, title in {
+            "pe_ttm": "PE TTM",
+            "pb_mrq": "PB MRQ",
+            "market_cap": "总市值",
             "pe_percentile": "PE 历史分位",
             "pb_percentile": "PB 历史分位",
             "dividend_yield": "股息率",
@@ -115,7 +127,9 @@ class EvidenceBuilder:
                 "valuation",
                 title,
                 valuation.get(field),
-                _format_percent(valuation.get(field)),
+                _format_percent(valuation.get(field))
+                if field in {"pe_percentile", "pb_percentile", "dividend_yield"}
+                else _format_number(valuation.get(field)),
             )
 
     def _add_event_items(self, items: list[dict], asset_data: dict) -> None:

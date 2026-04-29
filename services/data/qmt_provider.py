@@ -264,6 +264,10 @@ def get_qmt_asset_data(symbol: str) -> dict:
             "exchange_id": detail.get("ExchangeID") or detail.get("exchange_id"),
             "product_id": detail.get("ProductID") or detail.get("product_id"),
             "instrument_id": detail.get("InstrumentID") or detail.get("instrument_id"),
+            "instrument_name": detail.get("InstrumentName") or detail.get("instrument_name"),
+            "float_volume": detail.get("FloatVolume") or detail.get("float_volume"),
+            "total_volume": detail.get("TotalVolume") or detail.get("total_volume"),
+            "pre_close": detail.get("PreClose") or detail.get("pre_close"),
         },
         "source_metadata": {
             "price_data": build_price_source_metadata(
