@@ -30,6 +30,15 @@ python -m pip install xtquant
 python -c "from xtquant import xtdata; xtdata.connect(); print('qmt connected')"
 ```
 
+QMT provider 默认会在读取日 K 为空时自动调用一次 `xtdata.download_history_data()`。可在 `.env` 中调整：
+
+```text
+QMT_AUTO_DOWNLOAD=true
+QMT_HISTORY_DAYS=420
+QMT_PERIOD=1d
+QMT_DIVIDEND_TYPE=front
+```
+
 复制环境变量模板：
 
 ```powershell
@@ -105,5 +114,5 @@ python -m pytest
 
 - `xtdata.connect()` 可连接本地 `127.0.0.1:58610` QMT 服务。
 - `xtdata.download_history_data('600519.SH', '1d', '20250101', '')` 可下载日线。
-- 项目使用 `--data-source qmt` 后可读取 QMT 的 `close`、`volume`、`amount` 并进入评分。
+- 项目使用 `--data-source qmt` 后会自动连接 QMT；若本地日 K 为空，会自动下载一次，然后读取 QMT 的 `close`、`volume`、`amount` 并进入评分。
 - 财务、估值、事件数据仍未接入真实源。

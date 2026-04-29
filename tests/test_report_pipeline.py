@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from services.data.akshare_provider import get_akshare_asset_data
+from services.data.qmt_provider import get_qmt_asset_data
 from services.orchestrator.single_asset_research import run_single_asset_research
 from services.report.html_builder import save_html_report
 from services.report.json_builder import save_json_result
@@ -47,6 +48,65 @@ def test_akshare_price_conversion_without_network(monkeypatch):
     assert result["price_data"]["close"] == 179.0
     assert result["price_data"]["avg_turnover_20d"] > 0
     assert "fundamental_data" not in result
+
+
+def test_qmt_provider_auto_downloads_when_local_history_is_empty(monkeypatch):
+    rows = 80
+    history_df = pd.DataFrame(
+        {
+            "time": list(range(rows)),
+            "close": [100 + index for index in range(rows)],
+            "volume": [10_000 + index for index in range(rows)],
+            "amount": [1_000_000_000 + index for index in range(rows)],
+        }
+    )
+
+    class FakeXtData:
+        enable_hello = True
+
+        def __init__(self):
+            self.download_called = False
+
+        def connect(self):
+            return object()
+
+        def get_data_dir(self):
+            return "fake-qmt-datadir"
+
+        def get_market_data_ex(self, **kwargs):
+            if not self.download_called:
+                return {"600519.SH": pd.DataFrame()}
+            return {"600519.SH": history_df}
+
+        def download_history_data(self, stock_code, period, start_time="", end_time=""):
+            self.download_called = True
+            return True
+
+        def get_instrument_detail(self, symbol):
+            return {
+                "ExchangeID": "SH",
+                "InstrumentID": "600519",
+                "InstrumentName": "贵州茅台",
+            }
+
+    fake_xtdata = FakeXtData()
+
+    monkeypatch.setattr(
+        "services.data.qmt_provider._import_xtdata",
+        lambda: fake_xtdata,
+    )
+    monkeypatch.setenv("QMT_AUTO_DOWNLOAD", "true")
+    monkeypatch.setenv("QMT_HISTORY_START", "20250101")
+    monkeypatch.setenv("QMT_HISTORY_END", "20260429")
+
+    result = get_qmt_asset_data("600519.SH")
+
+    assert result["data_source"] == "qmt"
+    assert result["name"] == "贵州茅台"
+    assert result["price_data"]["close"] == 179.0
+    assert result["source_metadata"]["qmt_status"]["download_attempted"] is True
+    assert result["source_metadata"]["qmt_status"]["download_success"] is True
+    assert result["source_metadata"]["qmt_status"]["row_count"] == rows
 
 
 def test_scoring_result_matches_protocol():

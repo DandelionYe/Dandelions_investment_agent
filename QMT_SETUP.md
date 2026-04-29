@@ -29,10 +29,10 @@ python -c "from xtquant import xtdata; print('xtquant ok', xtdata)"
 
 ## 3. 启动 QMT mini 服务
 
-示例路径如下，按本机实际安装路径调整：
+示例路径如下，按本机实际安装路径调整。不要把自己的真实安装路径、账号目录或券商账号信息写入公开仓库：
 
 ```powershell
-Start-Process "D:\迅投QMT极速交易系统交易终端 万联证券版\bin.x64\XtMiniQmt.exe"
+Start-Process "D:\path\to\QMT\bin.x64\XtMiniQmt.exe"
 ```
 
 检查进程：
@@ -91,6 +91,24 @@ python -c "from xtquant import xtdata; xtdata.connect(); xtdata.download_history
 
 如果返回空 DataFrame 或项目报 `QMT 行情数据为空`，说明服务已经连上，但本地日 K 数据还没有准备好。先下载对应标的和周期的数据。
 
+项目代码也内置了自动补下载：当 `--data-source qmt` 且首次读取日 K 为空时，会自动调用一次 `xtdata.download_history_data()`，然后再读取一次。可以在 `.env` 中调整行为：
+
+```text
+QMT_AUTO_DOWNLOAD=true
+QMT_HISTORY_DAYS=420
+QMT_HISTORY_START=
+QMT_HISTORY_END=
+QMT_PERIOD=1d
+QMT_DIVIDEND_TYPE=front
+QMT_SUPPRESS_HELLO=true
+```
+
+如果你希望完全手动管理 QMT 本地数据，可设置：
+
+```text
+QMT_AUTO_DOWNLOAD=false
+```
+
 ## 6. 验证项目是否真正走 QMT
 
 ```powershell
@@ -112,6 +130,21 @@ python main.py --symbol 600519.SH --data-source qmt --no-llm --no-pdf
       "vendor": "qmt"
     }
   }
+}
+```
+
+同时 `source_metadata.qmt_status` 会记录本次 QMT 接入状态，例如：
+
+```json
+{
+  "connected": true,
+  "auto_download": true,
+  "download_attempted": false,
+  "history_start": "20250305",
+  "history_end": "20260429",
+  "period": "1d",
+  "data_dir": "...\\userdata_mini\\datadir",
+  "row_count": 215
 }
 ```
 

@@ -1,3 +1,5 @@
+import os
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
@@ -9,6 +11,41 @@ from services.data.market_data_utils import (
     guess_asset_type,
     normalize_symbol,
 )
+
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+
+if load_dotenv:
+    load_dotenv()
+
+
+@dataclass(frozen=True)
+class QMTSettings:
+    period: str = "1d"
+    history_days: int = 420
+    auto_download: bool = True
+    dividend_type: str = "front"
+    suppress_hello: bool = True
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def load_qmt_settings() -> QMTSettings:
+    return QMTSettings(
+        period=os.getenv("QMT_PERIOD", "1d"),
+        history_days=int(os.getenv("QMT_HISTORY_DAYS", "420")),
+        auto_download=_env_bool("QMT_AUTO_DOWNLOAD", True),
+        dividend_type=os.getenv("QMT_DIVIDEND_TYPE", "front"),
+        suppress_hello=_env_bool("QMT_SUPPRESS_HELLO", True),
+    )
 
 
 def _import_xtdata():
@@ -22,11 +59,86 @@ def _import_xtdata():
     return xtdata
 
 
+def connect_qmt(settings: QMTSettings | None = None):
+    xtdata = _import_xtdata()
+    effective_settings = settings or load_qmt_settings()
+
+    if effective_settings.suppress_hello and hasattr(xtdata, "enable_hello"):
+        xtdata.enable_hello = False
+
+    try:
+        return xtdata.connect()
+    except Exception as exc:
+        raise RuntimeError(
+            "无法连接 QMT 本地行情服务。请确认 miniQMT/QMT 投研服务已启动并登录。"
+        ) from exc
+
+
 def _format_qmt_time(value: date) -> str:
     return value.strftime("%Y%m%d")
 
 
-def _load_qmt_daily_history(symbol: str) -> pd.DataFrame:
+def _to_dataframe(raw: Any, symbol: str) -> pd.DataFrame:
+    if isinstance(raw, dict):
+        if symbol in raw:
+            df = raw[symbol]
+        elif raw:
+            df = next(iter(raw.values()))
+        else:
+            return pd.DataFrame()
+    else:
+        df = raw
+
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
+
+    return df
+
+
+def _query_qmt_daily_history(
+    symbol: str,
+    start: str,
+    end: str,
+    settings: QMTSettings,
+) -> pd.DataFrame:
+    xtdata = _import_xtdata()
+
+    raw = xtdata.get_market_data_ex(
+        field_list=["time", "close", "amount", "volume"],
+        stock_list=[symbol],
+        period=settings.period,
+        start_time=start,
+        end_time=end,
+        count=-1,
+        dividend_type=settings.dividend_type,
+        fill_data=True,
+    )
+
+    return _to_dataframe(raw, symbol)
+
+
+def _download_qmt_daily_history(
+    symbol: str,
+    start: str,
+    end: str,
+    settings: QMTSettings,
+) -> bool:
+    xtdata = _import_xtdata()
+
+    try:
+        result = xtdata.download_history_data(
+            symbol,
+            settings.period,
+            start,
+            end,
+        )
+    except TypeError:
+        result = xtdata.download_history_data(symbol, settings.period, start, end)
+
+    return True if result is None else bool(result)
+
+
+def _load_qmt_daily_history(symbol: str, settings: QMTSettings) -> tuple[pd.DataFrame, dict]:
     """
     Load daily K-line data from local QMT.
 
@@ -35,40 +147,52 @@ def _load_qmt_daily_history(symbol: str) -> pd.DataFrame:
     deliberately defensive.
     """
     xtdata = _import_xtdata()
+    connect_qmt(settings)
 
     end_date = date.today()
-    start_date = end_date - timedelta(days=420)
+    start_date = end_date - timedelta(days=settings.history_days)
+    start = os.getenv("QMT_HISTORY_START", _format_qmt_time(start_date))
+    end = os.getenv("QMT_HISTORY_END", _format_qmt_time(end_date))
 
-    raw = xtdata.get_market_data_ex(
-        field_list=["time", "close", "amount", "volume"],
-        stock_list=[symbol],
-        period="1d",
-        start_time=_format_qmt_time(start_date),
-        end_time=_format_qmt_time(end_date),
-        count=-1,
-        dividend_type="front",
-        fill_data=True,
-    )
+    qmt_status = {
+        "connected": True,
+        "auto_download": settings.auto_download,
+        "download_attempted": False,
+        "download_success": None,
+        "history_start": start,
+        "history_end": end,
+        "period": settings.period,
+        "data_dir": None,
+    }
 
-    if isinstance(raw, dict):
-        if symbol in raw:
-            df = raw[symbol]
-        elif raw:
-            df = next(iter(raw.values()))
-        else:
-            raise RuntimeError(f"QMT 未返回行情数据：{symbol}")
-    else:
-        df = raw
+    try:
+        qmt_status["data_dir"] = xtdata.get_data_dir()
+    except Exception:
+        qmt_status["data_dir"] = None
 
-    if not isinstance(df, pd.DataFrame):
-        df = pd.DataFrame(df)
+    df = _query_qmt_daily_history(symbol, start, end, settings)
+
+    if df.empty and settings.auto_download:
+        qmt_status["download_attempted"] = True
+        qmt_status["download_success"] = _download_qmt_daily_history(
+            symbol,
+            start,
+            end,
+            settings,
+        )
+        df = _query_qmt_daily_history(symbol, start, end, settings)
 
     if df.empty:
-        raise RuntimeError(f"QMT 行情数据为空：{symbol}")
+        raise RuntimeError(
+            f"QMT 行情数据为空：{symbol}。"
+            "请确认 QMT 已登录，且该标的日线数据可下载；"
+            "也可手动执行 xtdata.download_history_data 后重试。"
+        )
 
     df = df.copy()
     df["data_vendor"] = "qmt"
-    return df
+    qmt_status["row_count"] = int(len(df))
+    return df, qmt_status
 
 
 def _load_qmt_instrument_detail(symbol: str) -> dict[str, Any]:
@@ -104,8 +228,9 @@ def get_qmt_asset_data(symbol: str) -> dict:
     fabricated here; the orchestrator adds low-confidence placeholders until
     real QMT/fundamental feeds are connected.
     """
+    settings = load_qmt_settings()
     asset_type = guess_asset_type(symbol)
-    df = _load_qmt_daily_history(symbol)
+    df, qmt_status = _load_qmt_daily_history(symbol, settings)
     detail = _load_qmt_instrument_detail(symbol)
 
     close_col = _find_column(df, ["close", "收盘"])
@@ -146,6 +271,7 @@ def get_qmt_asset_data(symbol: str) -> dict:
                 confidence=0.95,
                 vendor="qmt",
             ),
+            "qmt_status": qmt_status,
             "basic_info": {
                 "source": "qmt",
                 "confidence": 0.9 if detail else 0.0,
