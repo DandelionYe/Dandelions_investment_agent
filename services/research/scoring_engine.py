@@ -1,6 +1,16 @@
 from services.protocols.validation import validate_protocol
 
 
+def _section_source(asset_data: dict, section: str) -> str | None:
+    return asset_data.get("source_metadata", {}).get(section, {}).get("source")
+
+
+def _cap_placeholder_score(asset_data: dict, section: str, score: int, cap: int) -> int:
+    if _section_source(asset_data, section) == "mock_placeholder":
+        return min(score, cap)
+    return score
+
+
 def score_asset(asset_data: dict) -> dict:
     """
     根据模拟数据计算一个简化版投研评分。
@@ -38,6 +48,12 @@ def score_asset(asset_data: dict) -> dict:
         fundamental_score += 3
     if fundamental["debt_ratio"] < 0.5:
         fundamental_score += 3
+    fundamental_score = _cap_placeholder_score(
+        asset_data,
+        "fundamental_data",
+        fundamental_score,
+        8,
+    )
 
     # 4. 估值性价比：15分
     valuation_score = 15
@@ -50,6 +66,12 @@ def score_asset(asset_data: dict) -> dict:
         valuation_score -= 3
     elif valuation["pb_percentile"] > 0.6:
         valuation_score -= 1
+    valuation_score = _cap_placeholder_score(
+        asset_data,
+        "valuation_data",
+        valuation_score,
+        6,
+    )
 
     # 5. 风险控制：20分
     risk_score = 20
@@ -69,6 +91,12 @@ def score_asset(asset_data: dict) -> dict:
         event_score += 2
     if event["policy_risk"] == "low":
         event_score += 2
+    event_score = _cap_placeholder_score(
+        asset_data,
+        "event_data",
+        event_score,
+        4,
+    )
 
     total_score = (
         trend_score

@@ -14,6 +14,8 @@ SCHEMA_FILES = {
     "factor_score": "factor_score.schema.json",
     "debate_result": "debate_result.schema.json",
     "final_decision": "final_decision.schema.json",
+    "data_quality": "data_quality.schema.json",
+    "evidence_bundle": "evidence_bundle.schema.json",
 }
 
 

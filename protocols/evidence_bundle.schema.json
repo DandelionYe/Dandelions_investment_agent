@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/evidence_bundle.schema.json",
+  "title": "EvidenceBundle",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["bundle_id", "symbol", "as_of", "items"],
+  "properties": {
+    "bundle_id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "minLength": 1},
+    "as_of": {"type": "string", "minLength": 1},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "category",
+          "title",
+          "source",
+          "source_date",
+          "confidence"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1},
+          "category": {
+            "type": "string",
+            "enum": ["price", "fundamental", "valuation", "event", "etf", "risk"]
+          },
+          "title": {"type": "string", "minLength": 1},
+          "value": {},
+          "display_value": {"type": "string"},
+          "source": {"type": "string"},
+          "source_date": {"type": ["string", "null"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  }
+}

@@ -50,6 +50,53 @@ def clamp_action(action: str, max_allowed_action: str) -> str:
     return action
 
 
+def _lower_action_ceiling(current: str, candidate: str) -> str:
+    current_level = ACTION_LEVEL.get(current, 2)
+    candidate_level = ACTION_LEVEL.get(candidate, 2)
+    return candidate if candidate_level < current_level else current
+
+
+def apply_data_quality_action_limits(result: dict, max_allowed_action: str) -> tuple[str, list[str]]:
+    data_quality = result.get("data_quality", {})
+    source_metadata = result.get("source_metadata", {})
+    event_data = result.get("event_data", {})
+    asset_type = result.get("asset_type", "stock")
+    guard_reasons: list[str] = []
+
+    if data_quality.get("has_placeholder"):
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+        guard_reasons.append("存在 placeholder 数据，最高建议限制为观察。")
+
+    blocking_issues = data_quality.get("blocking_issues") or []
+    if blocking_issues:
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+        guard_reasons.append("存在数据质量阻断项，最高建议限制为观察。")
+
+    event_summary = event_data.get("event_summary", {})
+    has_critical_event = event_summary.get("critical_count", 0) > 0 or any(
+        "critical" in str(issue).lower() or "critical" in str(issue)
+        for issue in blocking_issues
+    )
+    if has_critical_event:
+        max_allowed_action = "回避"
+        guard_reasons.append("存在 critical 事件，最高建议限制为回避。")
+
+    if not result.get("valuation_data"):
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+        guard_reasons.append("valuation_data 缺失，最高建议限制为观察。")
+
+    if asset_type == "stock" and not result.get("fundamental_data"):
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+        guard_reasons.append("股票 fundamental_data 缺失，最高建议限制为观察。")
+
+    if source_metadata.get("valuation_data", {}).get("source") == "mock_placeholder":
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+    if asset_type == "stock" and source_metadata.get("fundamental_data", {}).get("source") == "mock_placeholder":
+        max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
+
+    return max_allowed_action, guard_reasons
+
+
 def apply_decision_guard(result: dict) -> dict:
     """
     对最终研究结果做安全收敛：
@@ -71,6 +118,10 @@ def apply_decision_guard(result: dict) -> dict:
         score=score,
         rating=rating,
         risk_level=risk_level,
+    )
+    max_allowed_action, guard_reasons = apply_data_quality_action_limits(
+        result,
+        max_allowed_action,
     )
 
     guarded_action = clamp_action(llm_action, max_allowed_action)
@@ -98,6 +149,7 @@ def apply_decision_guard(result: dict) -> dict:
         "llm_action": llm_action,
         "max_allowed_action": max_allowed_action,
         "final_action": guarded_action,
+        "guard_reasons": guard_reasons,
     }
 
     return result

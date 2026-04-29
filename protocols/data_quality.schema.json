@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dandelions.local/protocols/data_quality.schema.json",
+  "title": "DataQualityReport",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "overall_confidence",
+    "has_placeholder",
+    "blocking_issues",
+    "warnings",
+    "field_quality"
+  ],
+  "properties": {
+    "overall_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "has_placeholder": {"type": "boolean"},
+    "blocking_issues": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "field_quality": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["available", "source", "confidence", "freshness"],
+        "properties": {
+          "available": {"type": "boolean"},
+          "source": {"type": "string"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "freshness": {"type": "string"}
+        }
+      }
+    }
+  }
+}

@@ -33,6 +33,8 @@ def generate_debate_result(research_result: dict) -> dict:
 - 买卖建议允许，但不能涉及自动下单。
 - 风格应接近“私募投委会纪要 + 量化因子打分卡”。
 - 如果 source_metadata 中出现 mock_placeholder，必须明确提示这些基本面/估值/事件证据仍需真实数据验证。
+- 必须优先基于 evidence_bundle 和 data_quality 形成结论；如果证据不足，必须明确说明证据不足。
+- 不允许引用 evidence_bundle 中不存在的公告、政策、财务或估值事实。
 - 只要输入中包含 mock 或 mock_placeholder 数据，committee_conclusion.confidence 不得超过 0.80。
 - 必须返回 json。
 """

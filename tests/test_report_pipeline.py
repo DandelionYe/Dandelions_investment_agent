@@ -25,6 +25,12 @@ def test_mock_single_asset_research_without_llm():
     assert result["score"] >= 0
     assert result["decision_guard"]["enabled"] is True
     assert result["source_metadata"]["fundamental_data"]["source"] == "mock_placeholder"
+    assert result["data_quality"]["has_placeholder"] is True
+    assert result["evidence_bundle"]["items"]
+    assert result["score_breakdown"]["fundamental_quality"] <= 8
+    assert result["score_breakdown"]["valuation"] <= 6
+    assert result["score_breakdown"]["event_policy"] <= 4
+    assert result["decision_guard"]["max_allowed_action"] == "观察"
 
 
 def test_akshare_price_conversion_without_network(monkeypatch):

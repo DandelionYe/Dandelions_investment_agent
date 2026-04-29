@@ -1,7 +1,7 @@
 from services.data.mock_provider import get_mock_asset_data
 from services.data.akshare_provider import get_akshare_asset_data
 from services.data.qmt_provider import get_qmt_asset_data
-from services.data.supplemental_provider import merge_supplemental_data
+from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
 from services.research.scoring_engine import score_asset
 from services.agents.debate_agent import generate_debate_result
 from services.research.decision_guard import apply_decision_guard
@@ -10,25 +10,25 @@ from services.protocols.validation import validate_protocol
 
 def _load_asset_data(symbol: str, data_source: str) -> dict:
     if data_source == "mock":
-        return get_mock_asset_data(symbol)
+        return ResearchDataAggregator().enrich(get_mock_asset_data(symbol))
 
     if data_source == "akshare":
         asset_data = get_akshare_asset_data(symbol)
         asset_data["data_source_chain"] = ["akshare"]
-        return merge_supplemental_data(asset_data)
+        return ResearchDataAggregator().enrich(asset_data)
 
     if data_source == "qmt":
         try:
             asset_data = get_qmt_asset_data(symbol)
             asset_data["data_source_chain"] = ["qmt"]
-            return merge_supplemental_data(asset_data)
+            return ResearchDataAggregator().enrich(asset_data)
         except Exception as qmt_error:
             fallback_data = get_akshare_asset_data(symbol)
             fallback_data["data_source_chain"] = ["qmt_failed", "akshare_fallback"]
             fallback_data["data_warnings"] = [
                 f"QMT 数据源不可用，已回退到 AKShare：{qmt_error}"
             ]
-            return merge_supplemental_data(fallback_data)
+            return ResearchDataAggregator().enrich(fallback_data)
 
     raise ValueError(f"不支持的数据源：{data_source}")
 
@@ -64,6 +64,12 @@ def run_single_asset_research(
         "event_data": asset_data.get("event_data", {}),
         "basic_info": asset_data.get("basic_info", {}),
         "source_metadata": asset_data.get("source_metadata", {}),
+        "symbol_info": asset_data.get("symbol_info", {}),
+        "fundamental_analysis": asset_data.get("fundamental_analysis", {}),
+        "etf_data": asset_data.get("etf_data", {}),
+        "data_quality": asset_data.get("data_quality", {}),
+        "evidence_bundle": asset_data.get("evidence_bundle", {}),
+        "provider_run_log": asset_data.get("provider_run_log", []),
 
         "score": score_result["total_score"],
         "rating": score_result["rating"],

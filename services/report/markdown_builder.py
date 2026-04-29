@@ -26,6 +26,36 @@ def _as_bullets(items: list[Any] | None) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+def _build_field_quality_table(field_quality: dict) -> str:
+    if not field_quality:
+        return "| 字段 | 可用 | 来源 | 置信度 | 新鲜度 |\n|---|---:|---|---:|---|\n| 暂无 | 暂无 | 暂无 | 暂无 | 暂无 |"
+
+    rows = ["| 字段 | 可用 | 来源 | 置信度 | 新鲜度 |", "|---|---:|---|---:|---|"]
+    for field, quality in field_quality.items():
+        available = "是" if quality.get("available") else "否"
+        confidence = format_confidence(quality.get("confidence"))
+        rows.append(
+            f"| {field} | {available} | {quality.get('source', '暂无')} | "
+            f"{confidence} | {quality.get('freshness', '暂无')} |"
+        )
+    return "\n".join(rows)
+
+
+def _build_evidence_preview(evidence_bundle: dict, limit: int = 8) -> str:
+    items = evidence_bundle.get("items", [])
+    if not items:
+        return "| 证据 | 类别 | 数值 | 来源 | 置信度 |\n|---|---|---|---|---:|\n| 暂无 | 暂无 | 暂无 | 暂无 | 暂无 |"
+
+    rows = ["| 证据 | 类别 | 数值 | 来源 | 置信度 |", "|---|---|---|---|---:|"]
+    for item in items[:limit]:
+        rows.append(
+            f"| {item.get('title', '暂无')} | {item.get('category', '暂无')} | "
+            f"{item.get('display_value', item.get('value', '暂无'))} | "
+            f"{item.get('source', '暂无')} | {format_confidence(item.get('confidence'))} |"
+        )
+    return "\n".join(rows)
+
+
 def build_markdown_report(result: dict) -> str:
     """
     把研究结果转换成 Markdown 报告。
@@ -36,6 +66,8 @@ def build_markdown_report(result: dict) -> str:
     price_data = result.get("price_data", {})
     decision_guard = result.get("decision_guard", {})
     debate_result = result.get("debate_result", {})
+    data_quality = result.get("data_quality", {})
+    evidence_bundle = result.get("evidence_bundle", {})
 
     bull_case = debate_result.get("bull_case", {})
     bear_case = debate_result.get("bear_case", {})
@@ -66,6 +98,7 @@ def build_markdown_report(result: dict) -> str:
     guard_llm_action = decision_guard.get("llm_action", "暂无")
     guard_max_allowed_action = decision_guard.get("max_allowed_action", "暂无")
     guard_final_action = decision_guard.get("final_action", action)
+    guard_reasons = decision_guard.get("guard_reasons", [])
 
     risk_level_display = localize_risk_level(risk_review.get("risk_level"))
     blocking_display = localize_bool(risk_review.get("blocking"))
@@ -84,6 +117,8 @@ def build_markdown_report(result: dict) -> str:
         guard_summary = "本次未启用决策保护器。"
 
     data_quality_notes = build_data_quality_notes(price_data)
+    field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {}))
+    evidence_preview_table = _build_evidence_preview(evidence_bundle)
 
     markdown = f"""# {result.get("name", "未知标的")}（{result.get("symbol", "UNKNOWN")}）投研报告
 
@@ -129,7 +164,27 @@ def build_markdown_report(result: dict) -> str:
 
 {_as_bullets(data_quality_notes)}
 
-### 3.2 行情解读
+### 3.2 研究数据层质量报告
+
+- 整体置信度：{format_confidence(data_quality.get("overall_confidence"))}
+- 是否存在 placeholder：{localize_bool(data_quality.get("has_placeholder"))}
+- 阻断项：{len(data_quality.get("blocking_issues", []))}
+
+{field_quality_table}
+
+#### 数据质量警告
+
+{_as_bullets(data_quality.get("warnings"))}
+
+#### 数据质量阻断项
+
+{_as_bullets(data_quality.get("blocking_issues"))}
+
+### 3.3 EvidenceBundle 摘要
+
+{evidence_preview_table}
+
+### 3.4 行情解读
 
 - 若价格位于 MA20 和 MA60 下方，说明短中期趋势仍偏弱，需要等待趋势修复。
 - 若近60日最大回撤较大，说明中线波动风险需要重点关注。
@@ -209,6 +264,7 @@ def build_markdown_report(result: dict) -> str:
 - 模型原始建议：{guard_llm_action}
 - 系统允许最高建议：{guard_max_allowed_action}
 - 最终操作建议：{guard_final_action}
+- 降级/限制原因：{"; ".join(guard_reasons) if guard_reasons else "暂无"}
 
 ### 8.2 保护器解释
 
