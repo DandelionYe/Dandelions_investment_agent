@@ -18,6 +18,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from services.data.providers.cninfo_event_provider import CninfoEventProvider
 from services.data.providers.akshare_event_provider import AKShareEventProvider
 from services.data.normalizers.event_normalizer import EventNormalizer
+from services.data.symbol_resolver import SymbolResolver
 
 
 def test_cninfo_provider():
@@ -270,14 +271,19 @@ def test_multiple_symbols():
     print("测试 5: 多个股票代码")
     print("="*80)
 
-    symbol_list = ["600519", "000001", "510300", "158001"]
+    symbol_resolver = SymbolResolver()
+    # 注意：巨潮资讯 API 只支持 A 股股票，不支持 ETF
+    symbol_list = ["600519", "000001", "600036", "000858"]
 
     for symbol in symbol_list:
         print(f"\n  测试代码: {symbol}")
         provider = CninfoEventProvider()
+
+        # 使用 SymbolResolver 正确解析代码
+        resolved = symbol_resolver.resolve(symbol)
         symbol_info = {
-            "plain_code": symbol,
-            "normalized_symbol": f"{symbol}.SH",
+            "plain_code": resolved["plain_code"],
+            "normalized_symbol": resolved["normalized_symbol"],
         }
 
         try:
@@ -285,6 +291,8 @@ def test_multiple_symbols():
 
             if result.metadata.success:
                 print(f"    ✓ 获取成功: {len(result.data)} 条公告")
+                print(f"    交易所: {resolved['exchange']}")
+                print(f"    资产类型: {resolved['asset_type']}")
             else:
                 print(f"    ✗ 获取失败: {result.metadata.error}")
         except Exception as e:

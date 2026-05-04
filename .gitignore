@@ -22,3 +22,6 @@ dist/
 playwright-report/
 test-results/
 QMT/
+CLAUDE.md
+report.md
+Scheme.md

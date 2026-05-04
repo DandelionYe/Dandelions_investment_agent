@@ -5,7 +5,19 @@
       "Bash(python -m pytest -v)",
       "Bash(rm -rf pytest-cache-files-61c_m4l7 pytest-cache-files-9dids_cs .pytest_cache)",
       "Bash(python -m pytest tests/ -v)",
-      "Bash(python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf)"
+      "Bash(python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/pip.exe install *)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_report_pipeline.py -v)",
+      "Bash(.venv/Scripts/python.exe -c \"from services.agents.bull_analyst import BullAnalyst; from services.agents.bear_analyst import BearAnalyst; from services.agents.risk_officer import RiskOfficer; from services.agents.committee_secretary import CommitteeSecretary; from services.agents.debate_agent import generate_debate_result; print\\('All imports OK'\\); print\\('BullAnalyst:', BullAnalyst\\); print\\('BearAnalyst:', BearAnalyst\\); print\\('RiskOfficer:', RiskOfficer\\); print\\('CommitteeSecretary:', CommitteeSecretary\\); print\\('generate_debate_result:', generate_debate_result\\)\")",
+      "Bash(.venv/Scripts/python.exe main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/ --collect-only -q)",
+      "Bash(.venv/Scripts/python.exe -c \"import langgraph; print\\(langgraph.__version__\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from services.agents.bull_analyst import BullAnalyst; from services.agents.committee_secretary import CommitteeSecretary; print\\('imports ok'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import langgraph; print\\('langgraph', langgraph.__version__\\)\")",
+      "Bash(.venv/Scripts/pip.exe show *)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_langgraph_orchestrator.py -v)"
     ]
   }
 }

@@ -1,16 +1,40 @@
 # Dandelions Investment Agent
 
-投研智能体 MVP：输入单只沪深京 A 股或 ETF，输出量化评分、多头/空头/风险官辩论、最终建议，以及 JSON/Markdown/HTML/PDF 报告。
+投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 编排的 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四角色辩论，输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 human-in-the-loop 人工审核。
 
 ## 当前边界
 
 - 主数据源：QMT/xtquant，本地 Windows 环境优先。
 - fallback 数据源：AKShare，只在 QMT 不可用或调试时使用。
 - 离线测试数据源：mock。
-- LLM：DeepSeek OpenAI-compatible API。
+- LLM：DeepSeek OpenAI-compatible API（deepseek-v4-flash / deepseek-v4-pro）。
+- 编排：LangGraph StateGraph（5 节点辩论工作流 + 条件边 + HITL 中断）。
 - 看板：Streamlit。
-- 报告：JSON -> Markdown -> HTML -> Playwright PDF。
+- 报告：JSON → Markdown → HTML → Playwright PDF。
 - 当前不会自动下单，也不会调用 QMT 交易接口。
+
+## 项目结构
+
+```
+services/
+  agents/
+    bull_analyst.py          BullAnalyst 类 — 多头分析
+    bear_analyst.py          BearAnalyst 类 — 空头分析
+    risk_officer.py          RiskOfficer 类 — 风险评估
+    committee_secretary.py   CommitteeSecretary 类 — 投委会收敛
+    debate_agent.py          编排入口（委托 LangGraph）
+    langgraph_orchestrator.py LangGraph 工作流 + HITL API
+  data/                      数据层（3 源 + 聚合器 + 标准化 + 缓存）
+  research/                  研究引擎（评分 / 决策保护 / 基本面 / 估值 / 事件）
+  llm/                       DeepSeek 客户端
+  orchestrator/              单票研究主流程
+  report/                    报告生成（JSON / Markdown / HTML / PDF）
+  protocols/                 6 JSON Schemas + 验证
+configs/                     评分权重 / 数据源 / 应用配置
+apps/dashboard/              Streamlit 看板 + 报告库
+tests/                       114 测试用例（5 文件）
+protocols/                   6 JSON Schemas
+```
 
 ## 环境准备
 
@@ -101,10 +125,57 @@ streamlit run apps/dashboard/Home.py
 ## 测试
 
 ```powershell
+# 全部 114 个测试用例
 python -m pytest
+
+# 按模块运行
+python -m pytest tests/test_decision_guard.py -v      # 决策保护器边界（25 用例）
+python -m pytest tests/test_scoring_engine.py -v      # 评分引擎边缘值（28 用例）
+python -m pytest tests/test_report_builders.py -v     # 报告生成验证（22 用例）
+python -m pytest tests/test_langgraph_orchestrator.py -v  # LangGraph 编排（20 用例）
+python -m pytest tests/test_report_pipeline.py -v     # 端到端流程（11 用例）
 ```
 
-测试覆盖当前最小闭环：mock 主流程、AKShare 行情转换、评分协议、decision_guard、JSON/Markdown/HTML 报告生成。
+覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph HITL 中断/恢复、QMT/AKShare/mock 数据链路、估值/事件标准化。
+
+## Agent 架构与 LangGraph 编排
+
+当前 Agent 系统由 4 个独立角色类 + LangGraph 有状态工作流组成：
+
+```
+generate_debate_result()                # 编排入口（向后兼容）
+  └─ LangGraph StateGraph
+       ├── bull_analysis               # BullAnalyst.analyze()
+       ├── bear_analysis               # BearAnalyst.analyze()
+       ├── risk_review                 # RiskOfficer.review()
+       │     └── [条件边] → error_handler（安全降级）
+       ├── committee_convergence       # CommitteeSecretary.converge()
+       │     └── [HITL] interrupt() 暂停点
+       └── assemble_result             # 协议验证
+```
+
+每个 Agent 有专属 system prompt，可独立调用和测试。LangGraph 不可用时自动回退到顺序编排。
+
+### Human-in-the-Loop
+
+```python
+from services.agents.langgraph_orchestrator import start_hitl_debate, resume_hitl_debate
+
+# 启动辩论 → 三方分析完成后暂停
+interrupted = start_hitl_debate(research_result, thread_id="task-001")
+# → 返回 bull_case / bear_case / risk_review + __interrupt__
+
+# 人工审核后恢复（可覆盖结论）
+final = resume_hitl_debate(thread_id="task-001")
+# 或传入 modified_state 覆盖 committee 结论
+final = resume_hitl_debate(thread_id="task-001", modified_state={
+    "committee_conclusion": {"stance": "回避", "action": "回避", ...}
+})
+```
+
+### 决策保护器
+
+LLM 的买卖建议受本地评分、风险等级、数据质量三重约束。即使 DeepSeek 建议"买入"，若本地评分不足或存在 placeholder/critical 事件，系统会自动降级。详见 `services/research/decision_guard.py`。
 
 ## 数据可信度
 
