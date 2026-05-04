@@ -81,7 +81,7 @@ def apply_data_quality_action_limits(result: dict, max_allowed_action: str) -> t
         max_allowed_action = "回避"
         guard_reasons.append("存在 critical 事件，最高建议限制为回避。")
 
-    if not result.get("valuation_data"):
+    if asset_type == "stock" and not result.get("valuation_data"):
         max_allowed_action = _lower_action_ceiling(max_allowed_action, "观察")
         guard_reasons.append("valuation_data 缺失，最高建议限制为观察。")
 

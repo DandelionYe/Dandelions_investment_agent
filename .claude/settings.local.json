@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(python -m pytest -v)",
+      "Bash(rm -rf pytest-cache-files-61c_m4l7 pytest-cache-files-9dids_cs .pytest_cache)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf)"
+    ]
+  }
+}

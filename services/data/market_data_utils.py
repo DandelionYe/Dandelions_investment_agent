@@ -77,6 +77,7 @@ def build_price_data_from_frame(
         "volatility_60d": float(returns.tail(60).std() * (252 ** 0.5)),
         "avg_turnover_20d": avg_turnover_20d,
         "data_vendor": data_vendor,
+        "history_close": [float(v) for v in close.tolist() if pd.notna(v)],
     }
 
 

@@ -1,6 +1,7 @@
 from datetime import date
 
 from services.data.normalizers.fundamental_normalizer import FundamentalNormalizer
+from services.data.providers.akshare_fundamental_provider import AKShareFundamentalProvider
 from services.data.providers.qmt_financial_provider import QMTFinancialProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
 
@@ -8,6 +9,7 @@ from services.data.supplemental_provider import get_placeholder_supplemental_dat
 class FundamentalService:
     def __init__(self):
         self.qmt_provider = QMTFinancialProvider()
+        self.akshare_provider = AKShareFundamentalProvider()
         self.normalizer = FundamentalNormalizer()
 
     def build(self, asset_data: dict) -> dict:
@@ -17,18 +19,32 @@ class FundamentalService:
         if asset_data.get("data_source") == "mock":
             return self._placeholder_result(symbol, "mock data source selected")
 
-        provider_result = self.qmt_provider.fetch_fundamental(symbol_info)
+        provider_run_log = []
 
-        if provider_result.metadata.success:
-            normalized = self.normalizer.normalize_qmt(provider_result.to_dict())
+        # 1. Try QMT financial tables
+        qmt_result = self.qmt_provider.fetch_fundamental(symbol_info)
+        provider_run_log.append(
+            {
+                "provider": qmt_result.provider,
+                "dataset": qmt_result.dataset,
+                "symbol": symbol,
+                "status": "success" if qmt_result.metadata.success else "failed",
+                "rows": sum(len(rows) for rows in qmt_result.data.values()) if isinstance(qmt_result.data, dict) else 0,
+                "error": qmt_result.metadata.error,
+                "as_of": str(date.today()),
+            }
+        )
+
+        if qmt_result.metadata.success:
+            normalized = self.normalizer.normalize_qmt(qmt_result.to_dict())
             fundamental_data = normalized["normalized"]
             if self._has_core_fields(fundamental_data):
                 metadata = {
                     "source": "qmt_financial",
                     "confidence": 0.78,
                     "as_of": str(date.today()),
-                    "provider": provider_result.provider,
-                    "dataset": provider_result.dataset,
+                    "provider": qmt_result.provider,
+                    "dataset": qmt_result.dataset,
                     "field_sources": normalized["field_sources"],
                 }
                 return self._build_result(
@@ -36,11 +52,46 @@ class FundamentalService:
                     fundamental_data=fundamental_data,
                     metadata=metadata,
                     status="success",
-                    rows=sum(len(rows) for rows in provider_result.data.values()),
+                    rows=sum(len(rows) for rows in qmt_result.data.values()),
                     error=None,
                 )
 
-        error = provider_result.metadata.error or "QMT financial data did not include usable core fields."
+        # 2. Fallback to AKShare
+        akshare_result = self.akshare_provider.fetch_fundamental(symbol_info)
+        provider_run_log.append(
+            {
+                "provider": akshare_result.provider,
+                "dataset": akshare_result.dataset,
+                "symbol": symbol,
+                "status": "success" if akshare_result.metadata.success else "failed",
+                "rows": len(akshare_result.data) if isinstance(akshare_result.data, list) else 0,
+                "error": akshare_result.metadata.error,
+                "as_of": str(date.today()),
+            }
+        )
+
+        if akshare_result.metadata.success:
+            normalized = self.normalizer.normalize_akshare(akshare_result.to_dict())
+            fundamental_data = normalized["normalized"]
+            if self._has_core_fields(fundamental_data):
+                metadata = {
+                    "source": "akshare",
+                    "confidence": 0.68,
+                    "as_of": str(date.today()),
+                    "provider": akshare_result.provider,
+                    "dataset": akshare_result.dataset,
+                    "field_sources": normalized["field_sources"],
+                }
+                return self._build_result(
+                    symbol=symbol,
+                    fundamental_data=fundamental_data,
+                    metadata=metadata,
+                    status="success",
+                    rows=len(akshare_result.data) if isinstance(akshare_result.data, list) else 0,
+                    error=None,
+                )
+
+        error = qmt_result.metadata.error or "QMT and AKShare fundamental data unavailable."
         return self._placeholder_result(symbol, error)
 
     def _placeholder_result(self, symbol: str, error: str | None) -> dict:

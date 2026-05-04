@@ -1,4 +1,5 @@
 from services.data.aggregator.evidence_builder import EvidenceBuilder
+from services.data.cache.sqlite_cache import ResearchDataCache
 from services.data.quality.data_quality_rules import DataQualityService
 from services.data.symbol_resolver import SymbolResolver
 from services.research.etf_engine import ETFDataService
@@ -17,6 +18,7 @@ class ResearchDataAggregator:
         self.etf_service = ETFDataService()
         self.quality_service = DataQualityService()
         self.evidence_builder = EvidenceBuilder()
+        self.cache = ResearchDataCache()
 
     def enrich(self, asset_data: dict) -> dict:
         symbol_info = self.symbol_resolver.resolve(asset_data["symbol"])
@@ -29,20 +31,26 @@ class ResearchDataAggregator:
         provider_run_log = list(merged.get("provider_run_log", []))
 
         if merged["asset_type"] == "etf":
+            merged.pop("fundamental_data", None)
+            merged.pop("valuation_data", None)
+            source_metadata.pop("fundamental_data", None)
+            source_metadata.pop("valuation_data", None)
             etf_result = self.etf_service.build(merged)
             merged.update(etf_result["data"])
             source_metadata.update(etf_result["source_metadata"])
             provider_run_log.extend(etf_result["provider_run_log"])
+            merged.setdefault("fundamental_data", {})
+            merged.setdefault("valuation_data", {})
+        else:
+            fundamental_result = self.fundamental_service.build(merged)
+            merged.update(fundamental_result["data"])
+            source_metadata.update(fundamental_result["source_metadata"])
+            provider_run_log.extend(fundamental_result["provider_run_log"])
 
-        fundamental_result = self.fundamental_service.build(merged)
-        merged.update(fundamental_result["data"])
-        source_metadata.update(fundamental_result["source_metadata"])
-        provider_run_log.extend(fundamental_result["provider_run_log"])
-
-        valuation_result = self.valuation_service.build(merged)
-        merged.update(valuation_result["data"])
-        source_metadata.update(valuation_result["source_metadata"])
-        provider_run_log.extend(valuation_result["provider_run_log"])
+            valuation_result = self.valuation_service.build(merged)
+            merged.update(valuation_result["data"])
+            source_metadata.update(valuation_result["source_metadata"])
+            provider_run_log.extend(valuation_result["provider_run_log"])
 
         event_result = self.event_service.build(merged)
         for result in (event_result,):
@@ -56,5 +64,6 @@ class ResearchDataAggregator:
         merged["evidence_bundle"] = self.evidence_builder.build(merged)
         validate_protocol("data_quality", merged["data_quality"])
         validate_protocol("evidence_bundle", merged["evidence_bundle"])
+        self.cache.store_run(merged)
 
         return merged

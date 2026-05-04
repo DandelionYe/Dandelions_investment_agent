@@ -27,8 +27,11 @@ class EvidenceBuilder:
         items = []
 
         self._add_price_items(items, asset_data)
-        self._add_fundamental_items(items, asset_data)
-        self._add_valuation_items(items, asset_data)
+        if asset_data.get("asset_type") == "etf":
+            self._add_etf_items(items, asset_data)
+        else:
+            self._add_fundamental_items(items, asset_data)
+            self._add_valuation_items(items, asset_data)
         self._add_event_items(items, asset_data)
 
         return {
@@ -130,6 +133,27 @@ class EvidenceBuilder:
                 _format_percent(valuation.get(field))
                 if field in {"pe_percentile", "pb_percentile", "dividend_yield"}
                 else _format_number(valuation.get(field)),
+            )
+
+    def _add_etf_items(self, items: list[dict], asset_data: dict) -> None:
+        etf_data = asset_data.get("etf_data", {})
+        for field, title in {
+            "market_price": "ETF 市价",
+            "premium_discount": "折溢价",
+            "avg_turnover_20d": "20日平均成交额",
+            "fund_size": "基金规模",
+        }.items():
+            self._append(
+                items,
+                asset_data,
+                "etf_data",
+                f"ev_etf_{field}",
+                "etf",
+                title,
+                etf_data.get(field),
+                _format_percent(etf_data.get(field))
+                if field == "premium_discount"
+                else _format_number(etf_data.get(field)),
             )
 
     def _add_event_items(self, items: list[dict], asset_data: dict) -> None:

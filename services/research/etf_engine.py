@@ -1,11 +1,19 @@
 from datetime import date
 
+from services.data.normalizers.etf_normalizer import ETFNormalizer
+from services.data.providers.etf_provider import AKShareETFProvider
+
 
 class ETFDataService:
+    def __init__(self):
+        self.provider = AKShareETFProvider()
+        self.normalizer = ETFNormalizer()
+
     def build(self, asset_data: dict) -> dict:
         symbol_info = asset_data.get("symbol_info", {})
         price_data = asset_data.get("price_data", {})
-        etf_data = {
+
+        base = {
             "fund_code": symbol_info.get("plain_code", asset_data["symbol"].split(".")[0]),
             "fund_name": asset_data.get("name", asset_data["symbol"]),
             "tracking_index": None,
@@ -25,25 +33,62 @@ class ETFDataService:
             },
         }
 
-        return {
-            "data": {"etf_data": etf_data},
-            "source_metadata": {
-                "etf_data": {
-                    "source": "mock_placeholder",
-                    "confidence": 0.25,
-                    "as_of": str(date.today()),
-                    "note": "ETF extended data is placeholder until ETF provider is connected.",
-                }
-            },
-            "provider_run_log": [
+        source = "mock_placeholder"
+        confidence = 0.25
+        provider_run_log = [
+            {
+                "provider": "mock_placeholder",
+                "dataset": "etf_data",
+                "symbol": asset_data["symbol"],
+                "status": "placeholder",
+                "rows": 1,
+                "error": None,
+                "as_of": str(date.today()),
+            }
+        ]
+
+        if asset_data.get("data_source") != "mock":
+            info_result = self.provider.fetch_etf_data(symbol_info)
+            if info_result.metadata.success and info_result.data:
+                info_normalized = self.normalizer.normalize_akshare_info(info_result.to_dict())
+                for key, value in info_normalized.items():
+                    if value is not None:
+                        base[key] = value
+                source = "akshare"
+                confidence = 0.65
+
+            spot_result = self.provider.fetch_etf_spot(symbol_info)
+            if spot_result.metadata.success and spot_result.data:
+                spot_normalized = self.normalizer.normalize_akshare_spot(spot_result.to_dict())
+                for key, value in spot_normalized.items():
+                    if value is not None:
+                        base[key] = value
+                if spot_normalized.get("nav"):
+                    source = "akshare"
+                    confidence = 0.70
+
+            provider_run_log = [
                 {
-                    "provider": "mock_placeholder",
+                    "provider": "akshare",
                     "dataset": "etf_data",
                     "symbol": asset_data["symbol"],
-                    "status": "placeholder",
-                    "rows": 1,
-                    "error": None,
+                    "status": "success" if source == "akshare" else "placeholder",
+                    "rows": len(info_result.data) + len(spot_result.data or []),
+                    "error": None if source == "akshare" else "AKShare ETF data unavailable.",
                     "as_of": str(date.today()),
                 }
-            ],
+            ]
+
+        note = None if source != "mock_placeholder" else "ETF extended data is placeholder until ETF provider is connected."
+        return {
+            "data": {"etf_data": base},
+            "source_metadata": {
+                "etf_data": {
+                    "source": source,
+                    "confidence": confidence,
+                    "as_of": str(date.today()),
+                    **({"note": note} if note else {}),
+                }
+            },
+            "provider_run_log": provider_run_log,
         }

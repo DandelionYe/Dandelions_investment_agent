@@ -37,6 +37,23 @@ def test_mock_single_asset_research_without_llm():
     assert result["decision_guard"]["max_allowed_action"] == "观察"
 
 
+def test_mock_etf_research_skips_stock_fundamental_and_valuation():
+    result = run_single_asset_research(
+        "510300.SH",
+        use_llm=False,
+        data_source="mock",
+    )
+
+    assert result["asset_type"] == "etf"
+    assert result["fundamental_data"] == {}
+    assert result["valuation_data"] == {}
+    assert "fundamental_data" not in result["source_metadata"]
+    assert "valuation_data" not in result["source_metadata"]
+    assert result["data_quality"]["blocking_issues"] == []
+    assert all(item["category"] != "fundamental" for item in result["evidence_bundle"]["items"])
+    assert any(item["category"] == "etf" for item in result["evidence_bundle"]["items"])
+
+
 def test_akshare_price_conversion_without_network(monkeypatch):
     rows = 80
     df = pd.DataFrame(
@@ -207,6 +224,42 @@ def test_scoring_result_matches_protocol():
         "event_policy",
     }
     assert 0 <= score["total_score"] <= 100
+
+
+def test_event_risk_reduces_event_policy_score():
+    asset_data = {
+        "asset_type": "stock",
+        "price_data": {
+            "change_20d": 0,
+            "change_60d": 0,
+            "ma20_position": "below",
+            "ma60_position": "below",
+            "avg_turnover_20d": 600_000_000,
+            "max_drawdown_60d": -0.05,
+            "volatility_60d": 0.15,
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+            "recent_news_sentiment": "neutral_negative",
+            "policy_risk": "medium",
+            "event_summary": {
+                "critical_count": 1,
+                "high_severity_count": 0,
+                "negative_count": 0,
+            },
+            "events": [{"severity": "critical", "sentiment": "negative"}],
+        },
+        "source_metadata": {
+            "fundamental_data": {"source": "mock_placeholder"},
+            "valuation_data": {"source": "mock_placeholder"},
+            "event_data": {"source": "akshare"},
+        },
+    }
+
+    score = score_asset(asset_data)
+
+    assert score["score_breakdown"]["event_policy"] == 0
 
 
 def test_decision_guard_clamps_aggressive_llm_action():

@@ -46,7 +46,6 @@ QMT_FINANCIAL_AUTO_DOWNLOAD=false
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中填写 `DEEPSEEK_API_KEY`。不要提交 `.env`，它已在 `.gitignore` 中排除。
 
 ## 命令行运行
 

@@ -4,23 +4,25 @@ from datetime import date
 from typing import Any
 
 
+# Order matters: first-match-wins for titles that hit multiple keyword sets.
+# Higher-severity categories must appear before lower-severity ones.
 EVENT_TYPE_KEYWORDS = {
-    "earnings_report": ["年报", "年度报告", "季报", "季度报告", "半年报", "财务报告", "经营数据"],
+    "delisting_risk": ["退市", "终止上市"],
+    "regulatory_penalty": ["处罚", "行政监管"],
+    "regulatory_inquiry": ["问询函", "监管函"],
+    "risk_warning": ["风险提示", "风险警示", "留置", "立案", "调查"],
+    "lawsuit": ["诉讼", "仲裁"],
+    "suspension_resumption": ["停牌", "复牌"],
+    "pledge": ["质押"],
+    "ma_restructuring": ["重组", "收购", "并购"],
+    "refinancing": ["增发", "配股", "可转债", "融资"],
     "earnings_forecast": ["业绩预告", "预增", "预减", "预亏"],
     "earnings_express": ["业绩快报"],
-    "dividend": ["分红", "权益分派", "利润分配"],
+    "earnings_report": ["年报", "年度报告", "季报", "季度报告", "半年报", "财务报告", "经营数据"],
     "buyback": ["回购"],
-    "pledge": ["质押"],
-    "refinancing": ["增发", "配股", "可转债", "融资"],
-    "ma_restructuring": ["重组", "收购", "并购"],
-    "lawsuit": ["诉讼", "仲裁"],
-    "regulatory_inquiry": ["问询函", "监管函"],
-    "regulatory_penalty": ["处罚", "行政监管"],
-    "suspension_resumption": ["停牌", "复牌"],
-    "risk_warning": ["风险提示", "风险警示", "留置", "立案", "调查"],
-    "delisting_risk": ["退市", "终止上市"],
-    "management_change": ["董事", "监事", "高管", "高级管理人员", "辞职", "聘任"],
+    "dividend": ["分红", "权益分派", "利润分配"],
     "major_contract": ["重大合同", "中标"],
+    "management_change": ["董事", "监事", "高管", "高级管理人员", "辞职", "聘任"],
 }
 
 
@@ -40,7 +42,13 @@ def _clean_title(title: str) -> str:
 
 
 class EventNormalizer:
+    def normalize_cninfo(self, provider_result: dict, symbol: str, lookback_days: int = 90) -> list[dict]:
+        return self._normalize(provider_result, symbol, lookback_days, source="cninfo", source_type="official_announcement")
+
     def normalize_akshare(self, provider_result: dict, symbol: str, lookback_days: int = 90) -> list[dict]:
+        return self._normalize(provider_result, symbol, lookback_days, source="akshare", source_type="announcement")
+
+    def _normalize(self, provider_result: dict, symbol: str, lookback_days: int, source: str, source_type: str) -> list[dict]:
         records = provider_result.get("data", [])
         events = []
         for row in records:
@@ -58,17 +66,17 @@ class EventNormalizer:
             ).hexdigest()
             events.append(
                 {
-                    "event_id": f"akshare_{symbol.replace('.', '_')}_{dedupe_key[:12]}",
+                    "event_id": f"{source}_{symbol.replace('.', '_')}_{dedupe_key[:12]}",
                     "symbol": symbol,
                     "event_type": event_type,
                     "title": title,
                     "publish_time": publish_time,
-                    "source": "akshare",
-                    "source_type": "announcement",
+                    "source": source,
+                    "source_type": source_type,
                     "url": _first_present(row, ["公告链接", "url", "URL"]),
                     "severity": severity,
                     "sentiment": sentiment,
-                    "relevance": 0.85,
+                    "relevance": 0.95 if source == "cninfo" else 0.85,
                     "summary": title,
                     "keywords": self._keywords(title),
                     "dedupe_key": dedupe_key,

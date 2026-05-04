@@ -13,9 +13,11 @@ class DataQualityService:
         field_quality: dict[str, dict] = {}
         has_placeholder = False
 
-        required_sections = ["price_data", "fundamental_data", "valuation_data", "event_data"]
+        required_sections = ["price_data", "event_data"]
         if asset_type == "etf":
             required_sections.append("etf_data")
+        else:
+            required_sections.extend(["fundamental_data", "valuation_data"])
 
         for section in required_sections:
             metadata = source_metadata.get(section, {})
@@ -43,15 +45,21 @@ class DataQualityService:
 
         if not asset_data.get("price_data"):
             blocking_issues.append("price_data 缺失。")
-        if asset_type == "stock" and source_metadata.get("fundamental_data", {}).get("source") == "mock_placeholder":
-            blocking_issues.append("股票 fundamental_data 仍为 placeholder。")
-        valuation_data = asset_data.get("valuation_data", {})
-        if not valuation_data:
-            blocking_issues.append("valuation_data 缺失。")
-        elif not any(valuation_data.get(field) is not None for field in ("pe_ttm", "pb_mrq", "market_cap")):
-            blocking_issues.append("valuation_data 核心字段全部缺失。")
+
+        if asset_type == "stock":
+            if source_metadata.get("fundamental_data", {}).get("source") == "mock_placeholder":
+                blocking_issues.append("股票 fundamental_data 仍为 placeholder。")
+
+            valuation_data = asset_data.get("valuation_data", {})
+            if not valuation_data:
+                blocking_issues.append("valuation_data 缺失。")
+            elif not any(valuation_data.get(field) is not None for field in ("pe_ttm", "pb_mrq", "market_cap")):
+                blocking_issues.append("valuation_data 核心字段全部缺失。")
+
         if source_metadata.get("event_data", {}).get("source") == "mock_placeholder":
             warnings.append("event_data 未能确认近90日真实公告风险，当前为 placeholder。")
+            if asset_type == "stock":
+                blocking_issues.append("event_data 拉取失败且未能确认近90日重大风险。")
 
         event_data = asset_data.get("event_data", {})
         if event_data.get("event_summary", {}).get("critical_count", 0) > 0:
@@ -71,7 +79,7 @@ class DataQualityService:
         return {
             "overall_confidence": overall_confidence,
             "has_placeholder": has_placeholder,
-            "blocking_issues": blocking_issues,
+            "blocking_issues": list(dict.fromkeys(blocking_issues)),
             "warnings": list(dict.fromkeys(warnings)),
             "field_quality": field_quality,
         }
