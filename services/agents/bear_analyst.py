@@ -13,7 +13,12 @@ class BearAnalyst:
         self._client = DeepSeekClient()
         self._model = model or self._client.fast_model
 
-    def analyze(self, research_result: dict) -> dict:
+    def analyze(
+        self,
+        research_result: dict,
+        challenge: str | None = None,
+        debate_history: list | None = None,
+    ) -> dict:
         system_prompt = (
             "你是一个A股/ETF私募投委会的**空头分析师**。\n"
             "你的职责是：基于输入数据，识别和阐述该资产的看空逻辑与风险点。\n"
@@ -27,6 +32,16 @@ class BearAnalyst:
             "- 只输出合法 JSON，不要输出 Markdown、解释文字或任何其他内容。\n"
         )
 
+        if challenge:
+            system_prompt += (
+                "\n"
+                "**本次是辩论质询回应轮**\n"
+                "辩论主持人向你提出了一个针对你前序观点的具体质询。"
+                "你必须直接回应这个质询——可以坚持原有立场，"
+                "但必须有针对性地引用数据来支撑你的回应。"
+                "如果质询指出了你前序论据的弱点，请诚实面对。\n"
+            )
+
         user_prompt = (
             "请根据以下研究结果，从**空头视角**生成结构化分析 JSON。\n"
             "\n"
@@ -38,6 +53,21 @@ class BearAnalyst:
             "\n"
             + json.dumps(research_result, ensure_ascii=False, indent=2)
             + "\n\n"
+        )
+
+        if challenge:
+            user_prompt += (
+                "==========================\n"
+                "主持人的质询\n"
+                "==========================\n"
+                + challenge
+                + "\n\n"
+            )
+
+        if debate_history:
+            user_prompt += self._format_debate_history(debate_history) + "\n\n"
+
+        user_prompt += (
             '请严格按照下面 JSON 结构输出（不要附加其他字段说明）：\n'
             "\n"
             "{\n"
@@ -54,3 +84,34 @@ class BearAnalyst:
             model=self._model,
             max_tokens=1500,
         )
+
+    @staticmethod
+    def _format_debate_history(history: list) -> str:
+        lines = ["==========================", "辩论历史", "=========================="]
+        for entry in history:
+            entry_type = entry.get("type", "")
+            rnd = entry.get("round", "?")
+            if entry_type == "initial":
+                lines.append(f"[第{rnd}轮] 三方发表初始观点")
+                outputs = entry.get("outputs", {})
+                bull = outputs.get("bull_case", {})
+                bear = outputs.get("bear_case", {})
+                risk = outputs.get("risk_review", {})
+                lines.append(f"  多头：{bull.get('thesis', '(无)')}")
+                lines.append(f"  空头：{bear.get('thesis', '(无)')}")
+                lines.append(f"  风险官：{risk.get('risk_summary', '(无)')}")
+            elif entry_type == "supervisor_judgment":
+                decision = entry.get("decision", {})
+                lines.append(
+                    f"[第{rnd}轮] 主持人评估：{decision.get('round_summary', '(无)')}"
+                )
+            elif entry_type == "challenge_response":
+                speaker = entry.get("speaker", "?")
+                challenge = entry.get("challenge", "")
+                output = entry.get("output", {})
+                thesis = output.get("thesis") or output.get("risk_summary", "(无)")
+                lines.append(f"[第{rnd}轮] {speaker} 回应质询")
+                if challenge:
+                    lines.append(f"  质询：{challenge[:150]}")
+                lines.append(f"  回应：{thesis[:200]}")
+        return "\n".join(lines)

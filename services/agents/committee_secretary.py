@@ -19,6 +19,7 @@ class CommitteeSecretary:
         bull_case: dict,
         bear_case: dict,
         risk_review: dict,
+        debate_history: list | None = None,
     ) -> dict:
         system_prompt = (
             "你是一个A股/ETF私募投委会的**投委会秘书**。\n"
@@ -40,6 +41,13 @@ class CommitteeSecretary:
             "- 买卖建议允许，但不能涉及自动下单。\n"
             "- 只输出合法 JSON，不要输出 Markdown、解释文字或任何其他内容。\n"
         )
+
+        if debate_history:
+            system_prompt += (
+                "\n"
+                "本轮包含多轮质询辩论，你应该参考完整辩论历程（debate_history）"
+                "来理解各方的最终立场。特别注意最后几轮中各方是否改变了立场或提出了新论据。\n"
+            )
 
         def _format_case(label: str, case: dict) -> str:
             return json.dumps(case, ensure_ascii=False, indent=2)
@@ -66,7 +74,17 @@ class CommitteeSecretary:
             "风险官意见 (risk_review)\n"
             "==========================\n"
             + _format_case("risk_review", risk_review)
-            + "\n\n"
+            + "\n"
+        )
+
+        if debate_history:
+            user_prompt += (
+                "\n"
+                + self._format_debate_history(debate_history)
+                + "\n\n"
+            )
+
+        user_prompt += (
             '请严格按照下面 JSON 结构输出（不要附加其他字段说明）：\n'
             "\n"
             "{\n"
@@ -88,3 +106,34 @@ class CommitteeSecretary:
             model=self._model,
             max_tokens=1500,
         )
+
+    @staticmethod
+    def _format_debate_history(history: list) -> str:
+        lines = ["==========================", "辩论历史", "=========================="]
+        for entry in history:
+            entry_type = entry.get("type", "")
+            rnd = entry.get("round", "?")
+            if entry_type == "initial":
+                lines.append(f"[第{rnd}轮] 三方发表初始观点")
+                outputs = entry.get("outputs", {})
+                bull = outputs.get("bull_case", {})
+                bear = outputs.get("bear_case", {})
+                risk = outputs.get("risk_review", {})
+                lines.append(f"  多头：{bull.get('thesis', '(无)')}")
+                lines.append(f"  空头：{bear.get('thesis', '(无)')}")
+                lines.append(f"  风险官：{risk.get('risk_summary', '(无)')}")
+            elif entry_type == "supervisor_judgment":
+                decision = entry.get("decision", {})
+                lines.append(
+                    f"[第{rnd}轮] 主持人评估：{decision.get('round_summary', '(无)')}"
+                )
+            elif entry_type == "challenge_response":
+                speaker = entry.get("speaker", "?")
+                challenge = entry.get("challenge", "")
+                output = entry.get("output", {})
+                thesis = output.get("thesis") or output.get("risk_summary", "(无)")
+                lines.append(f"[第{rnd}轮] {speaker} 回应质询")
+                if challenge:
+                    lines.append(f"  质询：{challenge[:150]}")
+                lines.append(f"  回应：{thesis[:200]}")
+        return "\n".join(lines)

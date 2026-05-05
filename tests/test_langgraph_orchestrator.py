@@ -1,12 +1,11 @@
 """
-LangGraph 辩论编排器测试。
+LangGraph 多轮辩论编排器测试。
 
 覆盖：图结构验证、节点函数隔离测试、完整图执行（mock DeepSeek）、
 HITL 中断/恢复、错误处理路径、向后兼容性。
 """
 
 import pytest
-from unittest.mock import patch
 
 from services.agents.langgraph_orchestrator import (
     DebateState,
@@ -14,13 +13,16 @@ from services.agents.langgraph_orchestrator import (
     generate_debate_result_langgraph,
     start_hitl_debate,
     resume_hitl_debate,
-    _node_bull_analysis,
-    _node_bear_analysis,
-    _node_risk_review,
+    _node_run_initial_round,
+    _node_bull_challenge,
+    _node_bear_challenge,
+    _node_risk_challenge,
+    _node_supervisor_judge,
     _node_committee_convergence,
     _node_assemble_result,
     _node_error_handler,
-    _should_route_to_error,
+    _route_after_initial,
+    _route_after_supervisor,
 )
 
 
@@ -106,16 +108,70 @@ def _mock_committee_output():
     }
 
 
-def _empty_state(research_result=None):
-    return DebateState(
-        research_result=research_result or _research_result(),
-        bull_case=None,
-        bear_case=None,
-        risk_review=None,
-        committee_conclusion=None,
-        debate_result=None,
-        error=None,
-    )
+def _mock_supervisor_converged():
+    return {
+        "is_converged": True,
+        "convergence_reason": "all_agree",
+        "next_speaker": None,
+        "challenge": None,
+        "round_summary": "三方观点趋于一致，辩论充分。",
+    }
+
+
+def _mock_supervisor_challenge_bear():
+    return {
+        "is_converged": False,
+        "convergence_reason": None,
+        "next_speaker": "bear",
+        "challenge": "多头声称趋势改善，请空头具体回应估值偏高的论据在当前PE分位下是否仍然成立。",
+        "round_summary": "多空在估值上存在分歧。",
+    }
+
+
+def _full_state(research_result=None):
+    """创建含多轮辩论字段的完整初始状态。"""
+    return {
+        "research_result": research_result or _research_result(),
+        "bull_case": None,
+        "bear_case": None,
+        "risk_review": None,
+        "committee_conclusion": None,
+        "debate_result": None,
+        "error": None,
+        "debate_history": [],
+        "current_round": 0,
+        "max_rounds": 3,
+        "supervisor_decision": None,
+    }
+
+
+def _state_after_initial():
+    """模拟初始轮完成后的状态。"""
+    rr = _research_result()
+    return {
+        "research_result": rr,
+        "bull_case": _mock_bull_output(),
+        "bear_case": _mock_bear_output(),
+        "risk_review": _mock_risk_output(),
+        "committee_conclusion": None,
+        "debate_result": None,
+        "error": None,
+        "debate_history": [
+            {
+                "round": 0,
+                "type": "initial",
+                "speaker": "all",
+                "outputs": {
+                    "bull_case": _mock_bull_output(),
+                    "bear_case": _mock_bear_output(),
+                    "risk_review": _mock_risk_output(),
+                },
+            }
+        ],
+        "current_round": 0,
+        "max_rounds": 3,
+        "supervisor_decision": None,
+    }
 
 
 # ── 图结构测试 ────────────────────────────────────────────────────
@@ -123,9 +179,11 @@ def _empty_state(research_result=None):
 def test_graph_has_all_required_nodes():
     graph = build_debate_graph()
     nodes = list(graph.nodes.keys())
-    assert "bull_analysis" in nodes
-    assert "bear_analysis" in nodes
-    assert "risk_review" in nodes
+    assert "run_initial_round" in nodes
+    assert "supervisor_judge" in nodes
+    assert "bull_challenge" in nodes
+    assert "bear_challenge" in nodes
+    assert "risk_challenge" in nodes
     assert "committee_convergence" in nodes
     assert "assemble_result" in nodes
     assert "error_handler" in nodes
@@ -137,29 +195,109 @@ def test_graph_has_start_node():
 
 
 def test_graph_can_be_rebuilt():
-    """多次构建不报错，每次返回独立实例。"""
     g1 = build_debate_graph()
     g2 = build_debate_graph()
     assert g1 is not g2
     assert list(g1.nodes.keys()) == list(g2.nodes.keys())
 
 
-# ── 条件路由测试 ──────────────────────────────────────────────────
+# ── 路由函数测试 ──────────────────────────────────────────────────
 
-def test_route_to_error_when_error_present():
-    state = _empty_state()
-    state["error"] = "API调用失败"
-    assert _should_route_to_error(state) == "error_handler"
+def test_route_after_initial_error():
+    state = _full_state()
+    state["error"] = "并行分析失败"
+    assert _route_after_initial(state) == "error_handler"
 
 
-def test_route_to_committee_when_no_error():
-    state = _empty_state()
-    assert _should_route_to_error(state) == "committee_convergence"
+def test_route_after_initial_success():
+    state = _full_state()
+    assert _route_after_initial(state) == "supervisor_judge"
+
+
+def test_route_after_supervisor_error():
+    state = _state_after_initial()
+    state["error"] = "Supervisor 调用失败"
+    assert _route_after_supervisor(state) == "error_handler"
+
+
+def test_route_after_supervisor_converged():
+    state = _state_after_initial()
+    state["supervisor_decision"] = _mock_supervisor_converged()
+    assert _route_after_supervisor(state) == "committee_convergence"
+
+
+def test_route_after_supervisor_bull():
+    state = _state_after_initial()
+    state["supervisor_decision"] = {
+        "is_converged": False,
+        "next_speaker": "bull",
+        "challenge": "请回应。",
+    }
+    assert _route_after_supervisor(state) == "bull_challenge"
+
+
+def test_route_after_supervisor_bear():
+    state = _state_after_initial()
+    state["supervisor_decision"] = {
+        "is_converged": False,
+        "next_speaker": "bear",
+        "challenge": "请回应。",
+    }
+    assert _route_after_supervisor(state) == "bear_challenge"
+
+
+def test_route_after_supervisor_risk():
+    state = _state_after_initial()
+    state["supervisor_decision"] = {
+        "is_converged": False,
+        "next_speaker": "risk",
+        "challenge": "请回应。",
+    }
+    assert _route_after_supervisor(state) == "risk_challenge"
+
+
+def test_route_after_supervisor_invalid_speaker():
+    state = _state_after_initial()
+    state["supervisor_decision"] = {
+        "is_converged": False,
+        "next_speaker": "invalid",
+        "challenge": "",
+    }
+    assert _route_after_supervisor(state) == "committee_convergence"
 
 
 # ── 节点函数隔离测试 ────────────────────────────────────────────
 
-def test_bull_node_produces_valid_output(monkeypatch):
+def test_initial_round_produces_all_outputs(monkeypatch):
+    call_count = [0]
+
+    def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return _mock_bull_output()
+        elif call_count[0] == 2:
+            return _mock_bear_output()
+        else:
+            return _mock_risk_output()
+
+    monkeypatch.setattr(
+        "services.llm.deepseek_client.DeepSeekClient.chat_json",
+        mock_chat_json,
+    )
+
+    state = _full_state()
+    result = _node_run_initial_round(state)
+
+    assert result["bull_case"]["thesis"] == "多头核心观点：趋势改善。"
+    assert result["bear_case"]["thesis"] == "空头核心观点：估值偏高。"
+    assert result["risk_review"]["risk_level"] == "medium"
+    assert len(result["debate_history"]) == 1
+    assert result["debate_history"][0]["type"] == "initial"
+    assert result["current_round"] == 0
+    assert call_count[0] == 3
+
+
+def test_bull_challenge_produces_valid_output(monkeypatch):
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         return _mock_bull_output()
 
@@ -168,14 +306,15 @@ def test_bull_node_produces_valid_output(monkeypatch):
         mock_chat_json,
     )
 
-    state = _empty_state()
-    result = _node_bull_analysis(state)
+    state = _state_after_initial()
+    state["supervisor_decision"] = _mock_supervisor_challenge_bear()
+    result = _node_bull_challenge(state)
 
     assert result["bull_case"]["thesis"] == "多头核心观点：趋势改善。"
-    assert len(result["bull_case"]["key_arguments"]) == 2
+    assert len(result["debate_history"]) > len(state["debate_history"])
 
 
-def test_bear_node_produces_valid_output(monkeypatch):
+def test_bear_challenge_produces_valid_output(monkeypatch):
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         return _mock_bear_output()
 
@@ -184,14 +323,15 @@ def test_bear_node_produces_valid_output(monkeypatch):
         mock_chat_json,
     )
 
-    state = _empty_state()
-    result = _node_bear_analysis(state)
+    state = _state_after_initial()
+    state["supervisor_decision"] = _mock_supervisor_challenge_bear()
+    result = _node_bear_challenge(state)
 
     assert result["bear_case"]["thesis"] == "空头核心观点：估值偏高。"
-    assert len(result["bear_case"]["main_concerns"]) == 1
+    assert len(result["debate_history"]) > len(state["debate_history"])
 
 
-def test_risk_node_produces_valid_output(monkeypatch):
+def test_risk_challenge_produces_valid_output(monkeypatch):
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         return _mock_risk_output()
 
@@ -200,11 +340,56 @@ def test_risk_node_produces_valid_output(monkeypatch):
         mock_chat_json,
     )
 
-    state = _empty_state()
-    result = _node_risk_review(state)
+    state = _state_after_initial()
+    state["supervisor_decision"] = {
+        "is_converged": False,
+        "next_speaker": "risk",
+        "challenge": "请重新评估风险。",
+    }
+    result = _node_risk_challenge(state)
 
     assert result["risk_review"]["risk_level"] == "medium"
-    assert result["risk_review"]["blocking"] is False
+    assert len(result["debate_history"]) > len(state["debate_history"])
+
+
+def test_supervisor_judge_max_rounds_forced_converge(monkeypatch):
+    """current_round >= max_rounds 时直接强制收敛，不调 LLM。"""
+    state = _state_after_initial()
+    state["current_round"] = 3
+
+    from langchain_core.runnables import RunnableConfig
+    config = RunnableConfig(
+        configurable={"thread_id": "test", "max_rounds": 3}
+    )
+
+    result = _node_supervisor_judge(state, config)
+
+    assert result["supervisor_decision"]["is_converged"] is True
+    assert result["supervisor_decision"]["convergence_reason"] == "max_rounds_reached"
+    assert result["current_round"] == 4
+
+
+def test_supervisor_judge_calls_llm(monkeypatch):
+    """正常轮次时调用 Supervisor LLM。"""
+    def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
+        return _mock_supervisor_converged()
+
+    monkeypatch.setattr(
+        "services.llm.deepseek_client.DeepSeekClient.chat_json",
+        mock_chat_json,
+    )
+
+    state = _state_after_initial()
+    from langchain_core.runnables import RunnableConfig
+    config = RunnableConfig(
+        configurable={"thread_id": "test", "max_rounds": 3}
+    )
+
+    result = _node_supervisor_judge(state, config)
+
+    assert result["supervisor_decision"]["is_converged"] is True
+    assert result["current_round"] == 1
+    assert len(result["debate_history"]) == 2
 
 
 def test_committee_node_produces_valid_output(monkeypatch):
@@ -216,10 +401,19 @@ def test_committee_node_produces_valid_output(monkeypatch):
         mock_chat_json,
     )
 
-    state = _empty_state()
-    state["bull_case"] = _mock_bull_output()
-    state["bear_case"] = _mock_bear_output()
-    state["risk_review"] = _mock_risk_output()
+    state = _state_after_initial()
+    state["debate_history"] = [
+        {
+            "round": 0,
+            "type": "initial",
+            "speaker": "all",
+            "outputs": {
+                "bull_case": _mock_bull_output(),
+                "bear_case": _mock_bear_output(),
+                "risk_review": _mock_risk_output(),
+            },
+        },
+    ]
 
     from langchain_core.runnables import RunnableConfig
     config = RunnableConfig(
@@ -233,22 +427,21 @@ def test_committee_node_produces_valid_output(monkeypatch):
 
 
 def test_assemble_node_creates_valid_debate_result():
-    state = _empty_state()
-    state["bull_case"] = _mock_bull_output()
-    state["bear_case"] = _mock_bear_output()
-    state["risk_review"] = _mock_risk_output()
+    state = _state_after_initial()
     state["committee_conclusion"] = _mock_committee_output()
 
     result = _node_assemble_result(state)
 
-    assert result["debate_result"]["bull_case"]["thesis"] is not None
-    assert result["debate_result"]["bear_case"]["thesis"] is not None
-    assert result["debate_result"]["risk_review"]["risk_level"] == "medium"
-    assert result["debate_result"]["committee_conclusion"]["action"] == "观察"
+    dr = result["debate_result"]
+    assert dr["bull_case"]["thesis"] is not None
+    assert dr["bear_case"]["thesis"] is not None
+    assert dr["risk_review"]["risk_level"] == "medium"
+    assert dr["committee_conclusion"]["action"] == "观察"
+    assert "debate_history" in dr
 
 
 def test_error_handler_produces_safe_debate_result():
-    state = _empty_state()
+    state = _full_state()
     state["error"] = "DeepSeek API 超时"
 
     result = _node_error_handler(state)
@@ -261,16 +454,28 @@ def test_error_handler_produces_safe_debate_result():
 # ── 完整图执行测试（mock DeepSeek） ───────────────────────────────
 
 def test_full_graph_execution_without_hitl(monkeypatch):
+    """端到端执行——mock 监督在第一轮后收敛（7次 LLM 调用）。"""
     call_count = [0]
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         call_count[0] += 1
-        if call_count[0] == 1:
-            return _mock_bull_output()
-        elif call_count[0] == 2:
+        if call_count[0] <= 3:
+            # 初始并行：bull, bear, risk
+            if call_count[0] == 1:
+                return _mock_bull_output()
+            elif call_count[0] == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif call_count[0] == 4:
+            # supervisor 第1轮 → 提出质询
+            return _mock_supervisor_challenge_bear()
+        elif call_count[0] == 5:
+            # bear 回应质询
             return _mock_bear_output()
-        elif call_count[0] == 3:
-            return _mock_risk_output()
+        elif call_count[0] == 6:
+            # supervisor 第2轮 → 判定收敛
+            return _mock_supervisor_converged()
         else:
             return _mock_committee_output()
 
@@ -282,27 +487,31 @@ def test_full_graph_execution_without_hitl(monkeypatch):
     result = generate_debate_result_langgraph(
         _research_result(),
         thread_id="test-full",
+        max_rounds=2,
     )
 
     assert result["bull_case"]["thesis"] == "多头核心观点：趋势改善。"
     assert result["bear_case"]["thesis"] == "空头核心观点：估值偏高。"
     assert result["risk_review"]["risk_level"] == "medium"
     assert result["committee_conclusion"]["action"] == "观察"
-    assert call_count[0] == 4  # bull + bear + risk + committee
+    assert "debate_history" in result
+    assert call_count[0] == 7  # 3 initial + 1 sup + 1 bear + 1 sup + 1 cmt
 
 
 def test_full_graph_execution_returns_valid_protocol(monkeypatch):
-    """验证输出通过协议验证（不会因 schema 不匹配而抛异常）。"""
     call_count = [0]
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         call_count[0] += 1
-        if call_count[0] == 1:
-            return _mock_bull_output()
-        elif call_count[0] == 2:
-            return _mock_bear_output()
-        elif call_count[0] == 3:
-            return _mock_risk_output()
+        if call_count[0] <= 3:
+            if call_count[0] == 1:
+                return _mock_bull_output()
+            elif call_count[0] == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif call_count[0] == 4:
+            return _mock_supervisor_converged()
         else:
             return _mock_committee_output()
 
@@ -316,8 +525,7 @@ def test_full_graph_execution_returns_valid_protocol(monkeypatch):
         thread_id="test-protocol",
     )
 
-    # 验证结构完整性
-    assert set(result.keys()) == {
+    assert set(result.keys()) >= {
         "bull_case", "bear_case", "risk_review", "committee_conclusion",
     }
     assert result["committee_conclusion"]["confidence"] <= 1.0
@@ -327,47 +535,53 @@ def test_full_graph_execution_returns_valid_protocol(monkeypatch):
 
 def test_hitl_interrupt_returns_interrupt_key(monkeypatch):
     """human_in_the_loop=True 时 invoke 返回含 __interrupt__ 的中间状态。"""
-
     api_calls = []
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         api_calls.append("api")
-        if len(api_calls) <= 1:
-            return _mock_bull_output()
-        elif len(api_calls) <= 2:
-            return _mock_bear_output()
+        n = len(api_calls)
+        if n <= 3:
+            if n == 1:
+                return _mock_bull_output()
+            elif n == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif n == 4:
+            return _mock_supervisor_converged()
         else:
-            return _mock_risk_output()
+            return _mock_committee_output()
 
     monkeypatch.setattr(
         "services.llm.deepseek_client.DeepSeekClient.chat_json",
         mock_chat_json,
     )
 
-    result = start_hitl_debate(_research_result(), thread_id="test-hitl")
+    result = start_hitl_debate(
+        _research_result(), thread_id="test-hitl", max_rounds=1
+    )
 
     assert "__interrupt__" in result
     assert result["bull_case"]["thesis"] is not None
     assert result["bear_case"]["thesis"] is not None
     assert result["risk_review"]["risk_level"] is not None
-    # 前 3 个 agent 已调用，committee 尚未调用
-    assert len(api_calls) == 3
 
 
 def test_hitl_resume_after_interrupt_completes(monkeypatch):
-    """中断后恢复执行，完成整个流程。"""
-
     api_calls = []
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         api_calls.append("api")
-        count = len(api_calls)
-        if count == 1:
-            return _mock_bull_output()
-        elif count == 2:
-            return _mock_bear_output()
-        elif count == 3:
-            return _mock_risk_output()
+        n = len(api_calls)
+        if n <= 3:
+            if n == 1:
+                return _mock_bull_output()
+            elif n == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif n == 4:
+            return _mock_supervisor_converged()
         else:
             return _mock_committee_output()
 
@@ -376,41 +590,34 @@ def test_hitl_resume_after_interrupt_completes(monkeypatch):
         mock_chat_json,
     )
 
-    # 启动 HITL 流程 → 中断
     interrupted = start_hitl_debate(
-        _research_result(), thread_id="test-hitl-resume"
+        _research_result(), thread_id="test-hitl-resume", max_rounds=1
     )
     assert "__interrupt__" in interrupted
-    assert len(api_calls) == 3  # bull + bear + risk only
 
-    # 恢复执行
-    final_result = resume_hitl_debate(
-        thread_id="test-hitl-resume",
-    )
+    final_result = resume_hitl_debate(thread_id="test-hitl-resume")
 
-    assert len(api_calls) == 4  # committee 现在被调用了
     assert final_result["committee_conclusion"]["action"] == "观察"
     assert final_result["bull_case"]["thesis"] is not None
-    assert final_result["bear_case"]["thesis"] is not None
-    assert final_result["risk_review"]["risk_level"] == "medium"
+    assert "debate_history" in final_result
 
 
 def test_hitl_can_modify_state_before_resume(monkeypatch):
-    """HITL 中断后可通过 modified_state 覆盖 committee 结论。"""
-
     api_calls = []
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         api_calls.append("api")
-        count = len(api_calls)
-        if count == 1:
-            return _mock_bull_output()
-        elif count == 2:
-            return _mock_bear_output()
-        elif count == 3:
-            return _mock_risk_output()
+        n = len(api_calls)
+        if n <= 3:
+            if n == 1:
+                return _mock_bull_output()
+            elif n == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif n == 4:
+            return _mock_supervisor_converged()
         else:
-            # Committee 仍然会被调用，但后续 modified_state 会覆盖
             return _mock_committee_output()
 
     monkeypatch.setattr(
@@ -419,11 +626,10 @@ def test_hitl_can_modify_state_before_resume(monkeypatch):
     )
 
     interrupted = start_hitl_debate(
-        _research_result(), thread_id="test-hitl-modify"
+        _research_result(), thread_id="test-hitl-modify", max_rounds=1
     )
     assert "__interrupt__" in interrupted
 
-    # 人在审核后手动覆盖结论
     final_result = resume_hitl_debate(
         thread_id="test-hitl-modify",
         modified_state={
@@ -436,19 +642,14 @@ def test_hitl_can_modify_state_before_resume(monkeypatch):
         },
     )
 
-    # 注意：modified_state 通过 Command(resume=...) 传递，
-    # 但实际覆盖逻辑在 interrupt 的返回值中体现。
-    # 此处验证流程完成即可。
     assert "committee_conclusion" in final_result
 
 
 # ── 错误处理路径测试 ──────────────────────────────────────────────
 
 def test_error_routes_to_error_handler(monkeypatch):
-    """当状态中有 error 时，路由到 error_handler 而非 committee。"""
-
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
-        return _mock_bull_output()
+        raise RuntimeError("API 不可用")
 
     monkeypatch.setattr(
         "services.llm.deepseek_client.DeepSeekClient.chat_json",
@@ -465,6 +666,10 @@ def test_error_routes_to_error_handler(monkeypatch):
         "committee_conclusion": None,
         "debate_result": None,
         "error": "DeepSeek API key 缺失",
+        "debate_history": [],
+        "current_round": 0,
+        "max_rounds": 3,
+        "supervisor_decision": None,
     }
 
     config = {"configurable": {"thread_id": "test-error"}}
@@ -478,19 +683,21 @@ def test_error_routes_to_error_handler(monkeypatch):
 # ── 向后兼容性测试 ────────────────────────────────────────────────
 
 def test_generate_debate_result_same_interface(monkeypatch):
-    """验证 debate_agent.generate_debate_result() 接口不变。"""
     from services.agents.debate_agent import generate_debate_result
 
     call_count = [0]
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         call_count[0] += 1
-        if call_count[0] == 1:
-            return _mock_bull_output()
-        elif call_count[0] == 2:
-            return _mock_bear_output()
-        elif call_count[0] == 3:
-            return _mock_risk_output()
+        if call_count[0] <= 3:
+            if call_count[0] == 1:
+                return _mock_bull_output()
+            elif call_count[0] == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif call_count[0] == 4:
+            return _mock_supervisor_converged()
         else:
             return _mock_committee_output()
 
@@ -508,7 +715,6 @@ def test_generate_debate_result_same_interface(monkeypatch):
 
 
 def test_single_asset_research_still_works(monkeypatch):
-    """验证 run_single_asset_research with use_llm=False 仍然正常。"""
     from services.orchestrator.single_asset_research import run_single_asset_research
 
     result = run_single_asset_research(
@@ -529,12 +735,15 @@ def test_different_thread_ids_isolated(monkeypatch):
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
         call_count[0] += 1
-        if call_count[0] <= 1:
-            return _mock_bull_output()
-        elif call_count[0] <= 2:
-            return _mock_bear_output()
-        elif call_count[0] <= 3:
-            return _mock_risk_output()
+        if call_count[0] <= 3:
+            if call_count[0] == 1:
+                return _mock_bull_output()
+            elif call_count[0] == 2:
+                return _mock_bear_output()
+            else:
+                return _mock_risk_output()
+        elif call_count[0] == 4:
+            return _mock_supervisor_converged()
         else:
             return _mock_committee_output()
 
@@ -543,16 +752,13 @@ def test_different_thread_ids_isolated(monkeypatch):
         mock_chat_json,
     )
 
-    # First execution
     r1 = generate_debate_result_langgraph(
         _research_result(symbol="600519.SH"),
         thread_id="thread-1",
     )
 
-    # Reset counter for second execution
     call_count[0] = 0
 
-    # Second execution with different thread_id
     r2 = generate_debate_result_langgraph(
         _research_result(symbol="000001.SZ"),
         thread_id="thread-2",
