@@ -537,3 +537,559 @@ def resume_hitl_debate(
     final_state = graph.invoke(Command(resume=resume_value), config)
 
     return final_state["debate_result"]
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  完整端到端研究 Pipeline 图
+# ═══════════════════════════════════════════════════════════════════
+
+class FullResearchState(TypedDict):
+    """LangGraph 完整研究 pipeline 状态。
+
+    从 symbol 输入到 final_result 输出，覆盖数据加载、评分、辩论、决策保护。
+    """
+    symbol: str
+    data_source: str
+    max_debate_rounds: int
+    use_llm: bool
+
+    # 数据加载阶段
+    asset_data: dict | None
+    data_error: str | None
+
+    # 评分阶段
+    score_result: dict | None
+    partial_result: dict | None
+
+    # 辩论阶段
+    research_result: dict | None
+    bull_case: dict | None
+    bear_case: dict | None
+    risk_review: dict | None
+    committee_conclusion: dict | None
+    debate_result: dict | None
+    debate_history: list[dict]
+    current_round: int
+    supervisor_decision: dict | None
+    debate_error: str | None
+
+    # 决策保护阶段
+    final_result: dict | None
+    error: str | None
+
+
+# ── 全图节点函数 ─────────────────────────────────────────────────
+
+def _full_node_load_research_data(
+    state: FullResearchState, config: RunnableConfig,
+) -> dict:
+    """加载并聚合资产数据."""
+    from services.orchestrator.single_asset_research import _load_asset_data
+
+    symbol = state["symbol"]
+    data_source = state.get("data_source", "mock")
+
+    try:
+        asset_data = _load_asset_data(symbol, data_source)
+    except Exception as exc:
+        return {"data_error": f"数据加载失败（{data_source}）：{exc}"}
+
+    return {
+        "asset_data": asset_data,
+        "data_error": None,
+    }
+
+
+def _full_node_score_asset(state: FullResearchState) -> dict:
+    """六维度量化评分."""
+    from services.research.scoring_engine import score_asset
+
+    asset_data = state["asset_data"]
+    score_result = score_asset(asset_data)
+
+    partial_result = {
+        "symbol": asset_data["symbol"],
+        "name": asset_data["name"],
+        "asset_type": asset_data["asset_type"],
+        "as_of": asset_data["as_of"],
+        "data_source": asset_data.get("data_source", state.get("data_source", "mock")),
+        "data_source_chain": asset_data.get(
+            "data_source_chain",
+            [asset_data.get("data_source", state.get("data_source", "mock"))],
+        ),
+        "data_warnings": asset_data.get("data_warnings", []),
+        "price_data": asset_data.get("price_data", {}),
+        "fundamental_data": asset_data.get("fundamental_data", {}),
+        "valuation_data": asset_data.get("valuation_data", {}),
+        "event_data": asset_data.get("event_data", {}),
+        "basic_info": asset_data.get("basic_info", {}),
+        "source_metadata": asset_data.get("source_metadata", {}),
+        "symbol_info": asset_data.get("symbol_info", {}),
+        "fundamental_analysis": asset_data.get("fundamental_analysis", {}),
+        "etf_data": asset_data.get("etf_data", {}),
+        "data_quality": asset_data.get("data_quality", {}),
+        "evidence_bundle": asset_data.get("evidence_bundle", {}),
+        "provider_run_log": asset_data.get("provider_run_log", []),
+        "score": score_result["total_score"],
+        "rating": score_result["rating"],
+        "action": score_result["action"],
+        "score_breakdown": score_result["score_breakdown"],
+        "bull_case": "基本面质量较高，盈利能力稳定，趋势结构有所改善。",
+        "bear_case": "估值分位不低，短期继续上行需要新的催化因素。",
+        "risk_review": "整体风险中等，适合观察或小仓位分批参与，不建议重仓追高。",
+        "final_opinion": "未来1-3个月谨慎看多，建议回调时分批关注。",
+        "max_position": "5%-8%",
+    }
+
+    return {
+        "score_result": score_result,
+        "partial_result": partial_result,
+        "research_result": partial_result,
+    }
+
+
+def _full_node_run_debate_subgraph(
+    state: FullResearchState, config: RunnableConfig,
+) -> dict:
+    """调用现有 8 节点辩论子图."""
+    partial_result = state["partial_result"]
+    max_rounds = state.get("max_debate_rounds", 3)
+
+    debate_state: DebateState = {
+        "research_result": partial_result,
+        "bull_case": None,
+        "bear_case": None,
+        "risk_review": None,
+        "committee_conclusion": None,
+        "debate_result": None,
+        "error": None,
+        "debate_history": [],
+        "current_round": 0,
+        "max_rounds": max_rounds,
+        "supervisor_decision": None,
+    }
+
+    debate_config: RunnableConfig = {
+        "configurable": {
+            "thread_id": (
+                config.get("configurable", {}).get("thread_id", "full")
+                + "-debate"
+            ),
+            "human_in_the_loop": False,
+            "max_rounds": max_rounds,
+        }
+    }
+
+    try:
+        debate_graph = build_debate_graph()
+        final_ds = debate_graph.invoke(debate_state, debate_config)
+    except Exception as exc:
+        return {"debate_error": f"辩论子图执行失败：{exc}"}
+
+    if final_ds.get("error"):
+        return {"debate_error": final_ds["error"]}
+
+    debate_result = final_ds.get("debate_result", {})
+    committee = debate_result.get("committee_conclusion", {})
+    risk_review_result = debate_result.get("risk_review", {})
+
+    merged = dict(partial_result)
+    merged["debate_result"] = debate_result
+    merged["bull_case"] = debate_result.get("bull_case", {}).get("thesis", merged["bull_case"])
+    merged["bear_case"] = debate_result.get("bear_case", {}).get("thesis", merged["bear_case"])
+    merged["risk_review"] = risk_review_result.get("risk_summary", merged["risk_review"])
+    merged["final_opinion"] = committee.get("final_opinion", merged["final_opinion"])
+    merged["action"] = committee.get("action", merged["action"])
+    merged["max_position"] = risk_review_result.get("max_position", merged["max_position"])
+
+    return {
+        "debate_result": debate_result,
+        "bull_case": final_ds.get("bull_case"),
+        "bear_case": final_ds.get("bear_case"),
+        "risk_review": final_ds.get("risk_review"),
+        "committee_conclusion": final_ds.get("committee_conclusion"),
+        "debate_history": final_ds.get("debate_history", []),
+        "research_result": merged,
+        "debate_error": None,
+    }
+
+
+def _full_node_hitl_review(
+    state: FullResearchState, config: RunnableConfig,
+) -> dict:
+    """全图级 HITL 审核暂停点（辩论完成后、决策保护器执行前）."""
+    hitl = config.get("configurable", {}).get("human_in_the_loop", False)
+    if not hitl:
+        return {}
+
+    partial_result = state.get("partial_result", {})
+    review_package = {
+        "message": (
+            "完整研究 pipeline 已执行到辩论阶段。请审核后继续。"
+        ),
+        "research_summary": {
+            "symbol": state.get("symbol"),
+            "score": partial_result.get("score"),
+            "rating": partial_result.get("rating"),
+        },
+        "bull_case": state.get("bull_case"),
+        "bear_case": state.get("bear_case"),
+        "risk_review": state.get("risk_review"),
+        "committee_conclusion": state.get("committee_conclusion"),
+        "debate_history": state.get("debate_history"),
+    }
+    interrupt(review_package)
+    return {}
+
+
+def _full_node_apply_decision_guard(state: FullResearchState) -> dict:
+    """应用决策保护器，约束最终建议."""
+    from services.research.decision_guard import apply_decision_guard
+
+    partial_result = dict(state["partial_result"])
+    debate_result = state.get("debate_result")
+
+    if debate_result:
+        committee = debate_result.get("committee_conclusion", {})
+        risk_review = debate_result.get("risk_review", {})
+        partial_result["debate_result"] = debate_result
+        partial_result["bull_case"] = debate_result.get("bull_case", {}).get(
+            "thesis", partial_result.get("bull_case", "")
+        )
+        partial_result["bear_case"] = debate_result.get("bear_case", {}).get(
+            "thesis", partial_result.get("bear_case", "")
+        )
+        partial_result["risk_review"] = risk_review.get(
+            "risk_summary", partial_result.get("risk_review", "")
+        )
+        partial_result["final_opinion"] = committee.get(
+            "final_opinion", partial_result.get("final_opinion", "")
+        )
+        partial_result["action"] = committee.get(
+            "action", partial_result.get("action", "")
+        )
+        partial_result["max_position"] = risk_review.get(
+            "max_position", partial_result.get("max_position", "")
+        )
+
+    final_result = apply_decision_guard(partial_result)
+    return {"final_result": final_result}
+
+
+def _full_node_validate_and_assemble(state: FullResearchState) -> dict:
+    """协议验证并标记完成."""
+    validate_protocol("final_decision", state["final_result"])
+    return {}
+
+
+def _full_node_handle_data_error(state: FullResearchState) -> dict:
+    """数据加载失败时降级为 mock placeholder."""
+    from services.data.mock_provider import get_mock_asset_data
+    from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
+    from services.research.scoring_engine import score_asset
+
+    asset_data = ResearchDataAggregator().enrich(
+        get_mock_asset_data(state["symbol"])
+    )
+    asset_data["data_warnings"] = asset_data.get("data_warnings", []) + [
+        f"数据加载失败已降级为 mock placeholder：{state.get('data_error', '未知错误')}"
+    ]
+
+    score_result = score_asset(asset_data)
+
+    partial_result = {
+        "symbol": asset_data["symbol"],
+        "name": asset_data["name"],
+        "asset_type": asset_data["asset_type"],
+        "as_of": asset_data["as_of"],
+        "data_source": "mock",
+        "data_source_chain": ["mock_placeholder"],
+        "data_warnings": asset_data.get("data_warnings", []),
+        "price_data": asset_data.get("price_data", {}),
+        "fundamental_data": asset_data.get("fundamental_data", {}),
+        "valuation_data": asset_data.get("valuation_data", {}),
+        "event_data": asset_data.get("event_data", {}),
+        "basic_info": asset_data.get("basic_info", {}),
+        "source_metadata": asset_data.get("source_metadata", {}),
+        "symbol_info": asset_data.get("symbol_info", {}),
+        "fundamental_analysis": asset_data.get("fundamental_analysis", {}),
+        "etf_data": asset_data.get("etf_data", {}),
+        "data_quality": asset_data.get("data_quality", {}),
+        "evidence_bundle": asset_data.get("evidence_bundle", {}),
+        "provider_run_log": asset_data.get("provider_run_log", []),
+        "score": score_result["total_score"],
+        "rating": score_result["rating"],
+        "action": "回避",
+        "score_breakdown": score_result["score_breakdown"],
+        "bull_case": "数据异常，无法生成多头观点。",
+        "bear_case": "数据异常，无法生成空头观点。",
+        "risk_review": "数据异常，风险无法评估。",
+        "final_opinion": f"数据加载失败（{state.get('data_error', '未知错误')}），建议回避。",
+        "max_position": "0%",
+    }
+
+    final_result = apply_decision_guard(partial_result)
+    final_result["debate_result"] = {
+        "bull_case": {"thesis": "数据异常"},
+        "bear_case": {"thesis": "数据异常"},
+        "risk_review": {"risk_level": "high", "blocking": True, "risk_summary": "数据异常"},
+        "committee_conclusion": {
+            "stance": "回避", "action": "回避", "confidence": 0.0,
+            "final_opinion": f"数据加载失败：{state.get('data_error', '未知错误')}",
+        },
+        "debate_history": [],
+    }
+
+    return {
+        "asset_data": asset_data,
+        "score_result": score_result,
+        "partial_result": partial_result,
+        "debate_history": [],
+        "research_result": partial_result,
+        "final_result": final_result,
+        "data_error": None,
+    }
+
+
+def _full_node_handle_debate_error(state: FullResearchState) -> dict:
+    """辩论失败时降级为 placeholder 辩论结果."""
+    partial_result = dict(state["partial_result"])
+
+    partial_result["debate_result"] = {
+        "bull_case": {"thesis": f"辩论异常：{state.get('debate_error', '未知错误')}"},
+        "bear_case": {"thesis": "辩论异常"},
+        "risk_review": {"risk_level": "high", "blocking": True, "risk_summary": "辩论异常"},
+        "committee_conclusion": {
+            "stance": "回避", "action": partial_result.get("action", "回避"),
+            "confidence": 0.0,
+            "final_opinion": f"辩论流程异常：{state.get('debate_error', '未知错误')}",
+        },
+        "debate_history": state.get("debate_history", []),
+    }
+
+    final_result = apply_decision_guard(partial_result)
+    return {
+        "final_result": final_result,
+        "debate_error": None,
+    }
+
+
+# ── 全图路由函数 ───────────────────────────────────────────────
+
+def _full_route_after_load(state: FullResearchState) -> str:
+    if state.get("data_error"):
+        return "handle_data_error"
+    return "score_asset"
+
+
+def _full_route_after_debate(state: FullResearchState) -> str:
+    if state.get("debate_error"):
+        return "handle_debate_error"
+    return "hitl_review"
+
+
+# ── 全图构建 ───────────────────────────────────────────────────
+
+def build_full_research_graph() -> CompiledStateGraph:
+    """构建完整端到端研究 pipeline 图。
+
+    节点链：
+      START → load_research_data → score_asset → run_debate_subgraph
+            → hitl_review → apply_decision_guard → validate_and_assemble → END
+
+    错误路径：
+      load_research_data 失败 → handle_data_error → validate_and_assemble → END
+      run_debate_subgraph 失败 → handle_debate_error → validate_and_assemble → END
+    """
+    builder = StateGraph(FullResearchState)
+
+    builder.add_node("load_research_data", _full_node_load_research_data)
+    builder.add_node("score_asset", _full_node_score_asset)
+    builder.add_node("run_debate_subgraph", _full_node_run_debate_subgraph)
+    builder.add_node("hitl_review", _full_node_hitl_review)
+    builder.add_node("apply_decision_guard", _full_node_apply_decision_guard)
+    builder.add_node("validate_and_assemble", _full_node_validate_and_assemble)
+    builder.add_node("handle_data_error", _full_node_handle_data_error)
+    builder.add_node("handle_debate_error", _full_node_handle_debate_error)
+
+    builder.add_edge(START, "load_research_data")
+
+    builder.add_conditional_edges(
+        "load_research_data",
+        _full_route_after_load,
+        {
+            "score_asset": "score_asset",
+            "handle_data_error": "handle_data_error",
+        },
+    )
+
+    builder.add_edge("score_asset", "run_debate_subgraph")
+
+    builder.add_conditional_edges(
+        "run_debate_subgraph",
+        _full_route_after_debate,
+        {
+            "hitl_review": "hitl_review",
+            "handle_debate_error": "handle_debate_error",
+        },
+    )
+
+    builder.add_edge("hitl_review", "apply_decision_guard")
+    builder.add_edge("apply_decision_guard", "validate_and_assemble")
+    builder.add_edge("validate_and_assemble", END)
+
+    builder.add_edge("handle_data_error", "validate_and_assemble")
+    builder.add_edge("handle_debate_error", "validate_and_assemble")
+
+    return builder.compile(checkpointer=_shared_checkpointer)
+
+
+# ── 全图公开 API ───────────────────────────────────────────────
+
+def run_full_research_graph(
+    symbol: str,
+    *,
+    data_source: str = "mock",
+    use_llm: bool = True,
+    max_debate_rounds: int = 3,
+    thread_id: str | None = None,
+) -> dict:
+    """端到端运行完整研究 pipeline 图（无中断模式）。
+
+    Args:
+        symbol: 股票/ETF 代码。
+        data_source: 数据源（qmt/akshare/mock）。
+        use_llm: 是否启用 LLM 辩论。
+        max_debate_rounds: 最大辩论轮次。
+        thread_id: 检查点线程标识。
+
+    Returns:
+        完整的 final_result dict（与 run_single_asset_research 同构）。
+    """
+    graph = build_full_research_graph()
+
+    initial_state: FullResearchState = {
+        "symbol": symbol,
+        "data_source": data_source,
+        "max_debate_rounds": max_debate_rounds,
+        "use_llm": use_llm,
+        "asset_data": None,
+        "data_error": None,
+        "score_result": None,
+        "partial_result": None,
+        "research_result": None,
+        "bull_case": None,
+        "bear_case": None,
+        "risk_review": None,
+        "committee_conclusion": None,
+        "debate_result": None,
+        "debate_history": [],
+        "current_round": 0,
+        "supervisor_decision": None,
+        "debate_error": None,
+        "final_result": None,
+        "error": None,
+    }
+
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": thread_id or f"full-{symbol}",
+            "human_in_the_loop": False,
+        }
+    }
+
+    final_state = graph.invoke(initial_state, config)
+    return final_state["final_result"]
+
+
+def run_full_research_graph_hitl(
+    symbol: str,
+    *,
+    data_source: str = "mock",
+    use_llm: bool = True,
+    max_debate_rounds: int = 3,
+    thread_id: str | None = None,
+) -> dict:
+    """端到端运行完整研究 pipeline 图到 HITL 中断点。
+
+    在 run_debate_subgraph 完成后、apply_decision_guard 前暂停。
+
+    Returns:
+        {
+            "partial_result": dict,
+            "hitl_state": dict,
+            "thread_id": str,
+        }
+    """
+    graph = build_full_research_graph()
+
+    initial_state: FullResearchState = {
+        "symbol": symbol,
+        "data_source": data_source,
+        "max_debate_rounds": max_debate_rounds,
+        "use_llm": use_llm,
+        "asset_data": None,
+        "data_error": None,
+        "score_result": None,
+        "partial_result": None,
+        "research_result": None,
+        "bull_case": None,
+        "bear_case": None,
+        "risk_review": None,
+        "committee_conclusion": None,
+        "debate_result": None,
+        "debate_history": [],
+        "current_round": 0,
+        "supervisor_decision": None,
+        "debate_error": None,
+        "final_result": None,
+        "error": None,
+    }
+
+    tid = thread_id or f"full-hitl-{symbol}"
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": tid,
+            "human_in_the_loop": True,
+        }
+    }
+
+    hitl_state = graph.invoke(initial_state, config)
+
+    if "__interrupt__" not in hitl_state:
+        raise RuntimeError(
+            "HITL 中断未触发，流程可能已完成（这可能表示配置有误）。"
+        )
+
+    return {
+        "partial_result": hitl_state.get("partial_result", {}),
+        "hitl_state": hitl_state,
+        "thread_id": tid,
+    }
+
+
+def resume_full_research_graph(
+    thread_id: str,
+    modified_state: dict | None = None,
+) -> dict:
+    """从全图 HITL 中断恢复，完成剩余节点。
+
+    Args:
+        thread_id: 与 run_full_research_graph_hitl 相同的 thread_id。
+        modified_state: 可选的人工修改内容。
+
+    Returns:
+        完整的 final_result dict。
+    """
+    graph = build_full_research_graph()
+
+    config: RunnableConfig = {
+        "configurable": {
+            "thread_id": thread_id,
+            "human_in_the_loop": True,
+        }
+    }
+
+    resume_value = modified_state or {"approved": True}
+    final_state = graph.invoke(Command(resume=resume_value), config)
+    return final_state["final_result"]

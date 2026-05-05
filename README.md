@@ -1,6 +1,6 @@
 # Dandelions Investment Agent
 
-投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 多轮辩论编排——LLM 驱动的 Supervisor 调度 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 五角色辩论（支持 Agent 间质询循环 + 三标准收敛），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 human-in-the-loop 人工审核。
+投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）。
 
 ## 当前边界
 
@@ -8,7 +8,7 @@
 - fallback 数据源：AKShare，只在 QMT 不可用或调试时使用。
 - 离线测试数据源：mock。
 - LLM：DeepSeek OpenAI-compatible API（deepseek-v4-flash / deepseek-v4-pro）。
-- 编排：LangGraph StateGraph（8 节点多轮辩论工作流 + Supervisor 动态调度 + 循环边 + HITL 中断）。
+- 编排：LangGraph 双层图 —— 辩论子图（8 节点多轮辩论 + Supervisor + HITL）+ 完整 pipeline 图（6 节点端到端：数据→评分→辩论→HITL→决策保护→验证）。
 - 看板：Streamlit。
 - 报告：JSON → Markdown → HTML → Playwright PDF。
 - 当前不会自动下单，也不会调用 QMT 交易接口。
@@ -24,11 +24,11 @@ services/
     committee_secretary.py   CommitteeSecretary 类 — 投委会收敛（含辩论历史）
     supervisor.py            Supervisor 类 — LLM 辩论主持人
     debate_agent.py          编排入口（委托 LangGraph）
-    langgraph_orchestrator.py 多轮辩论工作流 + HITL API
+    langgraph_orchestrator.py 双层图（辩论子图 + 完整 pipeline 图）+ HITL API
   data/                      数据层（3 源 + 聚合器 + 标准化 + 缓存）
   research/                  研究引擎（评分 / 决策保护 / 基本面 / 估值 / 事件）
   llm/                       DeepSeek 客户端
-  orchestrator/              单票研究主流程
+  orchestrator/              单票研究主流程（含 HITL 启动/恢复）
   report/                    报告生成（JSON / Markdown / HTML / PDF）
   protocols/                 6 JSON Schemas + 验证
 configs/                     评分权重 / 数据源 / 应用配置
@@ -123,6 +123,16 @@ streamlit run apps/dashboard/Home.py
 
 页面左侧选择代码、数据源和是否启用 DeepSeek。报告库在 `apps/dashboard/pages/2_Report_Library.py`。
 
+### 人工审核模式（HITL）
+
+在侧边栏勾选「启用人工审核模式」后，多轮辩论完成后会自动暂停，展示审核面板：
+
+1. **审阅三方输出**：展开查看 Bull/Bear/Risk 最终观点和辩论历程
+2. **人工调整**：可覆盖最终操作建议（买入/分批买入/持有/观察/回避）并附审核备注
+3. **确认或放弃**：「确认审核并生成报告」提交修改后生成完整报告；「放弃审核，自动通过」跳过人工干预
+
+HITL 启动失败时自动回退到非 HITL 模式，不影响正常使用。
+
 ## 测试
 
 ```powershell
@@ -138,7 +148,7 @@ python -m pytest tests/test_multi_round_debate.py -v  # 多轮辩论专用（15 
 python -m pytest tests/test_report_pipeline.py -v     # 端到端流程（11 用例）
 ```
 
-覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、向后兼容性、QMT/AKShare/mock 数据链路、估值/事件标准化。
+覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、向后兼容性、QMT/AKShare/mock 数据链路、估值/事件标准化。HITL Streamlit 集成经手动回归测试确认无误。
 
 ## Agent 架构与 LangGraph 编排
 
@@ -169,6 +179,8 @@ generate_debate_result()                     # 编排入口（向后兼容）
 
 ### Human-in-the-Loop
 
+低层级 API（LangGraph 编排器）：
+
 ```python
 from services.agents.langgraph_orchestrator import start_hitl_debate, resume_hitl_debate
 
@@ -178,11 +190,68 @@ interrupted = start_hitl_debate(research_result, thread_id="task-001", max_round
 
 # 人工审核后恢复（可覆盖结论）
 final = resume_hitl_debate(thread_id="task-001")
-# 或传入 modified_state 覆盖 committee 结论
+# 或传入 modified_state
 final = resume_hitl_debate(thread_id="task-001", modified_state={
-    "committee_conclusion": {"stance": "回避", "action": "回避", ...}
+    "action": "持有",
+    "reviewer_notes": "估值偏高，暂不宜追高",
 })
 ```
+
+高层级 API（集成数据加载 + 评分 + HITL 辩论）：
+
+```python
+from services.orchestrator.single_asset_research import start_hitl_research, resume_hitl_research
+
+# 一键启动：加载数据 → 评分 → HITL 辩论 → 中断
+pkg = start_hitl_research("600519.SH", data_source="mock")
+# → returns {"partial_result": ..., "hitl_state": ..., "thread_id": ...}
+
+# 审核后恢复：完成 debate → decision_guard → 协议验证
+result = resume_hitl_research(
+    pkg["partial_result"],
+    pkg["thread_id"],
+    modified_state={"action": "观察"},
+)
+```
+
+Streamlit 看板中可直接勾选「启用人工审核模式」走完整 GUI 流程。
+
+### LangGraph 完整端到端 Pipeline
+
+除了纯辩论段的 `build_debate_graph()`，项目还提供了覆盖完整研究链路的 `build_full_research_graph()`：
+
+```
+build_full_research_graph()
+  ├── load_research_data        ← QMT/AKShare/Mock + aggregator.enrich
+  ├── score_asset               ← 六维度评分
+  ├── run_debate_subgraph       ← 调用 8 节点辩论子图
+  ├── hitl_review               ← HITL 审核暂停点（可选）
+  ├── apply_decision_guard      ← 决策保护器
+  └── validate_and_assemble     ← 协议验证
+```
+
+错误降级路径：
+- 数据加载失败 → `handle_data_error`（降级为 mock placeholder，action 强制"回避"）
+- 辩论子图失败 → `handle_debate_error`（降级为 placeholder 辩论结果）
+
+```python
+from services.agents.langgraph_orchestrator import (
+    run_full_research_graph,
+    run_full_research_graph_hitl,
+    resume_full_research_graph,
+)
+
+# 端到端（无中断）
+result = run_full_research_graph("600519.SH", data_source="mock", use_llm=False)
+
+# 端到端 + HITL（辩论后暂停）
+pkg = run_full_research_graph_hitl("600519.SH", data_source="mock")
+# → 审核辩论结果...
+result = resume_full_research_graph(pkg["thread_id"],
+    modified_state={"action": "观察"})
+```
+
+也可以通过 `run_single_asset_research(use_graph=True)` 切换。
 
 ### 决策保护器
 

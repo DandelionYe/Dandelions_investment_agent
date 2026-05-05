@@ -1,3 +1,5 @@
+import uuid
+
 from services.data.mock_provider import get_mock_asset_data
 from services.data.akshare_provider import get_akshare_asset_data
 from services.data.qmt_provider import get_qmt_asset_data
@@ -33,31 +35,19 @@ def _load_asset_data(symbol: str, data_source: str) -> dict:
     raise ValueError(f"不支持的数据源：{data_source}")
 
 
-def run_single_asset_research(
-    symbol: str,
-    use_llm: bool = True,
-    data_source: str = "mock",
-) -> dict:
-    """
-    单只股票/ETF研究流程。
-    当前阶段：
-    1. 优先使用 QMT 数据，AKShare 只作为 fallback，mock 用于离线测试
-    2. 本地计算评分
-    3. 可选调用 DeepSeek 生成多头/空头/风险官/投委会结论
-    """
-
-    asset_data = _load_asset_data(symbol, data_source)
-    score_result = score_asset(asset_data)
-
-    result = {
+def _build_partial_result(asset_data: dict, data_source: str, score_result: dict) -> dict:
+    """构建评分阶段的 partial result（不含 debate_result 和 decision_guard）。"""
+    return {
         "symbol": asset_data["symbol"],
         "name": asset_data["name"],
         "asset_type": asset_data["asset_type"],
         "as_of": asset_data["as_of"],
         "data_source": asset_data.get("data_source", data_source),
-        "data_source_chain": asset_data.get("data_source_chain", [asset_data.get("data_source", data_source)]),
+        "data_source_chain": asset_data.get(
+            "data_source_chain",
+            [asset_data.get("data_source", data_source)],
+        ),
         "data_warnings": asset_data.get("data_warnings", []),
-
         "price_data": asset_data.get("price_data", {}),
         "fundamental_data": asset_data.get("fundamental_data", {}),
         "valuation_data": asset_data.get("valuation_data", {}),
@@ -70,18 +60,141 @@ def run_single_asset_research(
         "data_quality": asset_data.get("data_quality", {}),
         "evidence_bundle": asset_data.get("evidence_bundle", {}),
         "provider_run_log": asset_data.get("provider_run_log", []),
-
         "score": score_result["total_score"],
         "rating": score_result["rating"],
         "action": score_result["action"],
         "score_breakdown": score_result["score_breakdown"],
-
         "bull_case": "基本面质量较高，盈利能力稳定，趋势结构有所改善。",
         "bear_case": "估值分位不低，短期继续上行需要新的催化因素。",
         "risk_review": "整体风险中等，适合观察或小仓位分批参与，不建议重仓追高。",
         "final_opinion": "未来1-3个月谨慎看多，建议回调时分批关注。",
-        "max_position": "5%-8%"
+        "max_position": "5%-8%",
     }
+
+
+def start_hitl_research(
+    symbol: str,
+    data_source: str = "mock",
+    max_rounds: int = 3,
+) -> dict:
+    """运行研究到 HITL 中断点，返回中间状态供人工审核。
+
+    执行步骤：
+    1. 加载数据 + 评分 → partial_result
+    2. start_hitl_debate() → 暂停于 committee_convergence 节点
+
+    Returns:
+        {
+            "partial_result": dict,   # 评分 + 数据（不含 debate_result/decision_guard）
+            "hitl_state": dict,       # 中断时的 DebateState
+            "thread_id": str,         # 用于 resume 的线程标识
+        }
+    """
+    from services.agents.langgraph_orchestrator import start_hitl_debate
+
+    asset_data = _load_asset_data(symbol, data_source)
+    score_result = score_asset(asset_data)
+    partial_result = _build_partial_result(asset_data, data_source, score_result)
+
+    thread_id = f"debate-hitl-{symbol}-{uuid.uuid4().hex[:8]}"
+
+    try:
+        hitl_state = start_hitl_debate(
+            partial_result,
+            thread_id=thread_id,
+            max_rounds=max_rounds,
+        )
+    except ImportError:
+        raise
+    except Exception:
+        raise
+
+    return {
+        "partial_result": partial_result,
+        "hitl_state": hitl_state,
+        "thread_id": thread_id,
+    }
+
+
+def resume_hitl_research(
+    partial_result: dict,
+    thread_id: str,
+    modified_state: dict | None = None,
+) -> dict:
+    """从 HITL 中断恢复，完成完整研究 pipeline。
+
+    执行步骤：
+    1. resume_hitl_debate() → 完成 committee_convergence + assemble_result
+    2. 将 debate_result 合并到 result
+    3. apply_decision_guard() + validate_protocol("final_decision")
+
+    Args:
+        partial_result: start_hitl_research 返回的 partial_result
+        thread_id: 与 start_hitl_debate 相同的 thread_id
+        modified_state: 可选的人工修改内容，传入 Command(resume=...)
+
+    Returns:
+        完整 result dict，与 run_single_asset_research 同构
+    """
+    from services.agents.langgraph_orchestrator import resume_hitl_debate
+
+    debate_result = resume_hitl_debate(thread_id, modified_state)
+
+    result = dict(partial_result)
+
+    committee = debate_result.get("committee_conclusion", {})
+    risk_review = debate_result.get("risk_review", {})
+
+    result["debate_result"] = debate_result
+    result["bull_case"] = debate_result.get("bull_case", {}).get(
+        "thesis", result["bull_case"]
+    )
+    result["bear_case"] = debate_result.get("bear_case", {}).get(
+        "thesis", result["bear_case"]
+    )
+    result["risk_review"] = risk_review.get(
+        "risk_summary", result["risk_review"]
+    )
+    result["final_opinion"] = committee.get(
+        "final_opinion", result["final_opinion"]
+    )
+    result["action"] = committee.get("action", result["action"])
+    result["max_position"] = risk_review.get(
+        "max_position", result["max_position"]
+    )
+
+    result = apply_decision_guard(result)
+    validate_protocol("final_decision", result)
+    return result
+
+
+def run_single_asset_research(
+    symbol: str,
+    use_llm: bool = True,
+    data_source: str = "mock",
+    use_graph: bool = False,
+) -> dict:
+    """
+    单只股票/ETF研究流程。
+
+    Args:
+        symbol: 股票/ETF 代码。
+        use_llm: 是否启用 DeepSeek 辩论。
+        data_source: 数据源（qmt/akshare/mock）。
+        use_graph: 是否使用 LangGraph 完整 pipeline 图。默认 False 走顺序路径。
+    """
+
+    if use_graph:
+        from services.agents.langgraph_orchestrator import run_full_research_graph
+        return run_full_research_graph(
+            symbol=symbol,
+            data_source=data_source,
+            use_llm=use_llm,
+        )
+
+    asset_data = _load_asset_data(symbol, data_source)
+    score_result = score_asset(asset_data)
+    result = _build_partial_result(asset_data, data_source, score_result)
 
     if use_llm:
         debate_result = generate_debate_result(result)

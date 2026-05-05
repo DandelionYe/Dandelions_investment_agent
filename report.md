@@ -5,9 +5,9 @@
 
 ## 总体评估
 
-**完成度：约 87%**
+**完成度：约 91%**
 
-项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了四项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）。
+项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了六项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级。
 
 ---
 
@@ -193,6 +193,7 @@
    - ✅ 输入股票/ETF 代码
    - ✅ 选择数据源（QMT/AKShare/Mock）
    - ✅ 启用/禁用 DeepSeek 辩论
+   - ✅ **启用人工审核模式**（新增）：辩论完成后暂停，可查看三方 Agent 输出和辩论历程，支持覆盖操作建议后确认生成报告
    - ✅ 显示投委会结论
    - ✅ 显示行情摘要
    - ✅ 显示量化因子打分卡
@@ -344,7 +345,7 @@
 
 ## 二、未实现功能详细分析
 
-### 2.1 LangGraph 编排 ✅ (90%)
+### 2.1 LangGraph 编排 ✅ (95%)
 
 **设计方案要求：**
 - 使用 LangGraph 编织多头/空头/风险官的多次辩论
@@ -352,14 +353,19 @@
 - 支持人机交互（human-in-the-loop）
 
 **当前实现：**
-- ✅ **LangGraph StateGraph** (`langgraph_orchestrator.py`)：8 节点有状态多轮辩论工作流
+- ✅ **LangGraph 辩论子图** (`build_debate_graph()`)：8 节点有状态多轮辩论工作流
   - `run_initial_round` (Bull/Bear/Risk 并行) → `supervisor_judge` → `{bull|bear|risk}_challenge` → `supervisor_judge` (循环) → `committee_convergence` → `assemble_result`
+- ✅ **LangGraph 完整 pipeline 图** (`build_full_research_graph()`)：6 节点端到端研究图
+  - `load_research_data` → `score_asset` → `run_debate_subgraph` → `hitl_review` → `apply_decision_guard` → `validate_and_assemble`
+  - 含两条错误降级路径：数据失败 → `handle_data_error`，辩论失败 → `handle_debate_error`
+  - 辩论段复用现有 8 节点子图，保持独立可用
 - ✅ **LLM 驱动的 Supervisor** (`supervisor.py`)：每轮评估收敛状态，动态指定下一发言人并生成针对性质询
 - ✅ **条件边**：收敛 → committee_convergence / 未收敛 → 对应 challenge 节点 / error → error_handler
 - ✅ **循环边**：challenge 节点 → supervisor_judge，实现真正的辩论循环
 - ✅ **Human-in-the-loop**：committee_convergence 节点支持 `interrupt()` 中断，审核信息包含 debate_history
   - `start_hitl_debate()` 启动中断 → 返回三方分析结果 + 辩论历史供人工审核
   - `resume_hitl_debate()` 恢复执行（可传入 modified_state 覆盖结论）
+  - 完整图 `run_full_research_graph_hitl()` / `resume_full_research_graph()` 支持全链路 HITL
 - ✅ **向后兼容**：`generate_debate_result()` 默认走 LangGraph（多轮模式），langgraph 不可用时自动回退顺序编排
 - ✅ **检查点持久化**：MemorySaver 支持 HITL 中断/恢复的状态保存
 - ✅ **三轮收敛标准**：all_agree（三方立场一致）/ no_new_arguments（无新实质论据）/ max_rounds_reached（轮次上限）
@@ -684,19 +690,15 @@ Report Service
 **当前实现：**
 ```
 Streamlit 投研看板 / main.py
-  ↓
-ResearchDataAggregator
-  ↓
-研究引擎（基本面/估值/事件/ETF/评分/风险）
-  ↓
-LangGraph Orchestrator（多轮辩论版）← UPDATED
-  ├── run_initial_round (Bull/Bear/Risk 并行)
-  ├── Supervisor (LLM 辩论主持人)
-  ├── bull/bear/risk_challenge (质询回应循环)
-  ├── CommitteeSecretary (DeepSeek) ← HITL
-  └── assemble_result (协议验证 + debate_history)
-  ↓
-Decision Guard + Protocol Validation
+  ├── [HITL 模式] 辩论暂停 → 人工审核面板 → 确认/修改 → 继续
+  │
+LangGraph 完整 Pipeline 图（新增）← NEW
+  ├── load_research_data (QMT/AKShare/Mock + aggregator.enrich)
+  ├── score_asset (6 维度评分)
+  ├── run_debate_subgraph (8 节点辩论子图)
+  ├── hitl_review (HITL 中断点)
+  ├── apply_decision_guard (决策保护器)
+  └── validate_and_assemble (协议验证)
   ↓
 Report Service (JSON → MD → HTML → PDF)
 ```
@@ -947,7 +949,7 @@ LangGraph StateGraph
 | 测试 | 92% | ✅ | 138 用例（6 文件），覆盖多轮辩论/边界/降级/HITL |
 | 命令行工具 | 80% | ✅ | main.py 4 个参数 |
 | 配置管理 | 90% | ✅ | YAML + .env 双层配置 |
-| **LangGraph 编排** | **90%** | ✅ | 8 节点多轮辩论 StateGraph + Supervisor + 循环边 + HITL |
+| **LangGraph 编排** | **95%** | ✅ | 8 节点辩论子图 + 6 节点完整 pipeline 图 + Supervisor + 循环边 + HITL + 错误降级 |
 | FastAPI 后端 | 0% | ❌ | 未开始 |
 | 网页搜索服务 | 0% | ❌ | 未开始 |
 | 观察池 | 0% | ❌ | 未开始 |
@@ -997,11 +999,7 @@ LangGraph StateGraph
 
 ### 7.2 未完成的高级功能 ❌
 
-1. **LangGraph 多轮辩论**
-   - 需增加 Agent 间质询边（Bull ↔ Bear 互相挑战）
-   - 需添加 Supervisor 节点做动态调度
-
-2. **FastAPI 后端服务**
+1. **FastAPI 后端服务**
    - 需要实现任务队列
    - 需要实现 API 接口
    - 需要支持多用户并发
@@ -1073,12 +1071,14 @@ LangGraph StateGraph
 1. **LangGraph 多轮辩论** ✅ **已完成（2026-05-05）**
    - ✅ 在 bull/bear/risk 节点间增加质询边（Supervisor → Agent → Supervisor 循环）
    - ✅ 添加 Supervisor 节点做辩论调度（LLM 驱动，三收敛标准）
-   - ⚠️ 将数据收集和报告生成节点纳入图，形成完整 pipeline（待后续）
+   - ✅ **将数据收集和报告生成节点纳入图**：新建 `build_full_research_graph()` 实现 6 节点完整 pipeline 图（数据加载→评分→辩论子图→HITL 审核→决策保护器→协议验证），支持检查点和错误降级
 
-2. **Streamlit HITL 集成**
-   - 在 Streamlit 看板中添加"人工审核模式"开关
-   - 利用 `start_hitl_debate()` / `resume_hitl_debate()` API
-   - 在多轮辩论完成后展示审核界面（含 debate_history），允许人工调整结论
+2. **Streamlit HITL 集成** ✅ **已完成（2026-05-05）**
+   - ✅ 在 Streamlit 侧边栏增加「启用人工审核模式」开关
+   - ✅ 辩论完成后自动暂停，展示审核面板（三方 Agent 最终输出 + 辩论历程）
+   - ✅ 用户可覆盖最终操作建议并附审核备注
+   - ✅ 利用 `start_hitl_debate()` / `resume_hitl_debate()` API 完成中断/恢复
+   - ✅ HITL 启动失败自动回退到非 HITL 模式
 
 3. **补充集成测试**
    - AKShare 真实网络集成测试
@@ -1284,16 +1284,18 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 
 ## 九、当前状态总结
 
-**完成度：约 87%**（较上次评估 +5%）
+**完成度：约 91%**（较上次评估 +2%）
 
-**近期完成的四项升级：**
+**近期完成的六项升级：**
 
 | # | 内容 | 状态 |
 |---|------|------|
 | 1 | Agent 拆分：单体 Debate Agent → 4 个独立 Agent 类 | ✅ |
 | 2 | 测试补充：11 用例 → 138 用例（6 文件） | ✅ |
-| 3 | LangGraph 编排：5 节点 StateGraph + HITL | ✅ |
+| 3 | LangGraph 编排：8 节点 StateGraph + HITL | ✅ |
 | 4 | 多轮辩论 + Supervisor：LLM 驱动辩论主持人 + 质询循环 | ✅ |
+| 5 | Streamlit HITL 人工审核界面 | ✅ |
+| 6 | LangGraph 完整端到端 pipeline 图（数据→评分→辩论→决策保护） | ✅ |
 
 **核心功能：** ✅ 已完成
 - 完整的单票研究闭环（LangGraph 多轮辩论编排）
@@ -1305,8 +1307,6 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 - 灵活的三源数据层（QMT/AKShare/Mock）
 
 **仍需推进：**
-- Streamlit HITL 人工审核界面
-- 数据收集和报告生成节点纳入 LangGraph 图
 - FastAPI 后端服务
 - 网页搜索、观察池、系统设置页面
 - Qlib 框架、Jinja2 报告模板、项目文档
@@ -1325,8 +1325,9 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 2026 年 5 月 5 日：
 
 - **核心链路健全**：QMT/AKShare/Mock 三源数据 → 6 维度评分 → 5 Agent 多轮 LangGraph 辩论 → 决策保护 → JSON/MD/HTML/PDF 报告
-- **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph StateGraph 多轮编排
+- **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph 双层图架构（辩论子图 + 完整 pipeline 图）
 - **多轮辩论就绪**：LLM 驱动的 Supervisor 动态调度 Agent 间质询，三轮收敛标准确保辩论质量，debate_history 完整记录辩论历程
+- **LangGraph 完整 pipeline 就绪**：`build_full_research_graph()` 实现从 symbol 输入到 final_result 输出的端到端图，含数据加载、评分、辩论子图、HITL 审核、决策保护、协议验证六个节点，以及数据/辩论两条错误降级路径
 - **测试覆盖扎实**：138 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复
-- **HITL 就绪**：`start_hitl_debate()` / `resume_hitl_debate()` API 已可用，审核信息包含完整辩论历史
-- **下一步方向**：Streamlit HITL 人工审核界面、FastAPI 后端、观察池批量研究
+- **HITL 就绪**：`start_hitl_debate()` / `resume_hitl_debate()` API + Streamlit 审核界面均已就绪，完整图支持 `run_full_research_graph_hitl()` / `resume_full_research_graph()` 全链路 HITL
+- **下一步方向**：FastAPI 后端、观察池批量研究、网页搜索服务
