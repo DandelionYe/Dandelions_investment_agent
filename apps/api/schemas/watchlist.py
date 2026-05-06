@@ -8,13 +8,13 @@ from pydantic import BaseModel, Field
 
 class ConditionTriggers(BaseModel):
     price_change_pct: Optional[float] = Field(
-        default=None, description="价格变动百分比阈值（暂未启用）"
+        default=None, description="价格变动百分比阈值（如 5.0 表示涨跌幅超 5% 触发扫描）"
     )
     score_threshold: Optional[float] = Field(
-        default=None, description="评分阈值（暂未启用）"
+        default=None, description="评分阈值（如 80 表示上次评分 ≥80 分时触发扫描）"
     )
     volume_spike_ratio: Optional[float] = Field(
-        default=None, description="成交量异动倍数（暂未启用）"
+        default=None, description="成交量异动倍数（如 3.0 表示成交量超 3 倍均量触发扫描）"
     )
 
 
@@ -27,7 +27,8 @@ class ScheduleConfig(BaseModel):
         description="crontab 表达式（Asia/Shanghai 时区，仅在 mode=cron 时生效）",
     )
     condition_triggers: ConditionTriggers = Field(
-        default_factory=ConditionTriggers, description="条件触发器（暂未启用）"
+        default_factory=ConditionTriggers,
+        description="条件触发器：价格变动/成交量异动/评分阈值，满足任一触发自动扫描",
     )
     pause_until: Optional[str] = Field(
         default=None, description="暂停到指定时间（ISO 8601），null 表示未暂停"

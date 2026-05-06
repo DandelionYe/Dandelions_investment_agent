@@ -25,7 +25,7 @@ if load_dotenv:
 @dataclass(frozen=True)
 class QMTSettings:
     period: str = "1d"
-    history_days: int = 420
+    history_days: int = 1500
     auto_download: bool = True
     dividend_type: str = "front"
     suppress_hello: bool = True
@@ -41,7 +41,7 @@ def _env_bool(name: str, default: bool) -> bool:
 def load_qmt_settings() -> QMTSettings:
     return QMTSettings(
         period=os.getenv("QMT_PERIOD", "1d"),
-        history_days=int(os.getenv("QMT_HISTORY_DAYS", "420")),
+        history_days=int(os.getenv("QMT_HISTORY_DAYS", "1500")),
         auto_download=_env_bool("QMT_AUTO_DOWNLOAD", True),
         dividend_type=os.getenv("QMT_DIVIDEND_TYPE", "front"),
         suppress_hello=_env_bool("QMT_SUPPRESS_HELLO", True),

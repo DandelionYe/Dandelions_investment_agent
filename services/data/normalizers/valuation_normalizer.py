@@ -1,4 +1,56 @@
+from datetime import date, timedelta
 from typing import Any
+
+
+def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
+    """从 AKShare 拉取个股日线收盘价序列（最多 2500 天），作为分位计算的补充数据源。
+
+    QMT 历史收盘价不足 250 样本时调用此函数补充。
+    """
+    try:
+        # 动态导入，避免在非 AKShare 环境（如 QMT-only）导入失败
+        import akshare as ak
+        from services.data.akshare_provider import normalize_symbol, to_prefixed_symbol
+    except ImportError:
+        return []
+
+    code = normalize_symbol(symbol)
+    prefixed = to_prefixed_symbol(symbol)
+    end_date = date.today()
+    start_date = end_date - timedelta(days=2500)
+
+    start = start_date.strftime("%Y%m%d")
+    end = end_date.strftime("%Y%m%d")
+
+    df = None
+    # 东财 → 腾讯 → 新浪 fallback
+    for source, fetch_fn in [
+        ("eastmoney", lambda: ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq")),
+        ("tencent", lambda: ak.stock_zh_a_hist_tx(symbol=prefixed, start_date=start, end_date=end, adjust="qfq")),
+        ("sina", lambda: ak.stock_zh_a_daily(symbol=prefixed, adjust="qfq")),
+    ]:
+        try:
+            result = fetch_fn()
+            if result is not None and not result.empty:
+                df = result
+                break
+        except Exception:
+            continue
+
+    if df is None:
+        return []
+
+    # 兼容中英文列名
+    close_col = None
+    for col in df.columns:
+        if str(col).strip() in ("收盘", "close", "Close"):
+            close_col = col
+            break
+    if close_col is None:
+        return []
+
+    closes = [float(v) for v in df[close_col].tolist() if v is not None and float(v) > 0]
+    return closes
 
 
 def _to_float(value: Any) -> float | None:
@@ -118,6 +170,7 @@ class ValuationNormalizer:
 
         history_close_list = price_data.get("history_close")
         if history_close_list and close:
+            # QMT 主路径：基于 QMT 历史收盘价计算分位
             percentiles = compute_percentiles_from_history(
                 current_pe=pe_ttm,
                 current_pb=pb_mrq,
@@ -125,15 +178,38 @@ class ValuationNormalizer:
                 history_close=history_close_list,
                 current_close=close,
             )
+            # AKShare 补充：如果 QMT 历史数据不足 250 样本，尝试从 AKShare 拉取更长历史
+            if (percentiles.get("pe_percentile") is None
+                    and percentiles.get("pb_percentile") is None
+                    and len(history_close_list) < 250):
+                ak_close = _fetch_akshare_supplement_history_close(
+                    asset_data.get("symbol", "")
+                )
+                if ak_close and len(ak_close) > len(history_close_list):
+                    percentiles = compute_percentiles_from_history(
+                        current_pe=pe_ttm,
+                        current_pb=pb_mrq,
+                        current_ps=ps_ttm,
+                        history_close=ak_close,
+                        current_close=close,
+                    )
+                    if percentiles.get("pe_percentile") is not None or percentiles.get("pb_percentile") is not None:
+                        result["calculation_method"] = (
+                            result["calculation_method"]
+                            + " + percentile_from_akshare_price_history"
+                        )
+                        result["percentile_n_days"] = len(ak_close)
+
             for key in ("pe_percentile", "pb_percentile", "ps_percentile"):
                 if percentiles.get(key) is not None:
                     result[key] = percentiles[key]
             if percentiles.get("pe_percentile") is not None or percentiles.get("pb_percentile") is not None:
-                result["calculation_method"] = (
-                    result["calculation_method"]
-                    + " + percentile_from_qmt_price_history"
-                )
-                result["percentile_n_days"] = len(history_close_list)
+                if "percentile_from" not in str(result.get("calculation_method", "")):
+                    result["calculation_method"] = (
+                        result["calculation_method"]
+                        + " + percentile_from_qmt_price_history"
+                    )
+                    result["percentile_n_days"] = len(history_close_list)
 
         return result
 

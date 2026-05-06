@@ -200,16 +200,72 @@ def health_check_beat() -> dict:
 
 @celery_app.task(name="beat.watchlist_scheduler_check")
 def watchlist_scheduler_check() -> dict:
-    """高频调度检查：查询所有到期的观察项并派发扫描任务。
+    """高频调度检查：cron 到期检查 + 条件触发器评估。
 
     由 Celery Beat 每 5 分钟触发一次。
-    遍历所有 enabled=1 且 next_scan_at 到期的 items，逐个派发子任务。
+    1. 检查 next_scan_at 到期的 items（cron 模式）
+    2. 检查 condition_triggers 配置的 items（实时行情条件）
+    3. 防重复：同一 item 30 分钟内不重复触发
     """
+    from datetime import datetime, timezone
     store = get_watchlist_store()
+
+    # 1. cron 到期检查
     due_items = store.get_due_items()
+    triggered_ids: set = set()
     for item in due_items:
         scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled")
-    return {"due_count": len(due_items)}
+        triggered_ids.add(str(item["id"]))
+
+    # 2. 条件触发器检查
+    all_enabled = store.get_all_enabled_items()
+    for item in all_enabled:
+        item_id = str(item["id"])
+        if item_id in triggered_ids:
+            continue  # 已被 cron 触发，跳过
+
+        sc = item.get("schedule_config") or {}
+        ct = sc.get("condition_triggers") or {}
+        if not ct or all(v is None for v in ct.values()):
+            continue
+
+        # 防重复：距上次扫描至少 30 分钟
+        last_scan = item.get("last_scan_at")
+        if last_scan:
+            try:
+                last_dt = datetime.fromisoformat(last_scan.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - last_dt).total_seconds() < 1800:
+                    continue
+            except (ValueError, TypeError):
+                pass
+
+        quote = None
+        need_quote = ct.get("price_change_pct") is not None or ct.get("volume_spike_ratio") is not None
+        if need_quote:
+            try:
+                from services.data.qmt_realtime_quote import get_latest_price_data
+                quote = get_latest_price_data(item["symbol"])
+            except Exception:
+                pass
+
+        triggered = False
+        # 价格变动触发
+        if ct.get("price_change_pct") and quote:
+            if abs(quote.get("change_pct", 0)) >= ct["price_change_pct"]:
+                triggered = True
+        # 成交量异动触发
+        if ct.get("volume_spike_ratio") and quote:
+            if quote.get("volume_ratio", 1.0) >= ct["volume_spike_ratio"]:
+                triggered = True
+        # 评分阈值触发（基于上次扫描的评分）
+        if ct.get("score_threshold") and item.get("last_score", 101) >= ct["score_threshold"]:
+            triggered = True
+
+        if triggered:
+            scan_single_watchlist_item.delay(item_id, trigger_type="condition")
+            triggered_ids.add(item_id)
+
+    return {"due_count": len(due_items), "condition_count": len(triggered_ids) - len(due_items)}
 
 
 @celery_app.task(

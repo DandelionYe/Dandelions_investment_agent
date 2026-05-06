@@ -33,10 +33,12 @@ services/
   protocols/                 6 JSON Schemas + 验证
 configs/                     评分权重 / 数据源 / 应用配置
 apps/
-  dashboard/                 Streamlit 看板（Home + 报告库 + 观察池 + 异步进度 + 登录）
+  dashboard/                 Streamlit 看板（Home 引导页 + 单票研究 + 报告库 + 观察池）
+    Home.py                  入口引导页（导航到各子页面）
     pages/
-      2_Report_Library.py   报告库
-      3_观察池.py            观察池管理（文件夹+标签分组 + 批量扫描 + 实时进度）
+      1_Single_Asset_Research.py  单票研究（参数输入 + 生成 + 6 维度渲染）
+      2_Report_Library.py         报告库
+      3_观察池.py                  观察池管理（分组/标签/条件触发器/批量扫描）
     components/
       progress_poller.py    进度轮询组件
       login.py              登录组件（JWT token 管理 + 自动刷新）
@@ -59,7 +61,7 @@ apps/
       manager.py             TaskManager + WatchlistManager
       celery_tasks.py        研究任务 + 观察池扫描 + 8 进度发布点
       store.py               TaskStore + WatchlistStore + UserStore
-tests/                       194 测试用例（9 文件）
+tests/                       223 测试用例（10 文件）
 protocols/                   6 JSON Schemas
 ```
 
@@ -328,7 +330,7 @@ celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2
 ## 测试
 
 ```powershell
-# 全部 194 个测试用例
+# 全部 223 个测试用例
 python -m pytest
 
 # 按模块运行
@@ -341,6 +343,8 @@ python -m pytest tests/test_report_pipeline.py -v     # 端到端流程（11 用
 python -m pytest tests/test_watchlist_store.py -v     # 观察池存储（32 用例）
 python -m pytest tests/test_websocket.py -v           # WebSocket 推送（8 用例）
 python -m pytest tests/test_auth.py -v                # JWT 认证（16 用例）
+python -m pytest tests/test_valuation_percentile.py -v  # 估值分位（13 用例）
+python -m pytest tests/test_condition_triggers.py -v  # 条件触发器（16 用例）
 ```
 
 覆盖范围：决策保护器全部边界/评分引擎边缘值/报告生成降级/LangGraph 多轮辩论与 HITL/观察池 CRUD 与调度/WebSocket 消息格式与降级/JWT 认证与密码哈希/用户 CRUD/QMT-AKShare-mock 数据链路/估值事件标准化。
