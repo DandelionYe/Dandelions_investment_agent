@@ -492,6 +492,13 @@ with st.sidebar:
         help="辩论完成后暂停，允许人工审核和修改结论后再生成报告。仅在启用 DeepSeek 辩论时可用。",
     )
 
+    async_mode = st.checkbox(
+        "异步模式（显示实时进度）",
+        value=True,
+        disabled=hitl_mode and use_llm,
+        help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。HITL 模式暂不支持异步。",
+    )
+
     run_button = st.button("生成研究报告", type="primary")
 
 
@@ -499,7 +506,33 @@ if run_button:
     if not symbol.strip():
         st.error("请输入股票或 ETF 代码。")
     else:
-        if hitl_mode and use_llm:
+        # ── 异步 API 模式 ────────────────────────────────────
+        if async_mode and not (hitl_mode and use_llm):
+            from apps.dashboard.components.progress_poller import (
+                submit_research_task,
+                poll_task_progress,
+                fetch_task_result,
+            )
+
+            submitted = submit_research_task(
+                symbol=symbol.strip(),
+                data_source=data_source,
+                use_llm=use_llm,
+            )
+            if submitted:
+                final_status = poll_task_progress(submitted["task_id"])
+                if final_status.get("status") == "completed":
+                    result = fetch_task_result(submitted["task_id"])
+                    if result:
+                        st.session_state["last_result"] = result
+                        st.session_state["hitl_active"] = False
+                        st.success("研究报告生成成功。")
+                    else:
+                        st.error("获取结果失败，请检查 API 日志。")
+            else:
+                st.warning("异步提交失败，请确认 FastAPI 服务已启动。可以取消勾选「异步模式」使用同步模式。")
+
+        elif hitl_mode and use_llm:
             with st.spinner("正在执行多轮辩论，完成后将请您审核……"):
                 try:
                     hitl_package = start_hitl_research(

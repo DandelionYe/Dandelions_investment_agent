@@ -196,7 +196,12 @@ with st.sidebar:
     if st.button("🔬 扫描启用的全部", use_container_width=True, type="primary"):
         result = _trigger_scan()
         if result:
-            st.success(f"已触发扫描 {result.get('total_items', 0)} 个标的")
+            batch_id = result.get("batch_id")
+            if batch_id and st.session_state["wl_api_ok"]:
+                from apps.dashboard.components.progress_poller import poll_batch_progress
+                poll_batch_progress(batch_id)
+            else:
+                st.success(f"已触发扫描 {result.get('total_items', 0)} 个标的（离线模式，无法显示进度）")
         else:
             st.error("扫描触发失败")
 
@@ -348,8 +353,14 @@ if items:
                 if st.button("🔬 立即扫描", use_container_width=True):
                     result = _trigger_scan(item_ids=[item["id"]])
                     if result:
-                        st.success("已触发扫描")
-                        st.rerun()
+                        batch_id = result.get("batch_id")
+                        if batch_id and st.session_state["wl_api_ok"]:
+                            from apps.dashboard.components.progress_poller import poll_batch_progress
+                            poll_batch_progress(batch_id)
+                            st.rerun()
+                        else:
+                            st.success("已触发扫描")
+                            st.rerun()
             with col_b:
                 new_enabled = not item.get("enabled", True)
                 label = "▶ 启用" if new_enabled else "⏸ 暂停"

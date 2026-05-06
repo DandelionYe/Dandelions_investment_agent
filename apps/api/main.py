@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.api.routers import research, reports, health, watchlist
+from apps.api.routers import research, reports, health, watchlist, ws
 from apps.api.middleware.error_handler import (
     global_error_handler,
     key_error_handler,
@@ -18,14 +18,17 @@ from apps.api.middleware.error_handler import (
     value_error_handler,
 )
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
+from apps.api.websocket.redis_pubsub import get_async_redis, close_async_redis
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化 DB，关闭时清理资源。"""
+    """应用生命周期：启动时初始化 DB/Redis，关闭时清理资源。"""
     get_task_store()
     get_watchlist_store()
+    await get_async_redis()  # 预热 Redis 异步连接池
     yield
+    await close_async_redis()
 
 
 app = FastAPI(
@@ -55,6 +58,7 @@ app.include_router(research.router)
 app.include_router(reports.router)
 app.include_router(health.router)
 app.include_router(watchlist.router)
+app.include_router(ws.router)
 
 
 @app.get("/")

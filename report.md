@@ -5,9 +5,9 @@
 
 ## 总体评估
 
-**完成度：约 96%**
+**完成度：约 97%**
 
-项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了八项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级；**(7)** 构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + SQLite 任务持久化 + Celery Beat 定时调度），提供 13 个 REST API 端点，支持异步研究任务提交/进度查询/报告下载/健康检查；**(8)** 实现观察池（Watchlist）批量研究系统：文件夹 + 标签两级分组、逐票自定义 cron 调度、Celery Beat 定时扫描 + 高频 checker 轮询、17 个观察池 REST API 端点、Streamlit `3_观察池.py` 管理页面，支持批量触发扫描和评分历史追踪。
+项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了九项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级；**(7)** 构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + SQLite 任务持久化 + Celery Beat 定时调度），提供 13 个 REST API 端点，支持异步研究任务提交/进度查询/报告下载/健康检查；**(8)** 实现观察池（Watchlist）批量研究系统：文件夹 + 标签两级分组、逐票自定义 cron 调度、Celery Beat 定时扫描 + 高频 checker 轮询、17 个观察池 REST API 端点、Streamlit `3_观察池.py` 管理页面，支持批量触发扫描和评分历史追踪；**(9)** 实现 WebSocket 实时进度推送：Redis Pub/Sub 跨进程消息传递（Celery Worker → Redis → FastAPI WebSocket），3 个 WebSocket 端点（task/batch/events），Streamlit 异步 API 模式 + 短间隔轮询进度条，Home.py 和观察池页面均可实时查看研究/扫描进度。
 
 ---
 
@@ -460,6 +460,64 @@
 
 ---
 
+### 1.13 WebSocket 实时进度推送 ✅ (100%) — 2026-05-06 完成
+
+**实现内容：**
+
+1. **Redis Pub/Sub 基础设施** — `apps/api/websocket/`
+   - ✅ `redis_pubsub.py` — 双客户端设计：`redis.asyncio` 异步长连接（FastAPI 侧）+ `redis` 同步短连接（Celery 侧），独立 Redis DB#2
+   - ✅ `progress_publisher.py` — 统一进度消息格式：`publish_task_progress()`（单票）+ `publish_batch_progress()`（批量扫描）
+   - ✅ `connection_manager.py` — WebSocket 连接管理器（备选架构）
+   - ✅ 进程级单例 `get_async_redis()` + `close_async_redis()`，lifespan 中管理生命周期
+
+2. **WebSocket 端点** — `apps/api/routers/ws.py`（3 个端点）
+   - ✅ `ws/task/{task_id}` — 单票研究任务实时进度：先推送 SQLite 当前状态，再订阅 Redis 频道增量推送
+   - ✅ `ws/batch/{batch_id}` — 观察池批量扫描实时进度
+   - ✅ `ws/events` — 全局事件流（供仪表盘等全局视图使用）
+
+3. **Celery 任务改造** — `apps/api/task_manager/celery_tasks.py`
+   - ✅ `run_research_task()` — 5 个 `store.update_status()` 调用点后各加 1 行 `publish_task_progress()`
+   - ✅ `scan_single_watchlist_item()` — 3 个 `store.update_status()` 调用点后各加 1 行 `publish_task_progress()`
+   - ✅ 总计 8 个发布点，覆盖 pending → running (0.1/0.3/0.7) → completed (1.0) / failed 全生命周期
+
+4. **Streamlit 进度轮询** — `apps/dashboard/components/progress_poller.py`
+   - ✅ `poll_task_progress()` — 1 秒间隔轮询 GET endpoint，`st.progress()` 实时进度条
+   - ✅ `poll_batch_progress()` — 批量扫描进度轮询，显示 completed/total/failed 计数
+   - ✅ `submit_research_task()` / `fetch_task_result()` — API 提交/获取结果的便捷封装
+
+5. **Home.py 异步模式**
+   - ✅ 新增「异步模式（显示实时进度）」复选框，默认启用
+   - ✅ 异步模式：POST 提交到 FastAPI → 轮询进度 → 实时进度条 → 获取完成结果
+   - ✅ 同步模式保留为 fallback（取消勾选时使用）
+   - ✅ HITL 模式暂保持同步（异步模式下自动禁用 HITL 复选框）
+
+6. **3_观察池.py 批量进度**
+   - ✅ 扫描按钮后调用 `poll_batch_progress()`，实时展示批量扫描进度
+   - ✅ 单票立即扫描按钮同样接入进度展示
+
+7. **WebSocket 消息格式（统一 JSON）**
+   - ✅ `type` — progress / completed / failed / cancelled
+   - ✅ 完整字段：task_id, symbol, status, progress, progress_message, score, rating, action, error_message, timestamp
+   - ✅ 发布到两个频道：`task:{task_id}` / `batch:{batch_id}` + `events`（全局）
+
+8. **测试** — `tests/test_websocket.py`（8 个用例 + 2 个 Redis 集成测试跳过）
+   - ✅ 进度消息格式验证（必需字段完整性）
+   - ✅ 完成/失败消息携带 score/error 验证
+   - ✅ 批量进度消息格式验证
+   - ✅ 状态→类型映射
+   - ✅ Redis 不可用时的优雅降级
+   - ✅ ConnectionManager 连接管理
+   - ⏭ 2 个 Redis Pub/Sub 集成测试（需本地 Redis 运行时启用）
+
+**与设计方案差异：**
+- ✅ 完全按照设计方案实现（Redis Pub/Sub + WebSocket 端点 + Streamlit 轮询）
+- ✅ 额外增加了全局 `ws/events` 端点和 `ConnectionManager` 备选架构
+- ⚠️ Streamlit 因服务端渲染限制采用 HTTP 短间隔轮询而非原生 WebSocket（效果等价）
+
+**评价：** WebSocket 实时进度推送系统实现完整。Celery Worker → Redis Pub/Sub → FastAPI WebSocket 三层架构清晰，消息格式统一。Streamlit 侧用 1 秒轮询实现同等实时体验，无需引入 JavaScript。发布失败静默降级，不影响主研究流程。
+
+---
+
 ## 二、未实现功能详细分析
 
 ### 2.1 FastAPI 后端服务 ✅ (95%) — 2026-05-06 完成
@@ -469,17 +527,18 @@
 - 核心接口：POST /research/single, GET /research/{task_id}, GET /reports/{task_id}/pdf 等
 
 **当前实现：**
-- ✅ FastAPI 应用已就绪（`apps/api/main.py`），30 个 REST 端点（含 17 个观察池端点）
+- ✅ FastAPI 应用已就绪（`apps/api/main.py`），30 个 REST 端点 + 3 个 WebSocket 端点（含 17 个观察池端点）
 - ✅ Celery + Redis 异步任务队列，支持任务提交/进度查询/取消
 - ✅ SQLite 任务持久化（`storage/tasks.db`），含进度追踪和结果摘要
-- ✅ Celery Beat 定时调度（每日健康检查 + 观察池预留）
+- ✅ Celery Beat 定时调度（3 个定时任务：每日健康检查 + 观察池调度检查 + 收盘扫描）
 - ✅ Pydantic 请求/响应模型，自动 OpenAPI 文档
 - ✅ 全局异常处理中间件
 - ✅ 共享 Service 层：Streamlit 和 FastAPI 共用 `services/` 业务逻辑
+- ✅ WebSocket 实时进度推送（Redis Pub/Sub + 3 WS 端点 + Streamlit 异步轮询模式）
 
 **与设计方案差异：**
 - ✅ 所有核心端点均已实现，与设计方案一致
-- ⚠️ WebSocket 实时进度推送暂未实现（当前使用轮询模式）
+- ✅ WebSocket 实时进度推送已实现（2026-05-06）
 - ⚠️ 用户认证/授权暂未实现（MVP 单用户场景）
 
 **影响：**
@@ -1052,19 +1111,20 @@ LangGraph StateGraph
 | 报告系统 | 85% | ✅ | JSON → MD → HTML → PDF 全链路 |
 | 决策保护器 | 95% | ✅ | 评分/风险/数据质量 三道防线 |
 | 协议和验证 | 95% | ✅ | 6 JSON Schemas + Draft202012Validator |
-| 测试 | 92% | ✅ | 170 用例（7 文件），覆盖多轮辩论/边界/降级/HITL/观察池 |
+| 测试 | 93% | ✅ | 178 用例（8 文件），覆盖多轮辩论/边界/降级/HITL/观察池/WebSocket |
 | 命令行工具 | 80% | ✅ | main.py 4 个参数 |
 | 配置管理 | 90% | ✅ | YAML + .env 双层配置 |
 | **LangGraph 编排** | **95%** | ✅ | 8 节点辩论子图 + 6 节点完整 pipeline 图 + Supervisor + 循环边 + HITL + 错误降级 |
-| **FastAPI 后端** | **95%** | ✅ | Celery + Redis 异步队列 + SQLite + Beat 定时调度 + 30 REST 端点 |
+| **FastAPI 后端** | **98%** | ✅ | Celery + Redis 异步队列 + SQLite + Beat 定时调度 + 30 REST + 3 WS 端点 |
 | **观察池** | **100%** | ✅ | 文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API 端点 + Streamlit 页面 |
+| **WebSocket 推送** | **100%** | ✅ | Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询模式 |
 | 网页搜索服务 | 0% | ❌ | 未开始 |
 | 系统设置页面 | 0% | ❌ | 未开始 |
 | Qlib 框架 | 0% | ❌ | 未开始 |
 | 报告模板 | 30% | ⚠️ | Markdown+CSS，缺 Jinja2 模板 |
 | 文档 | 0% | ❌ | 仅 README / CLAUDE.md / Scheme.md |
 
-**总体完成度：约 96%**
+**总体完成度：约 97%**
 
 ---
 
@@ -1191,9 +1251,9 @@ LangGraph StateGraph
 
 1. **FastAPI 后端** ✅ **已完成（2026-05-06）**
    - ✅ Celery + Redis 异步任务队列
-   - ✅ 30 个 REST API 端点（含 17 个观察池端点）
+   - ✅ 30 个 REST API 端点（含 17 个观察池端点）+ 3 个 WebSocket 端点
    - ✅ SQLite 任务持久化 + Celery Beat 定时调度
-   - ⏳ WebSocket 实时进度推送（待实现）
+   - ✅ WebSocket 实时进度推送（Redis Pub/Sub + Celery 发布 + Streamlit 轮询）
    - ⏳ 用户认证/授权（待实现）
 
 2. **观察池** ✅ **已完成（2026-05-06）**
@@ -1202,7 +1262,13 @@ LangGraph StateGraph
    - ✅ 逐票自定义 cron 调度 + Celery Beat 双调度
    - ✅ Streamlit `3_观察池.py` 管理页面
 
-3. **补充文档**
+3. **WebSocket 实时进度推送** ✅ **已完成（2026-05-06）**
+   - ✅ Redis Pub/Sub 跨进程消息传递（独立 DB#2）
+   - ✅ 3 个 WebSocket 端点（task/batch/events）
+   - ✅ Celery 全生命周期进度发布（8 个发布点）
+   - ✅ Streamlit 异步模式 + 短间隔轮询进度条
+
+4. **补充文档**
    - 添加架构文档
    - 添加 API 文档
    - 添加使用教程
@@ -1389,20 +1455,21 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 
 ## 九、当前状态总结
 
-**完成度：约 96%**（较上次评估 +2%）
+**完成度：约 97%**（较上次评估 +1%）
 
-**近期完成的八项升级：**
+**近期完成的九项升级：**
 
 | # | 内容 | 状态 |
 |---|------|------|
 | 1 | Agent 拆分：单体 Debate Agent → 4 个独立 Agent 类 | ✅ |
-| 2 | 测试补充：11 用例 → 170 用例（7 文件） | ✅ |
+| 2 | 测试补充：11 用例 → 178 用例（8 文件） | ✅ |
 | 3 | LangGraph 编排：8 节点 StateGraph + HITL | ✅ |
 | 4 | 多轮辩论 + Supervisor：LLM 驱动辩论主持人 + 质询循环 | ✅ |
 | 5 | Streamlit HITL 人工审核界面 | ✅ |
 | 6 | LangGraph 完整端到端 pipeline 图（数据→评分→辩论→决策保护） | ✅ |
-| 7 | FastAPI 后端：Celery + Redis 异步队列 + SQLite 持久化 + 30 REST 端点 | ✅ |
+| 7 | FastAPI 后端：Celery + Redis 异步队列 + SQLite 持久化 + 30 REST + 3 WS 端点 | ✅ |
 | 8 | 观察池：文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit 页面 | ✅ |
+| 9 | WebSocket 实时进度推送：Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询 | ✅ |
 
 **核心功能：** ✅ 已完成
 - 完整的单票研究闭环（LangGraph 多轮辩论编排）
@@ -1410,10 +1477,10 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 - LLM 驱动的 Supervisor 动态调度 Agent 间质询（三收敛标准）
 - Human-in-the-loop 辩论中断/恢复（含完整 debate_history）
 - 专业的投委会报告（JSON/MD/HTML/PDF）
-- 完善的决策保护机制（170 测试覆盖所有边界）
+- 完善的决策保护机制（178 测试覆盖所有边界）
 - 灵活的三源数据层（QMT/AKShare/Mock）
-- FastAPI REST API（异步任务 + 进度追踪 + 报告下载 + 健康检查）
-- 观察池批量研究系统（文件夹+标签分组 + 逐票调度 + 批量扫描 + 历史追踪）
+- FastAPI REST API + WebSocket（异步任务 + 实时进度推送 + 报告下载 + 健康检查）
+- 观察池批量研究系统（文件夹+标签分组 + 逐票调度 + 批量扫描 + 实时进度）
 
 **仍需推进：**
 - 网页搜索、系统设置页面
@@ -1436,8 +1503,9 @@ Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 
 - **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph 双层图架构（辩论子图 + 完整 pipeline 图）
 - **多轮辩论就绪**：LLM 驱动的 Supervisor 动态调度 Agent 间质询，三轮收敛标准确保辩论质量，debate_history 完整记录辩论历程
 - **LangGraph 完整 pipeline 就绪**：`build_full_research_graph()` 实现从 symbol 输入到 final_result 输出的端到端图，含数据加载、评分、辩论子图、HITL 审核、决策保护、协议验证六个节点，以及数据/辩论两条错误降级路径
-- **测试覆盖扎实**：170 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描
+- **测试覆盖扎实**：178 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、WebSocket 消息格式/降级/连接管理
 - **HITL 就绪**：`start_hitl_debate()` / `resume_hitl_debate()` API + Streamlit 审核界面均已就绪，完整图支持 `run_full_research_graph_hitl()` / `resume_full_research_graph()` 全链路 HITL
-- **FastAPI 后端就绪**：`apps/api/` 提供 30 个 REST 端点，Celery + Redis 异步任务队列，SQLite 持久化，Celery Beat 定时调度，共享 Service 层与 Streamlit/CLI 并行
-- **观察池就绪**：文件夹 + 标签两级分组 + 逐票自定义 cron 调度 + Celery Beat 双调度 + 17 API 端点 + Streamlit `3_观察池.py`，支持批量扫描和评分历史追踪
+- **FastAPI 后端就绪**：`apps/api/` 提供 30 个 REST 端点 + 3 个 WebSocket 端点，Celery + Redis 异步任务队列，Redis Pub/Sub 实时推送，SQLite 持久化，Celery Beat 定时调度，共享 Service 层与 Streamlit/CLI 并行
+- **观察池就绪**：文件夹 + 标签两级分组 + 逐票自定义 cron 调度 + Celery Beat 双调度 + 17 API 端点 + 批量扫描实时进度 + Streamlit `3_观察池.py`
+- **WebSocket 就绪**：Redis Pub/Sub 跨进程消息通道 + 3 WS 端点（task/batch/events）+ Celery 全生命周期发布 + Streamlit 异步轮询模式
 - **下一步方向**：网页搜索服务、系统设置页面、项目文档

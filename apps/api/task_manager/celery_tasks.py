@@ -14,6 +14,7 @@ from apps.api.celery_app import celery_app
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.schemas.task import TaskStatus
 from apps.api.schemas.research import utc_now_iso, new_task_id
+from apps.api.websocket.progress_publisher import publish_task_progress
 
 
 @celery_app.task(
@@ -53,6 +54,7 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
     use_llm = params.get("use_llm", True)
     max_debate_rounds = params.get("max_debate_rounds", 3)
     use_graph = params.get("use_graph", True)
+    publish_task_progress(task_id, TaskStatus.RUNNING, 0.1, "开始加载数据...", symbol)
 
     try:
         store.update_status(
@@ -61,6 +63,8 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
             progress=0.3,
             progress_message=f"执行研究中（{symbol}，数据源：{data_source}）...",
         )
+        publish_task_progress(task_id, TaskStatus.RUNNING, 0.3,
+                              f"执行研究中（{symbol}，数据源：{data_source}）...", symbol)
 
         if use_graph:
             from services.agents.langgraph_orchestrator import run_full_research_graph
@@ -86,6 +90,7 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
             progress=0.7,
             progress_message="生成报告文件...",
         )
+        publish_task_progress(task_id, TaskStatus.RUNNING, 0.7, "生成报告文件...", symbol)
 
         reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
         reports_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +142,11 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
             progress_message="研究完成。",
             completed_at=completed_at,
         )
+        publish_task_progress(
+            task_id, TaskStatus.COMPLETED, 1.0, "研究完成。", symbol,
+            score=result.get("score"), rating=result.get("rating"),
+            action=result.get("action"),
+        )
 
         return {
             "task_id": task_id,
@@ -155,6 +165,8 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
             completed_at=utc_now_iso(),
             error_message=str(exc),
         )
+        publish_task_progress(
+            task_id, TaskStatus.FAILED, 0.0, "", symbol, error_message=str(exc))
         raise
 
 
@@ -267,6 +279,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
 
     task_store.update_status(task_id, TaskStatus.RUNNING, started_at=utc_now_iso(),
                              progress=0.1, progress_message="开始加载数据...")
+    publish_task_progress(task_id, TaskStatus.RUNNING, 0.1, "开始加载数据...", symbol)
 
     try:
         from services.orchestrator.single_asset_research import run_single_asset_research
@@ -289,6 +302,11 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
         )
         task_store.update_status(task_id, TaskStatus.COMPLETED, progress=1.0,
                                  progress_message="研究完成。", completed_at=completed_at)
+        publish_task_progress(
+            task_id, TaskStatus.COMPLETED, 1.0, "研究完成。", symbol,
+            score=result.get("score"), rating=result.get("rating"),
+            action=result.get("action"),
+        )
 
         wl_store.update_item_scan_result(
             item_id, task_id=task_id,
@@ -318,4 +336,6 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
     except Exception as exc:
         task_store.update_status(task_id, TaskStatus.FAILED, progress=0.0,
                                  completed_at=utc_now_iso(), error_message=str(exc))
+        publish_task_progress(
+            task_id, TaskStatus.FAILED, 0.0, "", symbol, error_message=str(exc))
         raise
