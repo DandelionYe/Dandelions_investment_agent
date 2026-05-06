@@ -1,12 +1,19 @@
-"""TaskManager — 业务逻辑层，封装任务创建/查询/取消。
+"""TaskManager / WatchlistManager — 业务逻辑层，封装任务创建/查询/取消 和 观察池管理。
 
-供 FastAPI routers 调用，连接 TaskStore + Celery。
+供 FastAPI routers 调用，连接 Store + Celery。
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-from apps.api.task_manager.store import get_task_store, TaskStore
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # type: ignore
+
+from apps.api.task_manager.store import get_task_store, get_watchlist_store, TaskStore, WatchlistStore
 from apps.api.schemas.research import ResearchRequest, utc_now_iso, new_task_id
 from apps.api.schemas.task import TaskStatus
 
@@ -172,3 +179,201 @@ class TaskManager:
             "html_path": report_paths.get("html"),
             "pdf_path": report_paths.get("pdf"),
         }
+
+
+# ═══════════════════════════════════════════════════════════════
+# 观察池管理器
+# ═══════════════════════════════════════════════════════════════
+
+
+def _compute_next_cron(cron_expression: str) -> Optional[str]:
+    """基于 crontab 表达式计算下次扫描时间（Asia/Shanghai 时区）。
+
+    使用当前时间作为基准，调用 croniter 计算下一次匹配时间。
+    返回 ISO 8601 UTC 字符串。
+    """
+    try:
+        from croniter import croniter
+    except ImportError:
+        return None
+    tz = ZoneInfo("Asia/Shanghai")
+    now_cst = datetime.now(tz)
+    cron = croniter(cron_expression, now_cst)
+    next_cst = cron.get_next(datetime)
+    return next_cst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class WatchlistManager:
+    """观察池业务逻辑层。"""
+
+    def __init__(self, store: WatchlistStore | None = None):
+        self.store = store or get_watchlist_store()
+
+    # ── 文件夹 ──────────────────────────────────────────────
+
+    def create_folder(self, name: str, description: str = "", icon: str = "folder",
+                      sort_order: int = 0) -> dict:
+        return self.store.create_folder(name, description, icon, sort_order)
+
+    def list_folders(self) -> list[dict]:
+        return self.store.list_folders()
+
+    def get_folder(self, folder_id: str) -> dict:
+        return self.store.get_folder(folder_id)
+
+    def update_folder(self, folder_id: str, **kwargs) -> dict:
+        return self.store.update_folder(folder_id, **kwargs)
+
+    def delete_folder(self, folder_id: str) -> None:
+        self.store.delete_folder(folder_id)
+
+    # ── 观察项 ──────────────────────────────────────────────
+
+    def add_item(
+        self,
+        symbol: str,
+        asset_type: str,
+        folder_id: str,
+        schedule_config: dict | None = None,
+        notes: str = "",
+        target_action: str = "观察",
+        asset_name: str = "",
+        tag_ids: list[str] | None = None,
+    ) -> dict:
+        item = self.store.add_item(
+            symbol=symbol,
+            asset_type=asset_type,
+            folder_id=folder_id,
+            schedule_config=schedule_config,
+            notes=notes,
+            target_action=target_action,
+            asset_name=asset_name,
+            tag_ids=tag_ids,
+        )
+        # 计算初始 next_scan_at
+        sc = item.get("schedule_config", {})
+        if sc.get("mode") == "cron":
+            next_scan = _compute_next_cron(sc.get("cron_expression", "0 9 * * 1-5"))
+            if next_scan:
+                self.store.update_item(item["id"], next_scan_at=next_scan)
+                item["next_scan_at"] = next_scan
+        return item
+
+    def get_item(self, item_id: str) -> dict:
+        item = self.store.get_item(item_id)
+        item["scan_history"] = self.store.get_item_scan_history(item_id)
+        return item
+
+    def list_items(
+        self,
+        folder_id: str | None = None,
+        tag_id: str | None = None,
+        enabled: bool | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[dict], int]:
+        return self.store.list_items(folder_id, tag_id, enabled, page, page_size)
+
+    def update_item(self, item_id: str, **kwargs) -> dict:
+        if "schedule_config" in kwargs:
+            sc = kwargs["schedule_config"]
+            if isinstance(sc, dict) and sc.get("mode") == "cron":
+                next_scan = _compute_next_cron(sc.get("cron_expression", "0 9 * * 1-5"))
+                kwargs["next_scan_at"] = next_scan
+            elif isinstance(sc, dict) and sc.get("mode") == "manual_only":
+                kwargs["next_scan_at"] = None
+        if "tag_ids" in kwargs:
+            tag_ids = kwargs.pop("tag_ids")
+            self.store.set_item_tags(item_id, tag_ids)
+        return self.store.update_item(item_id, **kwargs)
+
+    def remove_item(self, item_id: str) -> None:
+        self.store.remove_item(item_id)
+
+    # ── 标签 ────────────────────────────────────────────────
+
+    def create_tag(self, name: str, color: str = "#6366f1") -> dict:
+        return self.store.create_tag(name, color)
+
+    def list_tags(self) -> list[dict]:
+        return self.store.list_tags()
+
+    def update_tag(self, tag_id: str, **kwargs) -> dict:
+        return self.store.update_tag(tag_id, **kwargs)
+
+    def delete_tag(self, tag_id: str) -> None:
+        self.store.delete_tag(tag_id)
+
+    # ── 扫描 ────────────────────────────────────────────────
+
+    def trigger_scan(self, item_ids: list[str] | None = None,
+                     folder_id: str | None = None,
+                     trigger_type: str = "manual") -> dict:
+        items: list[dict] = []
+        if item_ids:
+            items = [self.store.get_item(iid) for iid in item_ids]
+        elif folder_id:
+            items, _ = self.store.list_items(folder_id=folder_id, enabled=True)
+        else:
+            items = self.store.get_all_enabled_items()
+
+        if not items:
+            raise ValueError("没有可扫描的标的。")
+
+        item_id_list = [it["id"] for it in items]
+        batch_id = self.store.create_batch(trigger_type, item_id_list)
+
+        from apps.api.task_manager.celery_tasks import scan_single_watchlist_item
+        for item in items:
+            scan_single_watchlist_item.delay(item["id"], trigger_type=trigger_type)
+
+        return {
+            "batch_id": batch_id,
+            "trigger_type": trigger_type,
+            "total_items": len(items),
+            "status": "running",
+            "created_at": self.store.get_batch(batch_id)["created_at"],
+        }
+
+    def get_scan_progress(self, batch_id: str) -> dict:
+        return self.store.get_batch(batch_id)
+
+    def get_scan_history(
+        self,
+        symbol: str | None = None,
+        min_score: float | None = None,
+        max_score: float | None = None,
+        rating: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        """查询已完成的扫描结果。
+
+        由于扫描结果存储在 research_tasks 中（schedule_id 链接到 watchlist item），
+        我们通过 task_store 来查询。"""
+        task_store = get_task_store()
+        tasks, total = task_store.list_tasks(
+            symbol=symbol,
+            status=TaskStatus.COMPLETED,
+            page=page,
+            page_size=page_size,
+        )
+        results = []
+        for t in tasks:
+            if (min_score is not None and (t.get("score") or 0) < min_score):
+                continue
+            if (max_score is not None and (t.get("score") or 0) > max_score):
+                continue
+            if rating and t.get("rating") != rating:
+                continue
+            results.append({
+                "task_id": t["id"],
+                "symbol": t["symbol"],
+                "score": t.get("score"),
+                "rating": t.get("rating"),
+                "action": t.get("action"),
+                "status": t["status"],
+                "created_at": t["created_at"],
+                "completed_at": t.get("completed_at"),
+            })
+        return {"results": results, "total": len(results), "page": page, "page_size": page_size}

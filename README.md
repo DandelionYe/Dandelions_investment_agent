@@ -1,6 +1,6 @@
 # Dandelions Investment Agent
 
-投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）。已构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + 13 REST 端点）。
+投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）。已构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + 30 REST 端点）和观察池批量研究系统（文件夹 + 标签分组 + 逐票自定义 cron 调度）。
 
 ## 当前边界
 
@@ -33,9 +33,20 @@ services/
   protocols/                 6 JSON Schemas + 验证
 configs/                     评分权重 / 数据源 / 应用配置
 apps/
-  dashboard/                 Streamlit 看板 + 报告库
-  api/                       FastAPI 网关（Celery + Redis + SQLite + 13 REST 端点）
-tests/                       138 测试用例（6 文件）
+  dashboard/                 Streamlit 看板（Home + 报告库 + 观察池）
+    pages/
+      2_Report_Library.py   报告库
+      3_观察池.py            观察池管理（文件夹+标签分组 + 批量扫描）
+  api/                       FastAPI 网关（Celery + Redis + SQLite + 30 REST 端点）
+    routers/
+      watchlist.py           观察池端点（17 个：文件夹/项/标签 CRUD + 扫描）
+    schemas/
+      watchlist.py           观察池 Pydantic 模型
+    task_manager/
+      manager.py             TaskManager + WatchlistManager
+      celery_tasks.py        研究任务 + 观察池扫描任务
+      store.py               TaskStore + WatchlistStore
+tests/                       170 测试用例（7 文件）
 protocols/                   6 JSON Schemas
 ```
 
@@ -123,7 +134,7 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm
 streamlit run apps/dashboard/Home.py
 ```
 
-页面左侧选择代码、数据源和是否启用 DeepSeek。报告库在 `apps/dashboard/pages/2_Report_Library.py`。
+页面左侧选择代码、数据源和是否启用 DeepSeek。报告库在 `pages/2_Report_Library.py`，观察池在 `pages/3_观察池.py`。
 
 ### 人工审核模式（HITL）
 
@@ -134,6 +145,17 @@ streamlit run apps/dashboard/Home.py
 3. **确认或放弃**：「确认审核并生成报告」提交修改后生成完整报告；「放弃审核，自动通过」跳过人工干预
 
 HITL 启动失败时自动回退到非 HITL 模式，不影响正常使用。
+
+### 观察池管理
+
+导航到「观察池」页面（`pages/3_观察池.py`）可进行以下操作：
+
+1. **管理文件夹和标签**：左侧栏新建/切换文件夹，按标签筛选标的
+2. **添加观察标的**：输入代码 → 选文件夹 → 加标签 → 配置调度 cron 表达式
+3. **批量扫描**：一键扫描启用的全部标的、当前文件夹或单个标的
+4. **查看详情**：点击标的查看最近评分、评级、操作建议、调度配置和扫描历史
+
+观察池页面支持双模式运行：FastAPI 在线时自动走 REST API；后端离线时直接访问本地 SQLite 存储。
 
 ## FastAPI 后端
 
@@ -156,7 +178,7 @@ docker run -d -p 6379:6379 redis:7-alpine
 安装依赖（首次）：
 
 ```powershell
-pip install fastapi "uvicorn[standard]" celery redis aiosqlite
+pip install fastapi "uvicorn[standard]" celery redis aiosqlite croniter requests
 ```
 
 ### 启动
@@ -174,7 +196,7 @@ celery -A apps.api.celery_app beat --loglevel=info
 
 启动后访问 `http://127.0.0.1:8000/docs` 查看交互式 API 文档。
 
-### 核心端点
+### 核心端点（研究任务）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -184,12 +206,47 @@ celery -A apps.api.celery_app beat --loglevel=info
 | `GET` | `/api/v1/reports/{task_id}/{fmt}` | 下载报告（json/md/html/pdf） |
 | `GET` | `/api/v1/health` | 健康检查 |
 
+完整端点列表（30 个）见 `/docs` 交互式文档。研究任务（13 个）+ 观察池（17 个）。
+
 任务提交后立即返回 `task_id`，研究在 Celery worker 中异步执行，客户端轮询进度即可。所有端点均生成 OpenAPI 文档。
+
+### 观察池端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/v1/watchlist/folders` | 列出所有文件夹（含标的计数） |
+| `POST` | `/api/v1/watchlist/folders` | 创建文件夹 |
+| `PUT` | `/api/v1/watchlist/folders/{id}` | 更新文件夹 |
+| `DELETE` | `/api/v1/watchlist/folders/{id}` | 删除空文件夹 |
+| `GET` | `/api/v1/watchlist/items` | 列出观察项（支持 ?folder_id=&tag_id=&enabled=） |
+| `POST` | `/api/v1/watchlist/items` | 添加标的（含标签 + schedule_config） |
+| `GET` | `/api/v1/watchlist/items/{id}` | 查看详情（含标签 + 扫描历史） |
+| `PUT` | `/api/v1/watchlist/items/{id}` | 更新观察项 |
+| `DELETE` | `/api/v1/watchlist/items/{id}` | 从观察池移除 |
+| `GET` | `/api/v1/watchlist/tags` | 列出所有标签（含计数） |
+| `POST` | `/api/v1/watchlist/tags` | 创建标签 |
+| `PUT` | `/api/v1/watchlist/tags/{id}` | 更新标签 |
+| `DELETE` | `/api/v1/watchlist/tags/{id}` | 删除标签 |
+| `POST` | `/api/v1/watchlist/scan` | 触发批量扫描 |
+| `GET` | `/api/v1/watchlist/scan/{batch_id}` | 查询扫描进度 |
+| `GET` | `/api/v1/watchlist/results` | 查询扫描历史结果 |
+
+### 观察池与定时调度
+
+观察池支持逐票自定义 cron 调度。Celery Beat 每 5 分钟检查到期项并派发扫描任务，同时每个工作日 15:07 触发全线收盘扫描。
+
+```powershell
+# 启动 beat（含 3 个定时任务：健康检查 + 调度检查 + 收盘扫描）
+celery -A apps.api.celery_app beat --loglevel=info
+
+# 同时启动 worker + beat（开发用）
+celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2
+```
 
 ## 测试
 
 ```powershell
-# 全部 138 个测试用例
+# 全部 170 个测试用例
 python -m pytest
 
 # 按模块运行
@@ -199,9 +256,10 @@ python -m pytest tests/test_report_builders.py -v     # 报告生成验证（22 
 python -m pytest tests/test_langgraph_orchestrator.py -v  # LangGraph 多轮编排（29 用例）
 python -m pytest tests/test_multi_round_debate.py -v  # 多轮辩论专用（15 用例）
 python -m pytest tests/test_report_pipeline.py -v     # 端到端流程（11 用例）
+python -m pytest tests/test_watchlist_store.py -v     # 观察池存储（32 用例）
 ```
 
-覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、向后兼容性、QMT/AKShare/mock 数据链路、估值/事件标准化。HITL Streamlit 集成经手动回归测试确认无误。
+覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、向后兼容性、QMT/AKShare/mock 数据链路、估值/事件标准化。HITL Streamlit 集成经手动回归测试确认无误。
 
 ## Agent 架构与 LangGraph 编排
 

@@ -28,4 +28,4 @@ Scheme.md
 claude-no-proxy.cmd
 test_etf_code_format.py
 test_announcement.py
-celerybeat-schedule
+celerybeat-schedule*

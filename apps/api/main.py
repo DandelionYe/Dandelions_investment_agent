@@ -10,20 +10,21 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from apps.api.routers import research, reports, health
+from apps.api.routers import research, reports, health, watchlist
 from apps.api.middleware.error_handler import (
     global_error_handler,
     key_error_handler,
     not_found_handler,
     value_error_handler,
 )
-from apps.api.task_manager.store import get_task_store
+from apps.api.task_manager.store import get_task_store, get_watchlist_store
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化 DB，关闭时清理资源。"""
     get_task_store()
+    get_watchlist_store()
     yield
 
 
@@ -53,6 +54,7 @@ app.add_exception_handler(404, not_found_handler)
 app.include_router(research.router)
 app.include_router(reports.router)
 app.include_router(health.router)
+app.include_router(watchlist.router)
 
 
 @app.get("/")

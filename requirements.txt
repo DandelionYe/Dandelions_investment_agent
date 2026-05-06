@@ -17,6 +17,8 @@ uvicorn[standard]>=0.32.0
 celery>=5.4.0
 redis>=5.2.0
 aiosqlite>=0.20.0
+croniter>=5.0.0
+requests>=2.32.0
 
 # Optional PDF backend used by services/report/pdf_builder.py.
 # The default pipeline uses Playwright/Chromium for PDF export.

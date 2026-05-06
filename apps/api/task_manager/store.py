@@ -1,12 +1,14 @@
-"""SQLite 任务状态持久化层。
+"""SQLite 持久化层 — 任务状态 + 观察池。
 
 支持同步调用（Celery worker）和通过 run_in_executor 的异步调用（FastAPI）。
-设计为可替换后端 —— 实现相同的 TaskStore 接口即可切换到 PostgreSQL。
+设计为可替换后端 —— 实现相同的接口即可切换到 PostgreSQL。
 """
 
 import json
 import sqlite3
 import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -269,8 +271,608 @@ class TaskStore:
         return d
 
 
+# ═══════════════════════════════════════════════════════════════
+# 观察池持久化
+# ═══════════════════════════════════════════════════════════════
+
+_WATCHLIST_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS watchlist_folders (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    icon TEXT DEFAULT 'folder',
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watchlist_items (
+    id TEXT PRIMARY KEY,
+    symbol TEXT NOT NULL UNIQUE,
+    asset_type TEXT NOT NULL CHECK(asset_type IN ('stock', 'etf')),
+    asset_name TEXT DEFAULT '',
+    folder_id TEXT NOT NULL REFERENCES watchlist_folders(id) ON DELETE RESTRICT,
+    schedule_config TEXT NOT NULL DEFAULT '{}',
+    notes TEXT DEFAULT '',
+    target_action TEXT DEFAULT '观察',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_scan_task_id TEXT,
+    last_score REAL,
+    last_rating TEXT,
+    last_action TEXT,
+    last_scan_at TEXT,
+    next_scan_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watchlist_tags (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    color TEXT DEFAULT '#6366f1',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watchlist_item_tags (
+    item_id TEXT NOT NULL REFERENCES watchlist_items(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES watchlist_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (item_id, tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS watchlist_batches (
+    id TEXT PRIMARY KEY,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN ('manual', 'scheduled', 'condition')),
+    status TEXT NOT NULL DEFAULT 'running',
+    total_items INTEGER DEFAULT 0,
+    completed_items INTEGER DEFAULT 0,
+    failed_items INTEGER DEFAULT 0,
+    item_ids TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_wl_items_folder ON watchlist_items(folder_id);
+CREATE INDEX IF NOT EXISTS idx_wl_items_enabled ON watchlist_items(enabled);
+CREATE INDEX IF NOT EXISTS idx_wl_items_next_scan ON watchlist_items(next_scan_at);
+CREATE INDEX IF NOT EXISTS idx_wl_items_symbol ON watchlist_items(symbol);
+CREATE INDEX IF NOT EXISTS idx_wl_item_tags_tag ON watchlist_item_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_wl_batches_status ON watchlist_batches(status);
+CREATE INDEX IF NOT EXISTS idx_wl_batches_created ON watchlist_batches(created_at DESC);
+"""
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+class WatchlistStore:
+    """观察池 SQLite 存储，线程安全。"""
+
+    def __init__(self, db_path: str | None = None):
+        self._db_path = str(db_path or DB_PATH)
+        self._lock = threading.Lock()
+        self._init_db()
+
+    # ── 内部 ──────────────────────────────────────────────────
+
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._db_path == ":memory:":
+            uri = "file::memory:?cache=shared"
+        else:
+            uri = self._db_path
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        if self._db_path != ":memory:":
+            conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def _init_db(self) -> None:
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.executescript(_WATCHLIST_SCHEMA_SQL)
+                conn.commit()
+            finally:
+                conn.close()
+
+    # ── 文件夹 CRUD ────────────────────────────────────────────
+
+    def create_folder(
+        self,
+        name: str,
+        description: str = "",
+        icon: str = "folder",
+        sort_order: int = 0,
+    ) -> dict:
+        folder_id = _new_id()
+        now = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """INSERT INTO watchlist_folders (id, name, description, icon, sort_order, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (folder_id, name, description, icon, sort_order, now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_folder(folder_id)
+
+    def list_folders(self) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT f.*, COUNT(wi.id) AS item_count
+                   FROM watchlist_folders f
+                   LEFT JOIN watchlist_items wi ON wi.folder_id = f.id
+                   GROUP BY f.id
+                   ORDER BY f.sort_order, f.name"""
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_folder(self, folder_id: str) -> dict:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM watchlist_folders WHERE id = ?", (folder_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"文件夹不存在：{folder_id}")
+            d = dict(row)
+            d["item_count"] = conn.execute(
+                "SELECT COUNT(*) FROM watchlist_items WHERE folder_id = ?", (folder_id,)
+            ).fetchone()[0]
+            return d
+        finally:
+            conn.close()
+
+    def update_folder(self, folder_id: str, **kwargs) -> dict:
+        allowed = {"name", "description", "icon", "sort_order"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+        if not updates:
+            return self.get_folder(folder_id)
+        updates["updated_at"] = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                sets = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [folder_id]
+                conn.execute(
+                    f"UPDATE watchlist_folders SET {', '.join(sets)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_folder(folder_id)
+
+    def delete_folder(self, folder_id: str) -> None:
+        folder = self.get_folder(folder_id)
+        if folder.get("item_count", 0) > 0:
+            raise ValueError(
+                f"文件夹「{folder['name']}」中还有 {folder['item_count']} 个标的，请先移走或删除它们。"
+            )
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("DELETE FROM watchlist_folders WHERE id = ?", (folder_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+    # ── 观察项 CRUD ────────────────────────────────────────────
+
+    def add_item(
+        self,
+        symbol: str,
+        asset_type: str,
+        folder_id: str,
+        schedule_config: dict | None = None,
+        notes: str = "",
+        target_action: str = "观察",
+        asset_name: str = "",
+        tag_ids: list[str] | None = None,
+    ) -> dict:
+        self.get_folder(folder_id)  # 确保文件夹存在
+        item_id = _new_id()
+        now = _utc_now_iso()
+        schedule_json = json.dumps(schedule_config or {}, ensure_ascii=False)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """INSERT INTO watchlist_items
+                       (id, symbol, asset_type, asset_name, folder_id, schedule_config,
+                        notes, target_action, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (item_id, symbol, asset_type, asset_name, folder_id, schedule_json,
+                     notes, target_action, now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        if tag_ids:
+            self.set_item_tags(item_id, tag_ids)
+        return self.get_item(item_id)
+
+    def get_item(self, item_id: str) -> dict:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                """SELECT wi.*, wf.name AS folder_name
+                   FROM watchlist_items wi
+                   JOIN watchlist_folders wf ON wf.id = wi.folder_id
+                   WHERE wi.id = ?""",
+                (item_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"观察项不存在：{item_id}")
+            d = self._row_to_item_dict(row)
+            d["tags"] = self._get_item_tags(conn, item_id)
+            return d
+        finally:
+            conn.close()
+
+    def list_items(
+        self,
+        folder_id: str | None = None,
+        tag_id: str | None = None,
+        enabled: bool | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[dict], int]:
+        conn = self._get_conn()
+        try:
+            where = []
+            params: list = []
+            if folder_id:
+                where.append("wi.folder_id = ?")
+                params.append(folder_id)
+            if enabled is not None:
+                where.append("wi.enabled = ?")
+                params.append(int(enabled))
+            if tag_id:
+                where.append("wi.id IN (SELECT item_id FROM watchlist_item_tags WHERE tag_id = ?)")
+                params.append(tag_id)
+
+            where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM watchlist_items wi {where_clause}", params
+            ).fetchone()[0]
+
+            offset = (page - 1) * page_size
+            rows = conn.execute(
+                f"""SELECT wi.*, wf.name AS folder_name
+                    FROM watchlist_items wi
+                    JOIN watchlist_folders wf ON wf.id = wi.folder_id
+                    {where_clause}
+                    ORDER BY wi.updated_at DESC
+                    LIMIT ? OFFSET ?""",
+                params + [page_size, offset],
+            ).fetchall()
+            items = []
+            for row in rows:
+                d = self._row_to_item_dict(row)
+                d["tags"] = self._get_item_tags(conn, row["id"])
+                items.append(d)
+            return items, count
+        finally:
+            conn.close()
+
+    def update_item(self, item_id: str, **kwargs) -> dict:
+        allowed = {
+            "symbol", "asset_type", "asset_name", "folder_id", "schedule_config",
+            "notes", "target_action", "enabled",
+        }
+        updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+        if "schedule_config" in updates and isinstance(updates["schedule_config"], dict):
+            updates["schedule_config"] = json.dumps(updates["schedule_config"], ensure_ascii=False)
+        if "enabled" in updates:
+            updates["enabled"] = int(updates["enabled"])
+        if "folder_id" in updates:
+            self.get_folder(updates["folder_id"])
+        if not updates:
+            return self.get_item(item_id)
+        updates["updated_at"] = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                sets = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [item_id]
+                conn.execute(
+                    f"UPDATE watchlist_items SET {', '.join(sets)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_item(item_id)
+
+    def remove_item(self, item_id: str) -> None:
+        self.get_item(item_id)  # 确保存在
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("DELETE FROM watchlist_items WHERE id = ?", (item_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+    def update_item_scan_result(
+        self,
+        item_id: str,
+        task_id: str,
+        score: float | None = None,
+        rating: str | None = None,
+        action: str | None = None,
+    ) -> None:
+        now = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                sets = ["last_scan_task_id = ?", "last_scan_at = ?", "updated_at = ?"]
+                params = [task_id, now, now]
+                if score is not None:
+                    sets.append("last_score = ?")
+                    params.append(score)
+                if rating is not None:
+                    sets.append("last_rating = ?")
+                    params.append(rating)
+                if action is not None:
+                    sets.append("last_action = ?")
+                    params.append(action)
+                params.append(item_id)
+                conn.execute(
+                    f"UPDATE watchlist_items SET {', '.join(sets)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    # ── 标签 CRUD ──────────────────────────────────────────────
+
+    def create_tag(self, name: str, color: str = "#6366f1") -> dict:
+        tag_id = _new_id()
+        now = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "INSERT INTO watchlist_tags (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                    (tag_id, name, color, now),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError(f"标签名称已存在：{name}")
+            finally:
+                conn.close()
+        return self.get_tag(tag_id)
+
+    def list_tags(self) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT t.*, COUNT(it.item_id) AS item_count
+                   FROM watchlist_tags t
+                   LEFT JOIN watchlist_item_tags it ON it.tag_id = t.id
+                   GROUP BY t.id
+                   ORDER BY t.name"""
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_tag(self, tag_id: str) -> dict:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM watchlist_tags WHERE id = ?", (tag_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"标签不存在：{tag_id}")
+            d = dict(row)
+            d["item_count"] = conn.execute(
+                "SELECT COUNT(*) FROM watchlist_item_tags WHERE tag_id = ?", (tag_id,)
+            ).fetchone()[0]
+            return d
+        finally:
+            conn.close()
+
+    def update_tag(self, tag_id: str, **kwargs) -> dict:
+        allowed = {"name", "color"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+        if not updates:
+            return self.get_tag(tag_id)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                sets = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [tag_id]
+                conn.execute(
+                    f"UPDATE watchlist_tags SET {', '.join(sets)} WHERE id = ?",
+                    params,
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError(f"标签名称已存在：{updates.get('name')}")
+            finally:
+                conn.close()
+        return self.get_tag(tag_id)
+
+    def delete_tag(self, tag_id: str) -> None:
+        self.get_tag(tag_id)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("DELETE FROM watchlist_tags WHERE id = ?", (tag_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+    # ── 项-标签 关联 ────────────────────────────────────────────
+
+    def set_item_tags(self, item_id: str, tag_ids: list[str]) -> None:
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("DELETE FROM watchlist_item_tags WHERE item_id = ?", (item_id,))
+                for tid in tag_ids:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO watchlist_item_tags (item_id, tag_id) VALUES (?, ?)",
+                        (item_id, tid),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+    # ── 批量扫描 ──────────────────────────────────────────────
+
+    def create_batch(self, trigger_type: str, item_ids: list[str]) -> str:
+        batch_id = _new_id()
+        now = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """INSERT INTO watchlist_batches (id, trigger_type, status, total_items, item_ids, created_at)
+                       VALUES (?, ?, 'running', ?, ?, ?)""",
+                    (batch_id, trigger_type, len(item_ids), json.dumps(item_ids), now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return batch_id
+
+    def update_batch_progress(self, batch_id: str, completed: int, failed: int) -> dict:
+        now = _utc_now_iso()
+        done = completed + failed
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """UPDATE watchlist_batches
+                       SET completed_items = ?,
+                           failed_items = ?,
+                           status = CASE WHEN ? >= total_items THEN 'completed' ELSE 'running' END,
+                           completed_at = CASE WHEN ? >= total_items THEN ? ELSE NULL END
+                       WHERE id = ?""",
+                    (completed, failed, done, done, now, batch_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_batch(batch_id)
+
+    def get_batch(self, batch_id: str) -> dict:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM watchlist_batches WHERE id = ?", (batch_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"扫描批次不存在：{batch_id}")
+            d = dict(row)
+            if isinstance(d.get("item_ids"), str):
+                d["item_ids"] = json.loads(d["item_ids"])
+            return d
+        finally:
+            conn.close()
+
+    # ── 扫描调度查询 ──────────────────────────────────────────
+
+    def get_due_items(self) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            now = _utc_now_iso()
+            rows = conn.execute(
+                """SELECT wi.*, wf.name AS folder_name
+                   FROM watchlist_items wi
+                   JOIN watchlist_folders wf ON wf.id = wi.folder_id
+                   WHERE wi.enabled = 1
+                     AND wi.next_scan_at IS NOT NULL
+                     AND wi.next_scan_at <= ?""",
+                (now,),
+            ).fetchall()
+            items = []
+            for row in rows:
+                d = self._row_to_item_dict(row)
+                d["tags"] = self._get_item_tags(conn, row["id"])
+                items.append(d)
+            return items
+        finally:
+            conn.close()
+
+    def get_all_enabled_items(self) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT wi.*, wf.name AS folder_name
+                   FROM watchlist_items wi
+                   JOIN watchlist_folders wf ON wf.id = wi.folder_id
+                   WHERE wi.enabled = 1
+                   ORDER BY wi.symbol"""
+            ).fetchall()
+            items = []
+            for row in rows:
+                d = self._row_to_item_dict(row)
+                d["tags"] = self._get_item_tags(conn, row["id"])
+                items.append(d)
+            return items
+        finally:
+            conn.close()
+
+    def get_item_scan_history(self, item_id: str, limit: int = 10) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """SELECT id, symbol, score, rating, action, status, created_at, completed_at
+                   FROM research_tasks
+                   WHERE schedule_id = ?
+                   ORDER BY created_at DESC
+                   LIMIT ?""",
+                (item_id, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _get_item_tags(conn: sqlite3.Connection, item_id: str) -> list[dict]:
+        rows = conn.execute(
+            """SELECT t.id, t.name, t.color
+               FROM watchlist_tags t
+               JOIN watchlist_item_tags it ON it.tag_id = t.id
+               WHERE it.item_id = ?""",
+            (item_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    @staticmethod
+    def _row_to_item_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        if isinstance(d.get("schedule_config"), str):
+            try:
+                d["schedule_config"] = json.loads(d["schedule_config"])
+            except (json.JSONDecodeError, TypeError):
+                d["schedule_config"] = {}
+        if "enabled" in d:
+            d["enabled"] = bool(d["enabled"])
+        return d
+
+
 # 模块级单例
 _store: TaskStore | None = None
+_watchlist_store: WatchlistStore | None = None
 
 
 def get_task_store() -> TaskStore:
@@ -278,3 +880,10 @@ def get_task_store() -> TaskStore:
     if _store is None:
         _store = TaskStore()
     return _store
+
+
+def get_watchlist_store() -> WatchlistStore:
+    global _watchlist_store
+    if _watchlist_store is None:
+        _watchlist_store = WatchlistStore()
+    return _watchlist_store
