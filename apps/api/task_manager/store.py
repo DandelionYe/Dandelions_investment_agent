@@ -870,9 +870,149 @@ class WatchlistStore:
         return d
 
 
+# ═══════════════════════════════════════════════════════════════
+# 用户持久化
+# ═══════════════════════════════════════════════════════════════
+
+_USER_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+"""
+
+
+class UserStore:
+    """用户 SQLite 存储，线程安全。"""
+
+    def __init__(self, db_path: str | None = None):
+        self._db_path = str(db_path or DB_PATH)
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._db_path == ":memory:":
+            uri = "file::memory:?cache=shared"
+        else:
+            uri = self._db_path
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        if self._db_path != ":memory:":
+            conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def _init_db(self) -> None:
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.executescript(_USER_SCHEMA_SQL)
+                conn.commit()
+            finally:
+                conn.close()
+
+    def create_user(self, username: str, password_hash: str, role: str = "user") -> dict:
+        user_id = _new_id()
+        now = _utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "INSERT INTO users (id, username, password_hash, role, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (user_id, username, password_hash, role, now),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError(f"用户名已存在：{username}")
+            finally:
+                conn.close()
+        return self.get_user_by_username(username)
+
+    def get_user_by_username(self, username: str) -> dict | None:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d["enabled"] = bool(d.get("enabled", True))
+            return d
+        finally:
+            conn.close()
+
+    def get_user_by_id(self, user_id: str) -> dict | None:
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d["enabled"] = bool(d.get("enabled", True))
+            return d
+        finally:
+            conn.close()
+
+    def list_users(self) -> list[dict]:
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                "SELECT id, username, role, enabled, created_at FROM users "
+                "ORDER BY username"
+            ).fetchall()
+            result = []
+            for row in rows:
+                d = dict(row)
+                d["enabled"] = bool(d.get("enabled", True))
+                result.append(d)
+            return result
+        finally:
+            conn.close()
+
+    def update_user(self, user_id: str, **kwargs) -> dict | None:
+        allowed = {"password_hash", "role", "enabled"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+        if "enabled" in updates:
+            updates["enabled"] = int(updates["enabled"])
+        if not updates:
+            return self.get_user_by_id(user_id)
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                sets = [f"{k} = ?" for k in updates]
+                params = list(updates.values()) + [user_id]
+                conn.execute(
+                    f"UPDATE users SET {', '.join(sets)} WHERE id = ?", params
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return self.get_user_by_id(user_id)
+
+    def delete_user(self, user_id: str) -> None:
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+
 # 模块级单例
 _store: TaskStore | None = None
 _watchlist_store: WatchlistStore | None = None
+_user_store: UserStore | None = None
 
 
 def get_task_store() -> TaskStore:
@@ -887,3 +1027,25 @@ def get_watchlist_store() -> WatchlistStore:
     if _watchlist_store is None:
         _watchlist_store = WatchlistStore()
     return _watchlist_store
+
+
+def get_user_store() -> UserStore:
+    global _user_store
+    if _user_store is None:
+        _user_store = UserStore()
+        _seed_admin_user(_user_store)
+    return _user_store
+
+
+def _seed_admin_user(store: UserStore) -> None:
+    """首次启动时自动创建管理员用户。"""
+    import os
+    import bcrypt
+    admin_user = os.getenv("AUTH_ADMIN_USER", "admin")
+    admin_pass = os.getenv("AUTH_ADMIN_PASS", "dandelions2026")
+    if not store.get_user_by_username(admin_user):
+        store.create_user(
+            username=admin_user,
+            password_hash=bcrypt.hashpw(admin_pass.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+            role="admin",
+        )

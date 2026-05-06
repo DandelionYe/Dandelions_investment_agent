@@ -1,6 +1,6 @@
 # Dandelions Investment Agent
 
-投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）和异步实时进度模式。已构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + Redis Pub/Sub WebSocket 实时推送 + 30 REST + 3 WS 端点）和观察池批量研究系统（文件夹 + 标签分组 + 逐票自定义 cron 调度 + 实时扫描进度）。
+投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板 HITL 人工审核、异步实时进度、JWT 登录认证。已构建 FastAPI 后端网关（Celery + Redis + JWT + WebSocket + 37 端点全保护）和观察池批量研究系统。
 
 ## 当前边界
 
@@ -33,17 +33,23 @@ services/
   protocols/                 6 JSON Schemas + 验证
 configs/                     评分权重 / 数据源 / 应用配置
 apps/
-  dashboard/                 Streamlit 看板（Home + 报告库 + 观察池 + 异步进度）
+  dashboard/                 Streamlit 看板（Home + 报告库 + 观察池 + 异步进度 + 登录）
     pages/
       2_Report_Library.py   报告库
       3_观察池.py            观察池管理（文件夹+标签分组 + 批量扫描 + 实时进度）
     components/
-      progress_poller.py    进度轮询组件（1 秒间隔实时进度条）
-  api/                       FastAPI 网关（Celery + Redis + WS + 30 REST + 3 WS）
+      progress_poller.py    进度轮询组件
+      login.py              登录组件（JWT token 管理 + 自动刷新）
+  api/                       FastAPI 网关（Celery + Redis + JWT + WS + 37 端点全保护）
+    auth/
+      security.py            JWT 签发/验证 + bcrypt 密码哈希
+      dependencies.py        get_current_user FastAPI Depends 依赖
     routers/
+      auth.py                认证端点（4 个：login/refresh/me/register）
       watchlist.py           观察池端点（17 个：文件夹/项/标签 CRUD + 扫描）
-      ws.py                  WebSocket 端点（3 个：task/batch/events 实时推送）
+      ws.py                  WebSocket 端点（3 个：task/batch/events + token 验证）
     schemas/
+      auth.py                认证 Pydantic 模型
       watchlist.py           观察池 Pydantic 模型
     websocket/
       redis_pubsub.py        Redis Pub/Sub 客户端（async 长连接 + sync 发布）
@@ -52,8 +58,8 @@ apps/
     task_manager/
       manager.py             TaskManager + WatchlistManager
       celery_tasks.py        研究任务 + 观察池扫描 + 8 进度发布点
-      store.py               TaskStore + WatchlistStore
-tests/                       178 测试用例（8 文件）
+      store.py               TaskStore + WatchlistStore + UserStore
+tests/                       194 测试用例（9 文件）
 protocols/                   6 JSON Schemas
 ```
 
@@ -162,6 +168,10 @@ HITL 启动失败时自动回退到非 HITL 模式，不影响正常使用。
 3. 完成后自动拉取完整结果并渲染报告
 
 取消勾选则回退到原有的同步阻塞模式。异步模式下 HITL 暂不可用。
+
+### 登录认证
+
+Streamlit 看板启动时自动展示登录表单。输入 API 凭据登录后，所有 API 调用自动携带 Bearer token。Token 过期时自动调用 `/api/v1/auth/refresh` 无感刷新，无需手动重新登录。
 
 ### 观察池管理
 
@@ -277,6 +287,32 @@ celery -A apps.api.celery_app beat --loglevel=info
 
 Streamlit 看板中勾选「异步模式（显示实时进度）」后，前端通过 1 秒间隔轮询 GET endpoint 实现同等的实时进度条体验。
 
+### JWT 用户认证
+
+所有 API 端点（除 `/api/v1/health/*` 和 `/api/v1/auth/login|refresh`）均需 Bearer Token 认证。WebSocket 端点通过 `?token=...` 查询参数验证。
+
+| 端点 | 认证 | 说明 |
+|------|------|------|
+| `POST /api/v1/auth/login` | 公开 | 用户名+密码 → access_token + refresh_token |
+| `POST /api/v1/auth/refresh` | 公开 | refresh_token → 新 token 对 |
+| `GET /api/v1/auth/me` | 需认证 | 当前用户信息 |
+| `POST /api/v1/auth/register` | 需认证 | 注册新用户 |
+
+默认管理员：`admin` / `dandelions2026`（通过 `AUTH_ADMIN_USER` / `AUTH_ADMIN_PASS` 环境变量配置）。
+
+```bash
+# 登录获取 token
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"dandelions2026"}'
+
+# 带 token 访问 API
+curl http://localhost:8000/api/v1/research/history \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Token 有效期：access_token 30 分钟，refresh_token 7 天。Streamlit 看板启动时自动展示登录表单，token 过期时自动无感刷新。
+
 ### 观察池与定时调度
 
 观察池支持逐票自定义 cron 调度。Celery Beat 每 5 分钟检查到期项并派发扫描任务，同时每个工作日 15:07 触发全线收盘扫描。
@@ -292,7 +328,7 @@ celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2
 ## 测试
 
 ```powershell
-# 全部 178 个测试用例
+# 全部 194 个测试用例
 python -m pytest
 
 # 按模块运行
@@ -304,9 +340,10 @@ python -m pytest tests/test_multi_round_debate.py -v  # 多轮辩论专用（15 
 python -m pytest tests/test_report_pipeline.py -v     # 端到端流程（11 用例）
 python -m pytest tests/test_watchlist_store.py -v     # 观察池存储（32 用例）
 python -m pytest tests/test_websocket.py -v           # WebSocket 推送（8 用例）
+python -m pytest tests/test_auth.py -v                # JWT 认证（16 用例）
 ```
 
-覆盖范围：决策保护器全部边界条件、评分引擎六维度正常/边界/异常值、报告生成结构完整性与降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、WebSocket 消息格式/降级/连接管理、向后兼容性、QMT/AKShare/mock 数据链路、估值/事件标准化。HITL Streamlit 集成经手动回归测试确认无误。
+覆盖范围：决策保护器全部边界/评分引擎边缘值/报告生成降级/LangGraph 多轮辩论与 HITL/观察池 CRUD 与调度/WebSocket 消息格式与降级/JWT 认证与密码哈希/用户 CRUD/QMT-AKShare-mock 数据链路/估值事件标准化。
 
 ## Agent 架构与 LangGraph 编排
 

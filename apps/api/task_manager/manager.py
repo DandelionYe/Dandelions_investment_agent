@@ -24,7 +24,7 @@ class TaskManager:
     def __init__(self, store: TaskStore | None = None):
         self.store = store or get_task_store()
 
-    def submit(self, req: ResearchRequest) -> dict:
+    def submit(self, req: ResearchRequest, created_by: str = "default") -> dict:
         """提交研究任务，返回 {task_id, status, created_at}。
 
         1. 创建 task 记录（status=pending）
@@ -41,8 +41,9 @@ class TaskManager:
             use_llm=req.use_llm,
             max_debate_rounds=req.max_debate_rounds,
             use_graph=req.use_graph,
-            celery_task_id=None,  # 先创建记录，再发 celery
+            celery_task_id=None,
             created_at=created_at,
+            created_by=created_by,
         )
 
         # 发送到 Celery

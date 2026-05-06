@@ -8,12 +8,35 @@
 
 import json
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.websocket.redis_pubsub import get_async_redis
+from apps.api.auth.security import decode_token
+from apps.api.task_manager.store import get_user_store
 
 router = APIRouter(tags=["websocket"])
+
+
+async def _ws_auth(websocket: WebSocket, token: str) -> dict | None:
+    """验证 WebSocket token，失败时关闭连接并返回 None。"""
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            await websocket.close(code=4001, reason="无效的 token 类型")
+            return None
+        username = payload.get("sub")
+        if not username:
+            await websocket.close(code=4001, reason="token 无效")
+            return None
+        user = get_user_store().get_user_by_username(username)
+        if not user or not user.get("enabled"):
+            await websocket.close(code=4001, reason="用户不存在或已被禁用")
+            return None
+        return user
+    except Exception:
+        await websocket.close(code=4001, reason="token 无效或已过期")
+        return None
 
 
 def _build_progress_message(task: dict) -> dict:
@@ -37,15 +60,18 @@ def _build_progress_message(task: dict) -> dict:
 
 
 @router.websocket("/ws/task/{task_id}")
-async def ws_task_progress(websocket: WebSocket, task_id: str):
+async def ws_task_progress(websocket: WebSocket, task_id: str, token: str = Query(...)):
     """订阅单票研究任务的实时进度。
 
     流程：
+    0. 验证 query string 中的 token
     1. 接受连接后，先从 SQLite 读取当前最新状态并推送
     2. 若任务已终结（completed/failed/cancelled），推送后立即关闭
     3. 否则订阅 Redis 频道 task:{task_id}，持续推送增量更新
     4. 收到终结状态或客户端断开时关闭连接
     """
+    if not await _ws_auth(websocket, token):
+        return
     await websocket.accept()
 
     # 1. 推送当前最新状态
@@ -86,12 +112,14 @@ async def ws_task_progress(websocket: WebSocket, task_id: str):
 
 
 @router.websocket("/ws/batch/{batch_id}")
-async def ws_batch_progress(websocket: WebSocket, batch_id: str):
+async def ws_batch_progress(websocket: WebSocket, batch_id: str, token: str = Query(...)):
     """订阅观察池批量扫描的实时进度。
 
     流程与 ws_task_progress 类似，但订阅 batch:{batch_id} 频道。
     推送消息包含批量整体进度和各子任务的完成/失败事件。
     """
+    if not await _ws_auth(websocket, token):
+        return
     await websocket.accept()
 
     # 1. 推送当前最新批量状态
@@ -140,12 +168,14 @@ async def ws_batch_progress(websocket: WebSocket, batch_id: str):
 
 
 @router.websocket("/ws/events")
-async def ws_events(websocket: WebSocket):
+async def ws_events(websocket: WebSocket, token: str = Query(...)):
     """全局事件流 — 接收所有任务的进度事件。
 
     用于仪表盘等需要全局视图的场景。
     注意：此端点不推送历史状态，仅推送连接后的增量事件。
     """
+    if not await _ws_auth(websocket, token):
+        return
     await websocket.accept()
     redis = await get_async_redis()
     pubsub = redis.pubsub()

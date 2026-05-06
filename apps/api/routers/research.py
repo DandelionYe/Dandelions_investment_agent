@@ -1,6 +1,6 @@
 """研究任务 API 路由。"""
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 
 from apps.api.schemas.research import (
     ResearchRequest,
@@ -9,6 +9,7 @@ from apps.api.schemas.research import (
     TaskHistoryResponse,
 )
 from apps.api.task_manager.manager import TaskManager
+from apps.api.auth.dependencies import get_current_user
 
 router = APIRouter(tags=["research"])
 
@@ -22,20 +23,20 @@ def _manager() -> TaskManager:
     response_model=ResearchAcceptResponse,
     status_code=202,
 )
-async def submit_research(req: ResearchRequest):
+async def submit_research(req: ResearchRequest, user: dict = Depends(get_current_user)):
     """提交单票研究任务。
 
     任务提交后立即返回 task_id，研究过程在 Celery worker 中异步执行。
     使用 GET /api/v1/research/{task_id} 查询进度。
     """
-    return _manager().submit(req)
+    return _manager().submit(req, created_by=user["username"])
 
 
 @router.get(
     "/api/v1/research/{task_id}",
     response_model=TaskStatusResponse,
 )
-async def get_task_status(task_id: str):
+async def get_task_status(task_id: str, user: dict = Depends(get_current_user)):
     """查询研究任务状态和进度。
 
     - pending: 排队中
@@ -51,7 +52,7 @@ async def get_task_status(task_id: str):
 
 
 @router.get("/api/v1/research/{task_id}/result")
-async def get_task_result(task_id: str):
+async def get_task_result(task_id: str, user: dict = Depends(get_current_user)):
     """获取完整研究结果（JSON）。仅 completed 状态可用。"""
     try:
         return _manager().get_result(task_id)
@@ -62,7 +63,7 @@ async def get_task_result(task_id: str):
 
 
 @router.delete("/api/v1/research/{task_id}")
-async def cancel_task(task_id: str):
+async def cancel_task(task_id: str, user: dict = Depends(get_current_user)):
     """取消进行中的研究任务。"""
     try:
         return _manager().cancel(task_id)
@@ -81,6 +82,7 @@ async def list_task_history(
     status: str | None = Query(None, description="按状态筛选"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    user: dict = Depends(get_current_user),
 ):
     """查询历史研究任务列表（分页）。"""
     return _manager().list_history(

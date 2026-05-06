@@ -42,11 +42,15 @@ from services.data.data_quality import (
 )
 
 
+from apps.dashboard.components.login import require_login, auth_headers
+
 st.set_page_config(
     page_title="Dandelions 投研智能体",
     page_icon="📈",
     layout="wide",
 )
+
+require_login()
 
 
 def run_research(symbol: str, data_source: str, use_llm: bool) -> dict:

@@ -5,9 +5,9 @@
 
 ## 总体评估
 
-**完成度：约 97%**
+**完成度：约 98%**
 
-项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了九项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级；**(7)** 构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + SQLite 任务持久化 + Celery Beat 定时调度），提供 13 个 REST API 端点，支持异步研究任务提交/进度查询/报告下载/健康检查；**(8)** 实现观察池（Watchlist）批量研究系统：文件夹 + 标签两级分组、逐票自定义 cron 调度、Celery Beat 定时扫描 + 高频 checker 轮询、17 个观察池 REST API 端点、Streamlit `3_观察池.py` 管理页面，支持批量触发扫描和评分历史追踪；**(9)** 实现 WebSocket 实时进度推送：Redis Pub/Sub 跨进程消息传递（Celery Worker → Redis → FastAPI WebSocket），3 个 WebSocket 端点（task/batch/events），Streamlit 异步 API 模式 + 短间隔轮询进度条，Home.py 和观察池页面均可实时查看研究/扫描进度。
+项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了十项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级；**(7)** 构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + SQLite 任务持久化 + Celery Beat 定时调度），提供 13 个 REST API 端点，支持异步研究任务提交/进度查询/报告下载/健康检查；**(8)** 实现观察池（Watchlist）批量研究系统：文件夹 + 标签两级分组、逐票自定义 cron 调度、Celery Beat 定时扫描 + 高频 checker 轮询、17 个观察池 REST API 端点、Streamlit `3_观察池.py` 管理页面，支持批量触发扫描和评分历史追踪；**(9)** 实现 WebSocket 实时进度推送：Redis Pub/Sub 跨进程消息传递（Celery Worker → Redis → FastAPI WebSocket），3 个 WebSocket 端点（task/batch/events），Streamlit 异步 API 模式 + 短间隔轮询进度条，Home.py 和观察池页面均可实时查看研究/扫描进度；**(10)** 实现 JWT 用户认证/授权：`apps/api/auth/` 安全模块（JWT 签发/验证 + bcrypt 密码哈希），4 个 Auth 端点（login/refresh/me/register），FastAPI Depends 依赖注入保护全部 REST/WS 端点，SQLite `users` 表 + UserStore，种子管理员用户，Streamlit 登录表单 + token 自动刷新。
 
 ---
 
@@ -518,6 +518,57 @@
 
 ---
 
+### 1.14 JWT 用户认证/授权 ✅ (100%) — 2026-05-06 完成
+
+**实现内容：**
+
+1. **用户存储** — `apps/api/task_manager/store.py`
+   - ✅ `users` 表（id/username/password_hash/role/enabled）
+   - ✅ `UserStore` 类（create_user/get/list/update/delete，7 个 DAO 方法）
+   - ✅ `get_user_store()` 模块级单例 + 首次启动自动种子 admin 用户
+
+2. **JWT 安全模块** — `apps/api/auth/`
+   - ✅ `security.py`：`create_access_token()`（30 min）+ `create_refresh_token()`（7 days）+ `decode_token()` + `hash_password()` / `verify_password()`（bcrypt）
+   - ✅ `dependencies.py`：`get_current_user()` — `OAuth2PasswordBearer` + JWT 解码 + 用户启用检查
+   - ✅ 环境变量配置：`JWT_SECRET` / `JWT_ALGORITHM` / `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS`
+
+3. **Auth REST 端点** — `apps/api/routers/auth.py`（4 个端点）
+   - ✅ `POST /api/v1/auth/login` — 用户名+密码 → access_token + refresh_token
+   - ✅ `POST /api/v1/auth/refresh` — refresh_token → 新 access_token + refresh_token
+   - ✅ `GET /api/v1/auth/me` — 当前用户信息（需认证）
+   - ✅ `POST /api/v1/auth/register` — 注册新用户（需已登录）
+
+4. **受保护端点改造**
+   - ✅ `research.py` — 5 个端点添加 `user: dict = Depends(get_current_user)`
+   - ✅ `watchlist.py` — 16 个端点添加 `user: dict = Depends(get_current_user)`
+   - ✅ `reports.py` — 2 个端点添加 `user: dict = Depends(get_current_user)`
+   - ✅ `ws.py` — 3 个 WebSocket 端点接受 `?token=...` 查询参数验证
+   - ✅ 公开端点：`/api/v1/health/*`, `/api/v1/auth/login`, `/api/v1/auth/refresh`
+
+5. **created_by 字段激活**
+   - ✅ `TaskManager.submit()` 接受 `created_by` 参数，路由层传入认证用户名
+   - ✅ Celery 扫描任务使用 `created_by="watchlist_scanner"`
+
+6. **Streamlit 登录** — `apps/dashboard/components/login.py`
+   - ✅ `require_login()` — 侧边栏登录表单，未登录时 `st.stop()` 阻止页面渲染
+   - ✅ `auth_headers()` / `api_get()` / `api_post()` — 自动携带 Bearer token
+   - ✅ Token 过期自动刷新（401 → POST /refresh → 重试原请求）
+   - ✅ `Home.py` + `3_观察池.py` 启动时调用 `require_login()`
+
+7. **测试** — `tests/test_auth.py`（16 个用例 + 5 个集成测试跳过）
+   - ✅ 密码哈希/校验（正确/错误/不同 salt）
+   - ✅ JWT 签发/解码/无效 token/过期 token
+   - ✅ 用户 CRUD（创建/重复名称/列表/更新/删除/管理员种子）
+   - ⏭ 5 个端点集成测试（需启动 FastAPI 服务）
+
+**与设计方案差异：**
+- ✅ 完全按照设计方案实现（JWT Bearer + SQLite users 表 + 全局开关 + Streamlit 登录）
+- ✅ `passlib` 替换为 `bcrypt` 直接调用（避免 passlib 与新版 bcrypt 的兼容性问题）
+
+**评价：** 认证系统实现完整。JWT 签发/验证/刷新链路完整，全部 REST + WebSocket 端点受保护，Streamlit 看板强制登录。种子管理员用户通过环境变量配置，首次启动自动创建。`created_by` 字段从硬编码 "default" 激活为真实用户名。
+
+---
+
 ## 二、未实现功能详细分析
 
 ### 2.1 FastAPI 后端服务 ✅ (95%) — 2026-05-06 完成
@@ -535,11 +586,12 @@
 - ✅ 全局异常处理中间件
 - ✅ 共享 Service 层：Streamlit 和 FastAPI 共用 `services/` 业务逻辑
 - ✅ WebSocket 实时进度推送（Redis Pub/Sub + 3 WS 端点 + Streamlit 异步轮询模式）
+- ✅ JWT 用户认证/授权（bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录）
 
 **与设计方案差异：**
 - ✅ 所有核心端点均已实现，与设计方案一致
 - ✅ WebSocket 实时进度推送已实现（2026-05-06）
-- ⚠️ 用户认证/授权暂未实现（MVP 单用户场景）
+- ✅ JWT 用户认证/授权已实现（2026-05-06）
 
 **影响：**
 - 为多用户并发、观察池批量研究、外部系统集成奠定了基础
@@ -1111,20 +1163,21 @@ LangGraph StateGraph
 | 报告系统 | 85% | ✅ | JSON → MD → HTML → PDF 全链路 |
 | 决策保护器 | 95% | ✅ | 评分/风险/数据质量 三道防线 |
 | 协议和验证 | 95% | ✅ | 6 JSON Schemas + Draft202012Validator |
-| 测试 | 93% | ✅ | 178 用例（8 文件），覆盖多轮辩论/边界/降级/HITL/观察池/WebSocket |
+| 测试 | 94% | ✅ | 194 用例（9 文件），覆盖多轮辩论/边界/降级/HITL/观察池/WebSocket/认证 |
 | 命令行工具 | 80% | ✅ | main.py 4 个参数 |
 | 配置管理 | 90% | ✅ | YAML + .env 双层配置 |
 | **LangGraph 编排** | **95%** | ✅ | 8 节点辩论子图 + 6 节点完整 pipeline 图 + Supervisor + 循环边 + HITL + 错误降级 |
-| **FastAPI 后端** | **98%** | ✅ | Celery + Redis 异步队列 + SQLite + Beat 定时调度 + 30 REST + 3 WS 端点 |
-| **观察池** | **100%** | ✅ | 文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API 端点 + Streamlit 页面 |
-| **WebSocket 推送** | **100%** | ✅ | Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询模式 |
+| **FastAPI 后端** | **100%** | ✅ | Celery + Redis + SQLite + Beat + 30 REST + 3 WS + JWT 认证，全端点保护 |
+| **观察池** | **100%** | ✅ | 文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit |
+| **WebSocket 推送** | **100%** | ✅ | Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询 |
+| **JWT 认证授权** | **100%** | ✅ | bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录 |
 | 网页搜索服务 | 0% | ❌ | 未开始 |
 | 系统设置页面 | 0% | ❌ | 未开始 |
 | Qlib 框架 | 0% | ❌ | 未开始 |
 | 报告模板 | 30% | ⚠️ | Markdown+CSS，缺 Jinja2 模板 |
 | 文档 | 0% | ❌ | 仅 README / CLAUDE.md / Scheme.md |
 
-**总体完成度：约 97%**
+**总体完成度：约 98%**
 
 ---
 
@@ -1253,8 +1306,8 @@ LangGraph StateGraph
    - ✅ Celery + Redis 异步任务队列
    - ✅ 30 个 REST API 端点（含 17 个观察池端点）+ 3 个 WebSocket 端点
    - ✅ SQLite 任务持久化 + Celery Beat 定时调度
-   - ✅ WebSocket 实时进度推送（Redis Pub/Sub + Celery 发布 + Streamlit 轮询）
-   - ⏳ 用户认证/授权（待实现）
+   - ✅ WebSocket 实时进度推送 + JWT 用户认证/授权
+   - ✅ 全部 REST + WebSocket 端点受保护，Streamlit 登录集成
 
 2. **观察池** ✅ **已完成（2026-05-06）**
    - ✅ 批量研究 + 定期扫描 + 条件筛选
@@ -1268,7 +1321,13 @@ LangGraph StateGraph
    - ✅ Celery 全生命周期进度发布（8 个发布点）
    - ✅ Streamlit 异步模式 + 短间隔轮询进度条
 
-4. **补充文档**
+4. **JWT 用户认证/授权** ✅ **已完成（2026-05-06）**
+   - ✅ bcrypt 密码哈希 + JWT 签发/验证/刷新
+   - ✅ 全部 REST + WebSocket 端点保护（OAuth2PasswordBearer）
+   - ✅ `users` 表 + UserStore + 种子管理员
+   - ✅ Streamlit 登录表单 + token 自动刷新
+
+5. **补充文档**
    - 添加架构文档
    - 添加 API 文档
    - 添加使用教程
@@ -1455,21 +1514,22 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 
 ## 九、当前状态总结
 
-**完成度：约 97%**（较上次评估 +1%）
+**完成度：约 98%**（较上次评估 +1%）
 
-**近期完成的九项升级：**
+**近期完成的十项升级：**
 
 | # | 内容 | 状态 |
 |---|------|------|
 | 1 | Agent 拆分：单体 Debate Agent → 4 个独立 Agent 类 | ✅ |
-| 2 | 测试补充：11 用例 → 178 用例（8 文件） | ✅ |
+| 2 | 测试补充：11 用例 → 194 用例（9 文件） | ✅ |
 | 3 | LangGraph 编排：8 节点 StateGraph + HITL | ✅ |
 | 4 | 多轮辩论 + Supervisor：LLM 驱动辩论主持人 + 质询循环 | ✅ |
 | 5 | Streamlit HITL 人工审核界面 | ✅ |
 | 6 | LangGraph 完整端到端 pipeline 图（数据→评分→辩论→决策保护） | ✅ |
-| 7 | FastAPI 后端：Celery + Redis 异步队列 + SQLite 持久化 + 30 REST + 3 WS 端点 | ✅ |
-| 8 | 观察池：文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit 页面 | ✅ |
+| 7 | FastAPI 后端：Celery + Redis + SQLite + 30 REST + 3 WS + JWT 认证 | ✅ |
+| 8 | 观察池：文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit | ✅ |
 | 9 | WebSocket 实时进度推送：Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询 | ✅ |
+| 10 | JWT 用户认证/授权：bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录 | ✅ |
 
 **核心功能：** ✅ 已完成
 - 完整的单票研究闭环（LangGraph 多轮辩论编排）
@@ -1477,9 +1537,9 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 - LLM 驱动的 Supervisor 动态调度 Agent 间质询（三收敛标准）
 - Human-in-the-loop 辩论中断/恢复（含完整 debate_history）
 - 专业的投委会报告（JSON/MD/HTML/PDF）
-- 完善的决策保护机制（178 测试覆盖所有边界）
+- 完善的决策保护机制（194 测试覆盖所有边界）
 - 灵活的三源数据层（QMT/AKShare/Mock）
-- FastAPI REST API + WebSocket（异步任务 + 实时进度推送 + 报告下载 + 健康检查）
+- FastAPI REST + WebSocket + JWT 认证（异步任务 + 实时进度 + 报告下载 + 端点保护）
 - 观察池批量研究系统（文件夹+标签分组 + 逐票调度 + 批量扫描 + 实时进度）
 
 **仍需推进：**
@@ -1503,9 +1563,10 @@ Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 
 - **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph 双层图架构（辩论子图 + 完整 pipeline 图）
 - **多轮辩论就绪**：LLM 驱动的 Supervisor 动态调度 Agent 间质询，三轮收敛标准确保辩论质量，debate_history 完整记录辩论历程
 - **LangGraph 完整 pipeline 就绪**：`build_full_research_graph()` 实现从 symbol 输入到 final_result 输出的端到端图，含数据加载、评分、辩论子图、HITL 审核、决策保护、协议验证六个节点，以及数据/辩论两条错误降级路径
-- **测试覆盖扎实**：178 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、WebSocket 消息格式/降级/连接管理
+- **测试覆盖扎实**：194 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、WebSocket 消息格式/降级/连接管理、JWT 认证/密码哈希/用户 CRUD
 - **HITL 就绪**：`start_hitl_debate()` / `resume_hitl_debate()` API + Streamlit 审核界面均已就绪，完整图支持 `run_full_research_graph_hitl()` / `resume_full_research_graph()` 全链路 HITL
-- **FastAPI 后端就绪**：`apps/api/` 提供 30 个 REST 端点 + 3 个 WebSocket 端点，Celery + Redis 异步任务队列，Redis Pub/Sub 实时推送，SQLite 持久化，Celery Beat 定时调度，共享 Service 层与 Streamlit/CLI 并行
+- **FastAPI 后端就绪**：`apps/api/` 提供 30 个 REST + 3 个 WS + 4 个 Auth 端点，Celery + Redis 异步队列，Redis Pub/Sub 实时推送，SQLite 持久化，Celery Beat 定时调度，JWT 认证保护全部端点
 - **观察池就绪**：文件夹 + 标签两级分组 + 逐票自定义 cron 调度 + Celery Beat 双调度 + 17 API 端点 + 批量扫描实时进度 + Streamlit `3_观察池.py`
 - **WebSocket 就绪**：Redis Pub/Sub 跨进程消息通道 + 3 WS 端点（task/batch/events）+ Celery 全生命周期发布 + Streamlit 异步轮询模式
+- **JWT 认证就绪**：bcrypt + JWT + OAuth2PasswordBearer + 全部 REST/WS 端点保护 + Streamlit 登录表单 + token 自动刷新
 - **下一步方向**：网页搜索服务、系统设置页面、项目文档
