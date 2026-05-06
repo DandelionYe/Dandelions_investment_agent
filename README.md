@@ -1,6 +1,6 @@
 # Dandelions Investment Agent
 
-投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）。
+投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板一键切换人工审核模式（HITL）。已构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + 13 REST 端点）。
 
 ## 当前边界
 
@@ -32,7 +32,9 @@ services/
   report/                    报告生成（JSON / Markdown / HTML / PDF）
   protocols/                 6 JSON Schemas + 验证
 configs/                     评分权重 / 数据源 / 应用配置
-apps/dashboard/              Streamlit 看板 + 报告库
+apps/
+  dashboard/                 Streamlit 看板 + 报告库
+  api/                       FastAPI 网关（Celery + Redis + SQLite + 13 REST 端点）
 tests/                       138 测试用例（6 文件）
 protocols/                   6 JSON Schemas
 ```
@@ -132,6 +134,57 @@ streamlit run apps/dashboard/Home.py
 3. **确认或放弃**：「确认审核并生成报告」提交修改后生成完整报告；「放弃审核，自动通过」跳过人工干预
 
 HITL 启动失败时自动回退到非 HITL 模式，不影响正常使用。
+
+## FastAPI 后端
+
+除 Streamlit 看板和 CLI 外，项目还提供了 REST API 入口，支持异步任务队列和编程式集成。
+
+### 前置依赖
+
+需要本地运行 Redis。Windows 下可在 WSL 中启动：
+
+```powershell
+wsl -d Ubuntu -- redis-server --daemonize yes
+```
+
+或使用 Docker：
+
+```powershell
+docker run -d -p 6379:6379 redis:7-alpine
+```
+
+安装依赖（首次）：
+
+```powershell
+pip install fastapi "uvicorn[standard]" celery redis aiosqlite
+```
+
+### 启动
+
+```powershell
+# 终端 1：FastAPI 服务
+uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 终端 2：Celery worker（异步执行研究任务）
+celery -A apps.api.celery_app worker --loglevel=info --concurrency=2
+
+# 终端 3（可选）：Celery Beat（定时调度）
+celery -A apps.api.celery_app beat --loglevel=info
+```
+
+启动后访问 `http://127.0.0.1:8000/docs` 查看交互式 API 文档。
+
+### 核心端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/v1/research/single` | 提交异步研究任务 |
+| `GET` | `/api/v1/research/{task_id}` | 查询任务进度 |
+| `GET` | `/api/v1/research/{task_id}/result` | 获取研究结果 JSON |
+| `GET` | `/api/v1/reports/{task_id}/{fmt}` | 下载报告（json/md/html/pdf） |
+| `GET` | `/api/v1/health` | 健康检查 |
+
+任务提交后立即返回 `task_id`，研究在 Celery worker 中异步执行，客户端轮询进度即可。所有端点均生成 OpenAPI 文档。
 
 ## 测试
 

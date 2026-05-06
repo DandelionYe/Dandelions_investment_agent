@@ -1,0 +1,59 @@
+"""Celery 应用定义，含 Beat 定时调度配置。
+
+启动 worker:
+    celery -A apps.api.celery_app worker --loglevel=info --concurrency=2
+
+启动 beat（另开终端）:
+    celery -A apps.api.celery_app beat --loglevel=info
+
+同时启动 worker + beat（开发用）:
+    celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2
+"""
+
+import os
+from pathlib import Path
+
+from celery import Celery
+from celery.schedules import crontab
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+load_dotenv(PROJECT_ROOT / ".env")
+
+REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+REDIS_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
+
+celery_app = Celery(
+    "dandelions_api",
+    broker=REDIS_URL,
+    backend=REDIS_BACKEND,
+    include=["apps.api.task_manager.celery_tasks"],
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="Asia/Shanghai",
+    enable_utc=True,
+    task_track_started=True,
+    task_acks_late=True,
+    worker_prefetch_multiplier=1,
+    task_soft_time_limit=600,   # 10 min 软超时
+    task_time_limit=900,        # 15 min 硬超时
+    broker_connection_retry_on_startup=True,
+)
+
+celery_app.conf.beat_schedule = {
+    "daily-health-check": {
+        "task": "apps.api.task_manager.celery_tasks.health_check_beat",
+        "schedule": crontab(hour=3, minute=17),
+        "options": {"queue": "beat"},
+    },
+    # 观察池定时扫描（观察池 CRUD 实现后启用）
+    # "watchlist-scan-weekday-close": {
+    #     "task": "apps.api.task_manager.celery_tasks.scan_watchlist",
+    #     "schedule": crontab(hour=15, minute=7, day_of_week="1-5"),
+    #     "options": {"queue": "beat"},
+    # },
+}
