@@ -14,7 +14,7 @@ from apps.api.auth.security import decode_token
 from apps.api.task_manager.store import get_user_store
 
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/login",
+    tokenUrl="/api/v1/auth/token",
     auto_error=True,
 )
 

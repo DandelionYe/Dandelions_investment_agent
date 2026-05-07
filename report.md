@@ -1,7 +1,7 @@
 # Dandelions 投研智能体 - 实现情况报告
 
 ## 生成时间
-2026年5月6日
+2026年5月7日
 
 ## 总体评估
 
@@ -374,6 +374,23 @@
    - ✅ `run_single_asset_research()` 和 `run_full_research_graph()` 均可作为 Celery 任务目标
 
 **评价：** FastAPI 后端实现完善。Celery 异步任务 + SQLite 持久化 + Beat 定时调度为多用户并发、观察池批量研究、外部系统集成奠定了基础。API 端点覆盖了完整的任务生命周期（提交→监控→结果获取→报告下载）。
+
+#### Redis 运行环境说明（2026-05-07 验证）
+
+Redis 是 FastAPI 后端的必需依赖（Celery broker + WebSocket Pub/Sub），在 Windows 环境下有几种部署方式：
+
+| 方式 | 可行性 | 说明 |
+|------|--------|------|
+| **WSL2 Ubuntu** | ✅ 推荐 | `apt install redis-server`，项目提供 `start_redis.ps1` 一键启动脚本 |
+| **Docker Desktop** | ⚠️ 受限 | 国内网络环境可能无法访问 Docker Hub（`registry-1.docker.io` 被墙），镜像拉取失败 |
+| **Windows 原生** | ❌ | Redis 无官方 Windows 版本，微软存档版已停止维护 |
+
+**注意事项**：
+- WSL2 虚拟机在所有 shell 退出后会自动关闭，Redis 随之停止。每次电脑重启后需重新运行 `start_redis.ps1` 启动 Redis
+- FastAPI 启动前务必确保 Redis 已运行，否则健康检查返回 503（`/api/v1/health` 会同时检查 API、DB、Redis 三项连通性，任意一项失败则整体返回 503）
+- uvicorn 的 `--reload` 只监听文件变更，Redis 启动/停止不触发重载，需手动重启
+
+**测试脚本**：项目提供 `API_Test.ps1`，覆盖健康检查、登录、观察池 CRUD、任务提交/查询等核心流程。脚本第 7 步已修复：提交任务成功后保存真实 `task_id`，查询步骤使用真实 ID 而非硬编码值。
 
 ---
 
@@ -1514,9 +1531,9 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 
 ## 九、当前状态总结
 
-**完成度：约 98%**（较上次评估 +1%）
+**完成度：约 98%**
 
-**近期完成的十项升级：**
+**近期完成的升级：**
 
 | # | 内容 | 状态 |
 |---|------|------|
@@ -1557,7 +1574,7 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
 
 ## 十一、总结
 
-Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 2026 年 5 月 6 日：
+Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 2026 年 5 月 7 日：
 
 - **核心链路健全**：QMT/AKShare/Mock 三源数据 → 6 维度评分 → 5 Agent 多轮 LangGraph 辩论 → 决策保护 → JSON/MD/HTML/PDF 报告
 - **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph 双层图架构（辩论子图 + 完整 pipeline 图）
@@ -1570,3 +1587,19 @@ Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 
 - **WebSocket 就绪**：Redis Pub/Sub 跨进程消息通道 + 3 WS 端点（task/batch/events）+ Celery 全生命周期发布 + Streamlit 异步轮询模式
 - **JWT 认证就绪**：bcrypt + JWT + OAuth2PasswordBearer + 全部 REST/WS 端点保护 + Streamlit 登录表单 + token 自动刷新
 - **下一步方向**：网页搜索服务、系统设置页面、项目文档
+
+**环境部署验证（2026-05-07）：**
+
+| # | 内容 | 状态 |
+|---|------|------|
+| 11 | WSL2 Redis 环境部署验证 + `start_redis.ps1` 一键启动脚本 | ✅ |
+| 12 | FastAPI 健康检查 503 故障排查（Redis 未启动 → WSL2 自动关闭根因） | ✅ |
+| 13 | Docker Hub 国内网络不可用问题确认 + WSL2 替代方案文档化 | ✅ |
+| 14 | `API_Test.ps1` 测试脚本修复（硬编码 task_id → 动态获取 + HTTP 503 异常处理说明） | ✅ |
+| 15 | `start_redis.ps1` 编码兼容性修复（中文乱码 → ASCII） | ✅ |
+
+**已确认的环境约束：**
+- Windows 环境下 Redis 必须通过 WSL2 运行，Docker Desktop 因国内网络限制（Docker Hub 不可达）无法直接拉取镜像
+- WSL2 退出的 shell 会导致虚拟机自动关闭，Redis 随之停止；项目提供 `start_redis.ps1` 一键启动
+- FastAPI 的 `--reload` 不会感知外部服务状态变化，Redis 启停后需手动重启 uvicorn
+- 健康检查端点 `/api/v1/health` 在 Redis 不可用时返回 503，`API_Test.ps1` 中 `Invoke-RestMethod` 对非 2xx 抛异常会导致"无法连接"的误导提示

@@ -3,6 +3,7 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 
 from apps.api.schemas.auth import (
     LoginRequest,
@@ -36,6 +37,22 @@ async def login(req: LoginRequest):
     if not user.get("enabled"):
         raise HTTPException(status_code=403, detail="用户已被禁用")
     if not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    access_token = create_access_token(user["username"], user.get("role", "user"))
+    refresh_token = create_refresh_token(user["username"])
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/token", response_model=TokenResponse)
+async def token_login(form: OAuth2PasswordRequestForm = Depends()):
+    """OAuth2 密码流登录（供 Swagger UI Authorize 按钮使用，接受表单格式）。"""
+    user = get_user_store().get_user_by_username(form.username)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if not user.get("enabled"):
+        raise HTTPException(status_code=403, detail="用户已被禁用")
+    if not verify_password(form.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
     access_token = create_access_token(user["username"], user.get("role", "user"))
