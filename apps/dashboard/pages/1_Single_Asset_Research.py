@@ -70,7 +70,7 @@ def read_file_text(path: str) -> str:
 def render_hitl_review():
     hitl_state = st.session_state.get("hitl_state", {})
     interrupt_info = hitl_state.get("__interrupt__", [])
-    review_package = interrupt_info[0].get("value", {}) if interrupt_info else {}
+    review_package = interrupt_info[0].value if interrupt_info else {}
 
     st.divider()
     st.header("人工审核")
@@ -343,7 +343,7 @@ def render_decision_guard(result: dict):
         return
     rows = [
         {"项目": "是否启用", "内容": localize_bool(guard.get("enabled"))},
-        {"项目": "本地评分", "内容": guard.get("score", "暂无")},
+        {"项目": "本地评分", "内容": str(guard.get("score", "暂无"))},
         {"项目": "本地评级", "内容": guard.get("rating", "暂无")},
         {"项目": "风险等级", "内容": localize_risk_level(guard.get("risk_level"))},
         {"项目": "模型原始建议", "内容": guard.get("llm_action", "暂无")},

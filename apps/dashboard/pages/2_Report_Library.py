@@ -209,7 +209,7 @@ def render_report_detail(row: dict):
         st.markdown("### 决策保护器")
         st.table(
             [
-                {"项目": "本地评分", "内容": decision_guard.get("score", "暂无")},
+                {"项目": "本地评分", "内容": str(decision_guard.get("score", "暂无"))},
                 {"项目": "本地评级", "内容": decision_guard.get("rating", "暂无")},
                 {"项目": "风险等级", "内容": decision_guard.get("risk_level", "暂无")},
                 {"项目": "模型原始建议", "内容": decision_guard.get("llm_action", "暂无")},
