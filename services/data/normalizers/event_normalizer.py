@@ -3,6 +3,7 @@ import re
 from datetime import date
 from typing import Any
 
+from services.data.normalizers.common import _first_present
 
 # Order matters: first-match-wins for titles that hit multiple keyword sets.
 # Higher-severity categories must appear before lower-severity ones.
@@ -24,17 +25,6 @@ EVENT_TYPE_KEYWORDS = {
     "major_contract": ["重大合同", "中标"],
     "management_change": ["董事", "监事", "高管", "高级管理人员", "辞职", "聘任"],
 }
-
-
-def _first_present(row: dict, candidates: list[str]) -> Any:
-    lower_map = {str(key).lower(): value for key, value in row.items()}
-    for candidate in candidates:
-        if candidate in row and row[candidate] not in (None, ""):
-            return row[candidate]
-        value = lower_map.get(candidate.lower())
-        if value not in (None, ""):
-            return value
-    return None
 
 
 def _clean_title(title: str) -> str:

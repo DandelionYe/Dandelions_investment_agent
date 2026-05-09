@@ -3,7 +3,7 @@
 import pytest
 import tempfile
 from pathlib import Path
-from apps.api.task_manager.store import WatchlistStore, _new_id, _utc_now_iso
+from apps.api.task_manager.store import WatchlistStore, _new_id
 
 
 @pytest.fixture

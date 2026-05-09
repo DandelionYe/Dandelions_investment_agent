@@ -33,8 +33,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.runnables import RunnableConfig
 
-_shared_checkpointer = MemorySaver()
-
 from services.agents.bull_analyst import BullAnalyst
 from services.agents.bear_analyst import BearAnalyst
 from services.agents.risk_officer import RiskOfficer
@@ -398,7 +396,7 @@ def build_debate_graph() -> CompiledStateGraph:
     builder.add_edge("assemble_result", END)
     builder.add_edge("error_handler", END)
 
-    return builder.compile(checkpointer=_shared_checkpointer)
+    return builder.compile(checkpointer=MemorySaver())
 
 
 # ── 公开 API ──────────────────────────────────────────────────────
@@ -941,7 +939,7 @@ def build_full_research_graph() -> CompiledStateGraph:
     builder.add_edge("handle_data_error", "validate_and_assemble")
     builder.add_edge("handle_debate_error", "validate_and_assemble")
 
-    return builder.compile(checkpointer=_shared_checkpointer)
+    return builder.compile(checkpointer=MemorySaver())
 
 
 # ── 全图公开 API ───────────────────────────────────────────────

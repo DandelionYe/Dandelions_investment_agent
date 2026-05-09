@@ -48,7 +48,7 @@ class ResearchDataCache:
 
     def _run_id(self, asset_data: dict) -> str:
         seed = f"{asset_data.get('symbol')}|{asset_data.get('as_of')}|{_now()}"
-        return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+        return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         conn.executescript(

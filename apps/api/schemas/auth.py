@@ -1,6 +1,6 @@
 """认证相关 Pydantic 模型。"""
 
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -30,4 +30,4 @@ class UserResponse(BaseModel):
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
     password: str = Field(..., min_length=6, max_length=128, description="密码（最少 6 位）")
-    role: str = Field(default="user", description="角色（admin/user）")
+    role: Literal["admin", "user"] = Field(default="user", description="角色（admin/user）")

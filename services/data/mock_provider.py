@@ -14,7 +14,7 @@ def get_mock_asset_data(symbol: str) -> dict:
     asset_data = {
         "symbol": symbol,
         "asset_type": "stock",
-        "name": "贵州茅台",
+        "name": f"Mock Asset ({symbol})",
         "as_of": str(date.today()),
         "data_source": "mock",
 

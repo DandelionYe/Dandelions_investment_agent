@@ -29,3 +29,5 @@ claude-no-proxy.cmd
 test_etf_code_format.py
 test_announcement.py
 celerybeat-schedule*
+code_review_report_v0.2.14.md
+restore_project.md

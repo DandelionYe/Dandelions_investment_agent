@@ -1,20 +1,24 @@
 """Pydantic models for watchlist API requests and responses."""
 
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from croniter import croniter
 
 
 # ── Schedule Config ────────────────────────────────────────────
 
 class ConditionTriggers(BaseModel):
     price_change_pct: Optional[float] = Field(
-        default=None, description="价格变动百分比阈值（如 5.0 表示涨跌幅超 5% 触发扫描）"
+        default=None, ge=0, le=20,
+        description="价格变动百分比阈值（如 5.0 表示涨跌幅超 5% 触发扫描）"
     )
     score_threshold: Optional[float] = Field(
-        default=None, description="评分阈值（如 80 表示上次评分 ≥80 分时触发扫描）"
+        default=None, ge=0, le=100,
+        description="评分阈值（如 80 表示上次评分 ≥80 分时触发扫描）"
     )
     volume_spike_ratio: Optional[float] = Field(
-        default=None, description="成交量异动倍数（如 3.0 表示成交量超 3 倍均量触发扫描）"
+        default=None, ge=0, le=100,
+        description="成交量异动倍数（如 3.0 表示成交量超 3 倍均量触发扫描）"
     )
 
 
@@ -26,6 +30,16 @@ class ScheduleConfig(BaseModel):
         default="0 9 * * 1-5",
         description="crontab 表达式（Asia/Shanghai 时区，仅在 mode=cron 时生效）",
     )
+
+    @field_validator("cron_expression")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        try:
+            croniter(v)
+        except (ValueError, KeyError):
+            raise ValueError(f"无效的 cron 表达式：{v}")
+        return v
+
     condition_triggers: ConditionTriggers = Field(
         default_factory=ConditionTriggers,
         description="条件触发器：价格变动/成交量异动/评分阈值，满足任一触发自动扫描",

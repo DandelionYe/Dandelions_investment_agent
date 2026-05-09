@@ -70,9 +70,9 @@ class TaskManager:
             "created_at": created_at,
         }
 
-    def get_status(self, task_id: str) -> dict:
+    def get_status(self, task_id: str, username: str | None = None) -> dict:
         """查询任务状态。"""
-        task = self.store.get_task(task_id)
+        task = self.store.get_task_for_user(task_id, username) if username else self.store.get_task(task_id)
         return {
             "task_id": task["id"],
             "symbol": task["symbol"],
@@ -88,9 +88,9 @@ class TaskManager:
             "error_message": task.get("error_message"),
         }
 
-    def get_result(self, task_id: str) -> dict:
+    def get_result(self, task_id: str, username: str | None = None) -> dict:
         """获取完整研究结果（需已完成的 task）。"""
-        task = self.store.get_task(task_id)
+        task = self.store.get_task_for_user(task_id, username) if username else self.store.get_task(task_id)
         if task["status"] != TaskStatus.COMPLETED:
             raise ValueError(
                 f"任务尚未完成（当前状态：{task['status']}），无法获取结果。"
@@ -114,11 +114,11 @@ class TaskManager:
             "completed_at": task.get("completed_at"),
         }
 
-    def cancel(self, task_id: str) -> dict:
+    def cancel(self, task_id: str, username: str | None = None) -> dict:
         """取消任务（pending 或 running 状态）。"""
         from apps.api.celery_app import celery_app
 
-        task = self.store.get_task(task_id)
+        task = self.store.get_task_for_user(task_id, username) if username else self.store.get_task(task_id)
         if task["status"] in (TaskStatus.PENDING, TaskStatus.RUNNING):
             celery_task_id = task.get("celery_task_id")
             if celery_task_id:
@@ -130,6 +130,7 @@ class TaskManager:
         self,
         symbol: str | None = None,
         status: str | None = None,
+        username: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> dict:
@@ -137,6 +138,7 @@ class TaskManager:
         tasks, total = self.store.list_tasks(
             symbol=symbol,
             status=status,
+            username=username,
             page=page,
             page_size=page_size,
         )
@@ -164,9 +166,9 @@ class TaskManager:
             "page_size": page_size,
         }
 
-    def get_report_info(self, task_id: str) -> dict:
+    def get_report_info(self, task_id: str, username: str | None = None) -> dict:
         """获取任务关联的报告文件信息。"""
-        task = self.store.get_task(task_id)
+        task = self.store.get_task_for_user(task_id, username) if username else self.store.get_task(task_id)
         report_paths = task.get("report_paths") or {}
         return {
             "task_id": task_id,

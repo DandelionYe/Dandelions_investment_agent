@@ -1,10 +1,14 @@
 from datetime import date
-from time import perf_counter
+from time import perf_counter, time
 
 import pandas as pd
 
 from services.data.provider_contracts import ProviderMetadata, ProviderResult
 from services.network.proxy_policy import disable_proxy_for_current_process
+
+_etf_spot_cache: pd.DataFrame | None = None
+_etf_spot_cache_time: float = 0
+_ETF_SPOT_CACHE_TTL = 300  # 5 分钟
 
 
 class AKShareETFProvider:
@@ -69,7 +73,13 @@ class AKShareETFProvider:
             disable_proxy_for_current_process()
             import akshare as ak
 
-            df = ak.fund_etf_spot_em()
+            global _etf_spot_cache, _etf_spot_cache_time
+            if _etf_spot_cache is not None and time() - _etf_spot_cache_time < _ETF_SPOT_CACHE_TTL:
+                df = _etf_spot_cache
+            else:
+                df = ak.fund_etf_spot_em()
+                _etf_spot_cache = df
+                _etf_spot_cache_time = time()
             if df is not None and not df.empty:
                 records = self._frame_to_records(df)
                 matched = [

@@ -1,47 +1,7 @@
-import math
 from datetime import date
 from typing import Any
 
-
-def _is_missing(value: Any) -> bool:
-    if value in (None, ""):
-        return True
-    try:
-        return bool(math.isnan(float(value)))
-    except (TypeError, ValueError):
-        return False
-
-
-def _first_present(row: dict, candidates: list[str]) -> Any:
-    lower_map = {str(key).lower(): value for key, value in row.items()}
-    for candidate in candidates:
-        if candidate in row and not _is_missing(row[candidate]):
-            return row[candidate]
-        value = lower_map.get(candidate.lower())
-        if not _is_missing(value):
-            return value
-    return None
-
-
-def _to_float(value: Any) -> float | None:
-    if _is_missing(value):
-        return None
-    try:
-        number = float(str(value).replace(",", "").replace("%", ""))
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(number):
-        return None
-    return number
-
-
-def _to_ratio(value: Any) -> float | None:
-    number = _to_float(value)
-    if number is None:
-        return None
-    if abs(number) > 1:
-        return number / 100
-    return number
+from services.data.normalizers.common import _to_float, _first_present, _ratio as _to_ratio
 
 
 def _to_qmt_percent_ratio(value: Any) -> float | None:

@@ -72,5 +72,16 @@ class DeepSeekClient:
             return json.loads(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
-                f"DeepSeek 返回内容不是合法 JSON：{content}"
+                "DeepSeek 返回内容不是合法 JSON"
             ) from exc
+
+
+_client_instance: DeepSeekClient | None = None
+
+
+def get_deepseek_client() -> DeepSeekClient:
+    """返回共享的 DeepSeekClient 实例（延迟初始化单例）。"""
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = DeepSeekClient()
+    return _client_instance

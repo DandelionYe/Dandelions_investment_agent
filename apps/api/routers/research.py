@@ -46,7 +46,7 @@ async def get_task_status(task_id: str, user: dict = Depends(get_current_user)):
     - cancelled: 已取消
     """
     try:
-        return _manager().get_status(task_id)
+        return _manager().get_status(task_id, username=user["username"])
     except KeyError:
         raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
 
@@ -55,7 +55,7 @@ async def get_task_status(task_id: str, user: dict = Depends(get_current_user)):
 async def get_task_result(task_id: str, user: dict = Depends(get_current_user)):
     """获取完整研究结果（JSON）。仅 completed 状态可用。"""
     try:
-        return _manager().get_result(task_id)
+        return _manager().get_result(task_id, username=user["username"])
     except KeyError:
         raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
     except ValueError as exc:
@@ -66,7 +66,7 @@ async def get_task_result(task_id: str, user: dict = Depends(get_current_user)):
 async def cancel_task(task_id: str, user: dict = Depends(get_current_user)):
     """取消进行中的研究任务。"""
     try:
-        return _manager().cancel(task_id)
+        return _manager().cancel(task_id, username=user["username"])
     except KeyError:
         raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
     except ValueError as exc:
@@ -84,10 +84,12 @@ async def list_task_history(
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     user: dict = Depends(get_current_user),
 ):
-    """查询历史研究任务列表（分页）。"""
+    """查询历史研究任务列表（分页）。非管理员用户仅可查看自己的任务。"""
+    username = user["username"] if user.get("role") != "admin" else None
     return _manager().list_history(
         symbol=symbol,
         status=status,
+        username=username,
         page=page,
         page_size=page_size,
     )

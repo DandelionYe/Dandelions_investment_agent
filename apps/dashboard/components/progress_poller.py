@@ -36,21 +36,24 @@ def _get_json(path: str) -> dict | None:
         return None
 
 
-def poll_task_progress(task_id: str, poll_interval: float = 1.0) -> dict:
+def poll_task_progress(task_id: str, poll_interval: float = 1.0,
+                      max_duration: float = 600.0) -> dict:
     """轮询单票研究任务进度并渲染进度条。
 
     在提交异步任务后调用。循环轮询 GET /api/v1/research/{task_id}，
     实时更新 Streamlit 进度条和状态文字。
+    最多轮询 max_duration 秒（默认 10 分钟），超时后返回失败状态。
 
     Returns:
         最终的任务状态 dict（status 为 completed/failed/cancelled）
     """
     import requests
 
+    started = time.time()
     status_text = st.empty()
     progress_bar = st.progress(0.0, text="排队中...")
 
-    while True:
+    while time.time() - started < max_duration:
         try:
             resp = requests.get(
                 f"{API_BASE}/api/v1/research/{task_id}", timeout=5
@@ -93,8 +96,12 @@ def poll_task_progress(task_id: str, poll_interval: float = 1.0) -> dict:
 
         time.sleep(poll_interval)
 
+    status_text.warning("轮询超时（任务可能仍在后台运行，请稍后手动刷新）")
+    return {"status": "timeout", "error_message": f"轮询超过 {max_duration} 秒"}
 
-def poll_batch_progress(batch_id: str, poll_interval: float = 1.5) -> dict:
+
+def poll_batch_progress(batch_id: str, poll_interval: float = 1.5,
+                        max_duration: float = 900.0) -> dict:
     """轮询批量扫描进度并渲染进度条。
 
     Returns:
@@ -102,10 +109,11 @@ def poll_batch_progress(batch_id: str, poll_interval: float = 1.5) -> dict:
     """
     import requests
 
+    started = time.time()
     status_text = st.empty()
     progress_bar = st.progress(0.0, text="批量扫描中...")
 
-    while True:
+    while time.time() - started < max_duration:
         try:
             resp = requests.get(
                 f"{API_BASE}/api/v1/watchlist/scan/{batch_id}", timeout=5
@@ -146,6 +154,9 @@ def poll_batch_progress(batch_id: str, poll_interval: float = 1.5) -> dict:
             return data
 
         time.sleep(poll_interval)
+
+    status_text.warning("轮询超时（扫描可能仍在后台运行）")
+    return {"status": "timeout", "error_message": f"轮询超过 {max_duration} 秒"}
 
 
 def submit_research_task(symbol: str, data_source: str = "mock",

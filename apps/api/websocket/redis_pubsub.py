@@ -12,7 +12,7 @@ import redis.asyncio as aioredis
 from dotenv import load_dotenv
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env")
 
 REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
@@ -44,15 +44,23 @@ async def close_async_redis() -> None:
 # ── 同步发布函数（Celery 侧）───────────────────────────────────
 
 
+_sync_pool: redis.ConnectionPool | None = None
+
+
+def _get_sync_pool() -> redis.ConnectionPool:
+    global _sync_pool
+    if _sync_pool is None:
+        _sync_pool = redis.ConnectionPool.from_url(REDIS_URL, db=PUBSUB_DB, decode_responses=True)
+    return _sync_pool
+
+
 def publish_progress_sync(channel: str, message: dict) -> None:
     """Celery worker 调用此函数发布进度消息到 Redis Pub/Sub。
 
-    每次调用创建短连接、发布消息、立即关闭。
-    发布失败不抛异常，保证主研究流程不受影响。
+    使用连接池复用连接，发布失败不抛异常，保证主研究流程不受影响。
     """
     try:
-        r = redis.from_url(REDIS_URL, db=PUBSUB_DB, decode_responses=True)
+        r = redis.Redis(connection_pool=_get_sync_pool())
         r.publish(channel, json.dumps(message, ensure_ascii=False))
-        r.close()
     except Exception:
         pass

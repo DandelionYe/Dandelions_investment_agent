@@ -8,11 +8,11 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from apps.api.schemas.task import TaskStatus
+from apps.api.utils.time_utils import utc_now_iso
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = PROJECT_ROOT / "storage" / "tasks.db"
@@ -62,11 +62,13 @@ class TaskStore:
 
     # ── 内部 ──────────────────────────────────────────────────
 
-    def _get_conn(self) -> sqlite3.Connection:
+    def _get_conn(self, writable: bool = False) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        if writable:
+            conn.execute("BEGIN IMMEDIATE")
         return conn
 
     def _init_db(self) -> None:
@@ -220,10 +222,17 @@ class TaskStore:
         finally:
             conn.close()
 
+    def get_task_for_user(self, task_id: str, username: str) -> dict:
+        task = self.get_task(task_id)
+        if task.get("created_by") != username:
+            raise KeyError(f"任务不存在：{task_id}")
+        return task
+
     def list_tasks(
         self,
         symbol: str | None = None,
         status: str | None = None,
+        username: str | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[dict], int]:
@@ -237,6 +246,9 @@ class TaskStore:
             if status:
                 where.append("status = ?")
                 params.append(status)
+            if username:
+                where.append("created_by = ?")
+                params.append(username)
 
             where_clause = f"WHERE {' AND '.join(where)}" if where else ""
             count = conn.execute(
@@ -341,9 +353,6 @@ CREATE INDEX IF NOT EXISTS idx_wl_batches_created ON watchlist_batches(created_a
 """
 
 
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
@@ -359,7 +368,7 @@ class WatchlistStore:
 
     # ── 内部 ──────────────────────────────────────────────────
 
-    def _get_conn(self) -> sqlite3.Connection:
+    def _get_conn(self, writable: bool = False) -> sqlite3.Connection:
         if self._db_path == ":memory:":
             uri = "file::memory:?cache=shared"
         else:
@@ -369,6 +378,8 @@ class WatchlistStore:
         if self._db_path != ":memory:":
             conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        if writable:
+            conn.execute("BEGIN IMMEDIATE")
         return conn
 
     def _init_db(self) -> None:
@@ -391,7 +402,7 @@ class WatchlistStore:
         sort_order: int = 0,
     ) -> dict:
         folder_id = _new_id()
-        now = _utc_now_iso()
+        now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -440,7 +451,7 @@ class WatchlistStore:
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
         if not updates:
             return self.get_folder(folder_id)
-        updates["updated_at"] = _utc_now_iso()
+        updates["updated_at"] = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -484,7 +495,7 @@ class WatchlistStore:
     ) -> dict:
         self.get_folder(folder_id)  # 确保文件夹存在
         item_id = _new_id()
-        now = _utc_now_iso()
+        now = utc_now_iso()
         schedule_json = json.dumps(schedule_config or {}, ensure_ascii=False)
         with self._lock:
             conn = self._get_conn()
@@ -582,7 +593,7 @@ class WatchlistStore:
             self.get_folder(updates["folder_id"])
         if not updates:
             return self.get_item(item_id)
-        updates["updated_at"] = _utc_now_iso()
+        updates["updated_at"] = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -615,7 +626,7 @@ class WatchlistStore:
         rating: str | None = None,
         action: str | None = None,
     ) -> None:
-        now = _utc_now_iso()
+        now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -643,7 +654,7 @@ class WatchlistStore:
 
     def create_tag(self, name: str, color: str = "#6366f1") -> dict:
         tag_id = _new_id()
-        now = _utc_now_iso()
+        now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -739,7 +750,7 @@ class WatchlistStore:
 
     def create_batch(self, trigger_type: str, item_ids: list[str]) -> str:
         batch_id = _new_id()
-        now = _utc_now_iso()
+        now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -754,7 +765,7 @@ class WatchlistStore:
         return batch_id
 
     def update_batch_progress(self, batch_id: str, completed: int, failed: int) -> dict:
-        now = _utc_now_iso()
+        now = utc_now_iso()
         done = completed + failed
         with self._lock:
             conn = self._get_conn()
@@ -793,7 +804,7 @@ class WatchlistStore:
     def get_due_items(self) -> list[dict]:
         conn = self._get_conn()
         try:
-            now = _utc_now_iso()
+            now = utc_now_iso()
             rows = conn.execute(
                 """SELECT wi.*, wf.name AS folder_name
                    FROM watchlist_items wi
@@ -895,7 +906,7 @@ class UserStore:
         self._lock = threading.Lock()
         self._init_db()
 
-    def _get_conn(self) -> sqlite3.Connection:
+    def _get_conn(self, writable: bool = False) -> sqlite3.Connection:
         if self._db_path == ":memory:":
             uri = "file::memory:?cache=shared"
         else:
@@ -905,6 +916,8 @@ class UserStore:
         if self._db_path != ":memory:":
             conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        if writable:
+            conn.execute("BEGIN IMMEDIATE")
         return conn
 
     def _init_db(self) -> None:
@@ -919,7 +932,7 @@ class UserStore:
 
     def create_user(self, username: str, password_hash: str, role: str = "user") -> dict:
         user_id = _new_id()
-        now = _utc_now_iso()
+        now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
@@ -1033,19 +1046,4 @@ def get_user_store() -> UserStore:
     global _user_store
     if _user_store is None:
         _user_store = UserStore()
-        _seed_admin_user(_user_store)
     return _user_store
-
-
-def _seed_admin_user(store: UserStore) -> None:
-    """首次启动时自动创建管理员用户。"""
-    import os
-    import bcrypt
-    admin_user = os.getenv("AUTH_ADMIN_USER", "admin")
-    admin_pass = os.getenv("AUTH_ADMIN_PASS", "dandelions2026")
-    if not store.get_user_by_username(admin_user):
-        store.create_user(
-            username=admin_user,
-            password_hash=bcrypt.hashpw(admin_pass.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
-            role="admin",
-        )

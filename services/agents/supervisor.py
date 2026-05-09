@@ -1,6 +1,6 @@
 import json
 
-from services.llm.deepseek_client import DeepSeekClient
+from services.llm.deepseek_client import get_deepseek_client
 
 
 class Supervisor:
@@ -13,7 +13,7 @@ class Supervisor:
     """
 
     def __init__(self, model: str | None = None):
-        self._client = DeepSeekClient()
+        self._client = get_deepseek_client()
         self._model = model or self._client.fast_model
 
     def evaluate(

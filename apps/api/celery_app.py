@@ -11,6 +11,8 @@
 """
 
 import os
+import sys
+import platform
 from pathlib import Path
 
 from celery import Celery
@@ -18,6 +20,7 @@ from celery.schedules import crontab
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
@@ -42,7 +45,11 @@ celery_app.conf.update(
     task_soft_time_limit=600,   # 10 min 软超时
     task_time_limit=900,        # 15 min 硬超时
     broker_connection_retry_on_startup=True,
+    result_expires=3600,        # 结果 1 小时后自动清理
 )
+
+if platform.system() == "Windows":
+    celery_app.conf.update(worker_pool="solo")
 
 celery_app.conf.beat_schedule = {
     "daily-health-check": {

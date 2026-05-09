@@ -13,11 +13,15 @@ sys.path.append(str(PROJECT_ROOT))
 REPORTS_DIR = PROJECT_ROOT / "storage" / "reports"
 
 
+from apps.dashboard.components.login import require_login
+
 st.set_page_config(
     page_title="Report Library - Dandelions",
     page_icon="📚",
     layout="wide",
 )
+
+require_login()
 
 
 def read_json(path: Path) -> dict:

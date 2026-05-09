@@ -7,8 +7,11 @@
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+
+logger = logging.getLogger(__name__)
 
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.websocket.redis_pubsub import get_async_redis
@@ -104,8 +107,8 @@ async def ws_task_progress(websocket: WebSocket, task_id: str, token: str = Quer
                     break
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("WebSocket 错误: %s", exc)
     finally:
         await pubsub.unsubscribe(f"task:{task_id}")
         await websocket.close()
@@ -160,8 +163,8 @@ async def ws_batch_progress(websocket: WebSocket, batch_id: str, token: str = Qu
                     break
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("WebSocket 错误: %s", exc)
     finally:
         await pubsub.unsubscribe(f"batch:{batch_id}")
         await websocket.close()
@@ -188,8 +191,8 @@ async def ws_events(websocket: WebSocket, token: str = Query(...)):
                 await websocket.send_json(data)
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("WebSocket 错误: %s", exc)
     finally:
         await pubsub.unsubscribe("events")
         await websocket.close()

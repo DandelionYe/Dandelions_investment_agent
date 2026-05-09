@@ -1,9 +1,10 @@
 """Pydantic models for research API requests and responses."""
 
 import uuid
-from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel, Field
+
+from apps.api.utils.time_utils import utc_now_iso
 
 
 class ResearchRequest(BaseModel):
@@ -75,10 +76,6 @@ class ErrorResponse(BaseModel):
     detail: str
     error_code: str = "internal_error"
     task_id: Optional[str] = None
-
-
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def new_task_id() -> str:

@@ -50,8 +50,10 @@ async def get_current_user(
     return user
 
 
-async def get_current_active_user(
+async def require_admin(
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """等同于 get_current_user（已隐式检查 enabled 状态）。"""
+    """要求当前用户为管理员，否则返回 403。"""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
     return user

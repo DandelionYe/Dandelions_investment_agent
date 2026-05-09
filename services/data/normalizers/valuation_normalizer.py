@@ -1,6 +1,12 @@
 from datetime import date, timedelta
 from typing import Any
 
+from services.data.normalizers.common import _to_float, _first_present, _ratio as _base_ratio
+
+
+def _ratio(value: Any) -> float | None:
+    return _base_ratio(value, threshold=1.5)
+
 
 def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
     """从 AKShare 拉取个股日线收盘价序列（最多 2500 天），作为分位计算的补充数据源。
@@ -51,35 +57,6 @@ def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
 
     closes = [float(v) for v in df[close_col].tolist() if v is not None and float(v) > 0]
     return closes
-
-
-def _to_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(str(value).replace(",", "").replace("%", ""))
-    except (TypeError, ValueError):
-        return None
-
-
-def _ratio(value: Any) -> float | None:
-    number = _to_float(value)
-    if number is None:
-        return None
-    if abs(number) > 1.5:
-        return number / 100
-    return number
-
-
-def _first_present(row: dict, candidates: list[str]) -> Any:
-    lower_map = {str(key).lower(): value for key, value in row.items()}
-    for candidate in candidates:
-        if candidate in row and row[candidate] not in (None, ""):
-            return row[candidate]
-        value = lower_map.get(candidate.lower())
-        if value not in (None, ""):
-            return value
-    return None
 
 
 def _compute_percentile(current: float, historical: list[float]) -> float:
