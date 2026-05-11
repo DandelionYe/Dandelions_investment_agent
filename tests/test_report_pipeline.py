@@ -34,7 +34,25 @@ def test_mock_single_asset_research_without_llm():
     assert result["score_breakdown"]["fundamental_quality"] <= 8
     assert result["score_breakdown"]["valuation"] <= 6
     assert result["score_breakdown"]["event_policy"] <= 4
+    assert result["analysis_mode"] == "template_no_llm"
+    assert result["llm_enabled"] is False
+    assert result["analysis_warnings"]
     assert result["decision_guard"]["max_allowed_action"] == "观察"
+
+
+def test_mock_graph_research_without_llm_skips_deepseek():
+    result = run_single_asset_research(
+        "600519.SH",
+        use_llm=False,
+        data_source="mock",
+        use_graph=True,
+    )
+
+    assert result["symbol"] == "600519.SH"
+    assert result["analysis_mode"] == "template_no_llm"
+    assert result["llm_enabled"] is False
+    assert "debate_result" not in result
+    assert result["decision_guard"]["enabled"] is True
 
 
 def test_mock_etf_research_skips_stock_fundamental_and_valuation():

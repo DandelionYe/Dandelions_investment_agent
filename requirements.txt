@@ -3,6 +3,7 @@ jsonschema>=4.22.0
 markdown>=3.6
 openai>=1.55.0
 pandas>=2.2.0
+PyYAML>=6.0.2
 playwright>=1.48.0
 python-dotenv>=1.0.1
 streamlit>=1.40.0

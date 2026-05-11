@@ -114,6 +114,12 @@ python main.py --symbol 600519.SH --data-source mock --no-llm
 python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf
 ```
 
+CLI 默认使用顺序单资产流水线；如需运行完整 LangGraph 编排流程，可增加 `--use-graph`：
+
+```powershell
+python main.py --symbol 600519.SH --data-source mock --use-graph --no-pdf
+```
+
 使用 QMT 主数据源。若 QMT 不可用，主流程会尝试回退 AKShare：
 
 ```powershell

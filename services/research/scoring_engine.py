@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -7,6 +8,7 @@ from services.protocols.validation import validate_protocol
 _SCORING_CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "scoring.yaml"
 
 
+@lru_cache(maxsize=1)
 def _load_scoring_config() -> dict:
     with open(_SCORING_CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)

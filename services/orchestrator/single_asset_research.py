@@ -10,6 +10,12 @@ from services.research.decision_guard import apply_decision_guard
 from services.protocols.validation import validate_protocol
 
 
+NO_LLM_TEMPLATE_WARNING = (
+    "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，"
+    "不构成完整投研分析。"
+)
+
+
 def _load_asset_data(symbol: str, data_source: str) -> dict:
     if data_source == "mock":
         return ResearchDataAggregator().enrich(get_mock_asset_data(symbol))
@@ -70,6 +76,16 @@ def _build_partial_result(asset_data: dict, data_source: str, score_result: dict
         "final_opinion": "未来1-3个月谨慎看多，建议回调时分批关注。",
         "max_position": "5%-8%",
     }
+
+
+def mark_no_llm_template_result(result: dict) -> dict:
+    result["analysis_mode"] = "template_no_llm"
+    result["llm_enabled"] = False
+    warnings = list(result.get("analysis_warnings", []))
+    if NO_LLM_TEMPLATE_WARNING not in warnings:
+        warnings.append(NO_LLM_TEMPLATE_WARNING)
+    result["analysis_warnings"] = warnings
+    return result
 
 
 def start_hitl_research(
@@ -225,6 +241,10 @@ def run_single_asset_research(
             "max_position",
             result["max_position"],
         )
+        result["analysis_mode"] = "llm_debate"
+        result["llm_enabled"] = True
+    else:
+        mark_no_llm_template_result(result)
 
     result = apply_decision_guard(result)
     validate_protocol("final_decision", result)

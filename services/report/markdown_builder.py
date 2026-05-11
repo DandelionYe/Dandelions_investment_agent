@@ -68,6 +68,8 @@ def build_markdown_report(result: dict) -> str:
     debate_result = result.get("debate_result", {})
     data_quality = result.get("data_quality", {})
     evidence_bundle = result.get("evidence_bundle", {})
+    analysis_mode = result.get("analysis_mode")
+    analysis_warnings = result.get("analysis_warnings", [])
 
     bull_case = debate_result.get("bull_case", {})
     bear_case = debate_result.get("bear_case", {})
@@ -119,6 +121,15 @@ def build_markdown_report(result: dict) -> str:
     data_quality_notes = build_data_quality_notes(price_data)
     field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {}))
     evidence_preview_table = _build_evidence_preview(evidence_bundle)
+    analysis_notice = ""
+    if analysis_mode == "template_no_llm":
+        if not analysis_warnings:
+            analysis_warnings = [
+                "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，不构成完整投研分析。"
+            ]
+        analysis_notice = "\n".join(
+            f"> **模式提示**：{item}" for item in analysis_warnings
+        ) + "\n\n"
 
     markdown = f"""# {result.get("name", "未知标的")}（{result.get("symbol", "UNKNOWN")}）投研报告
 
@@ -295,6 +306,15 @@ def build_markdown_report(result: dict) -> str:
 
 本报告由 Dandelions Investment Agent 自动生成，仅用于研究和复盘，不构成任何投资建议。
 """
+
+    if analysis_notice:
+        first_break = markdown.find("\n\n")
+        if first_break != -1:
+            markdown = (
+                markdown[: first_break + 2]
+                + analysis_notice
+                + markdown[first_break + 2 :]
+            )
 
     return markdown
 

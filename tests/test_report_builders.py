@@ -156,6 +156,20 @@ def test_markdown_contains_score_and_rating():
     assert "B" in md
 
 
+def test_markdown_warns_for_template_no_llm_mode():
+    md = build_markdown_report(
+        _minimal_result(
+            analysis_mode="template_no_llm",
+            analysis_warnings=[
+                "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，不构成完整投研分析。"
+            ],
+        )
+    )
+
+    assert "模式提示" in md
+    assert "无 LLM 模式" in md
+
+
 def test_markdown_contains_score_breakdown_dimensions():
     md = build_markdown_report(_minimal_result())
     assert "趋势动量" in md

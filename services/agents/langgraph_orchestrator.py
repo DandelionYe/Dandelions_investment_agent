@@ -663,6 +663,11 @@ def _full_node_score_asset(state: FullResearchState) -> dict:
         "max_position": "5%-8%",
     }
 
+    if not state.get("use_llm", True):
+        from services.orchestrator.single_asset_research import mark_no_llm_template_result
+
+        mark_no_llm_template_result(partial_result)
+
     return {
         "score_result": score_result,
         "partial_result": partial_result,
@@ -676,6 +681,18 @@ def _full_node_run_debate_subgraph(
     """调用现有 8 节点辩论子图."""
     partial_result = state["partial_result"]
     max_rounds = state.get("max_debate_rounds", 3)
+
+    if not state.get("use_llm", True):
+        return {
+            "debate_result": None,
+            "bull_case": None,
+            "bear_case": None,
+            "risk_review": None,
+            "committee_conclusion": None,
+            "debate_history": [],
+            "research_result": partial_result,
+            "debate_error": None,
+        }
 
     debate_state: DebateState = {
         "research_result": partial_result,

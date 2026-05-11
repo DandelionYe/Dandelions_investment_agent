@@ -8,7 +8,7 @@ from services.report.pdf_builder_playwright import save_pdf_report_with_playwrig
 from services.report.json_builder import save_json_result
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol", default="600519.SH", help="股票或ETF代码")
     parser.add_argument(
@@ -27,12 +27,23 @@ def main():
         action="store_true",
         help="跳过 Playwright PDF 导出，只生成 JSON/Markdown/HTML",
     )
+    parser.add_argument(
+        "--use-graph",
+        action="store_true",
+        help="使用完整 LangGraph 编排流程，而不是默认的顺序单资产流水线",
+    )
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     result = run_single_asset_research(
         args.symbol,
         use_llm=not args.no_llm,
         data_source=args.data_source,
+        use_graph=args.use_graph,
     )
 
     json_path = save_json_result(result)
