@@ -1,6 +1,7 @@
 from datetime import date
 
 from services.data.normalizers.event_normalizer import EventNormalizer
+from services.data.provider_contracts import ProviderDataQualityError
 from services.data.providers.akshare_event_provider import AKShareEventProvider
 from services.data.providers.cninfo_event_provider import CninfoEventProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
@@ -31,6 +32,7 @@ class EventService:
                 "status": "success" if cninfo_result.metadata.success else "failed",
                 "rows": len(cninfo_result.data) if isinstance(cninfo_result.data, list) else 0,
                 "error": cninfo_result.metadata.error,
+                "error_type": cninfo_result.metadata.error_type,
                 "as_of": str(date.today()),
             }
         )
@@ -61,6 +63,7 @@ class EventService:
                 "status": "success" if akshare_result.metadata.success else "failed",
                 "rows": len(akshare_result.data) if isinstance(akshare_result.data, list) else 0,
                 "error": akshare_result.metadata.error,
+                "error_type": akshare_result.metadata.error_type,
                 "as_of": str(date.today()),
             }
         )
@@ -97,6 +100,7 @@ class EventService:
                 "status": "fallback_placeholder",
                 "rows": 0,
                 "error": error,
+                "error_type": ProviderDataQualityError.error_type if error else None,
                 "as_of": str(date.today()),
             }
         ]
@@ -124,6 +128,7 @@ class EventService:
                     "status": "placeholder" if metadata.get("source") == "mock_placeholder" else "success",
                     "rows": len(events),
                     "error": None,
+                    "error_type": None,
                     "as_of": str(date.today()),
                 }
             ],

@@ -133,10 +133,23 @@ class ResearchDataCache:
                 end_time text,
                 status text,
                 error text,
+                error_type text,
                 rows integer
             );
             """
         )
+        self._ensure_column(conn, "provider_run_log", "error_type", "text")
+
+    def _ensure_column(
+        self,
+        conn: sqlite3.Connection,
+        table: str,
+        column: str,
+        column_type: str,
+    ) -> None:
+        columns = {row[1] for row in conn.execute(f"pragma table_info({table})")}
+        if column not in columns:
+            conn.execute(f"alter table {table} add column {column} {column_type}")
 
     def _upsert_symbol(self, conn: sqlite3.Connection, asset_data: dict) -> None:
         info = asset_data.get("symbol_info", {})
@@ -166,9 +179,9 @@ class ResearchDataCache:
             conn.execute(
                 """
                 insert into provider_run_log(
-                    run_id, symbol, provider, dataset, start_time, end_time, status, error, rows
+                    run_id, symbol, provider, dataset, start_time, end_time, status, error, error_type, rows
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -179,6 +192,7 @@ class ResearchDataCache:
                     row.get("end_time", row.get("as_of")),
                     row.get("status"),
                     row.get("error"),
+                    row.get("error_type"),
                     row.get("rows"),
                 ),
             )

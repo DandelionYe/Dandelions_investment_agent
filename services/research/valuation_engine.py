@@ -1,6 +1,7 @@
 from datetime import date
 
 from services.data.normalizers.valuation_normalizer import ValuationNormalizer
+from services.data.provider_contracts import ProviderDataQualityError
 from services.data.providers.akshare_valuation_provider import AKShareValuationProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
 
@@ -38,6 +39,7 @@ class ValuationService:
                     "status": "success" if akshare_result.metadata.success else "failed",
                     "rows": len(akshare_result.data) if isinstance(akshare_result.data, list) else 0,
                     "error": akshare_result.metadata.error,
+                    "error_type": akshare_result.metadata.error_type,
                     "as_of": str(date.today()),
                 }
             )
@@ -71,6 +73,7 @@ class ValuationService:
                     "status": "success",
                     "rows": 1,
                     "error": None,
+                    "error_type": None,
                     "as_of": str(date.today()),
                 }
             ],
@@ -93,6 +96,7 @@ class ValuationService:
                     "status": "fallback_placeholder",
                     "rows": 1,
                     "error": error,
+                    "error_type": ProviderDataQualityError.error_type if error else None,
                     "as_of": str(date.today()),
                 }
             ],

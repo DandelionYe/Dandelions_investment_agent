@@ -5,6 +5,10 @@ from typing import Any
 
 import pandas as pd
 
+from services.data.provider_contracts import (
+    ProviderSchemaError,
+    ProviderUnavailableError,
+)
 from services.data.market_data_utils import (
     build_price_data_from_frame,
     build_price_source_metadata,
@@ -52,7 +56,7 @@ def _import_xtdata():
     try:
         from xtquant import xtdata
     except Exception as exc:
-        raise RuntimeError(
+        raise ProviderUnavailableError(
             "QMT/xtquant 不可用。请确认已在 Windows 环境安装 QMT 客户端和 xtquant。"
         ) from exc
 
@@ -69,7 +73,7 @@ def connect_qmt(settings: QMTSettings | None = None):
     try:
         return xtdata.connect()
     except Exception as exc:
-        raise RuntimeError(
+        raise ProviderUnavailableError(
             "无法连接 QMT 本地行情服务。请确认 miniQMT/QMT 投研服务已启动并登录。"
         ) from exc
 
@@ -90,7 +94,12 @@ def _to_dataframe(raw: Any, symbol: str) -> pd.DataFrame:
         df = raw
 
     if not isinstance(df, pd.DataFrame):
-        df = pd.DataFrame(df)
+        try:
+            df = pd.DataFrame(df)
+        except Exception as exc:
+            raise ProviderSchemaError(
+                f"QMT daily history response cannot be converted to DataFrame: {type(df).__name__}"
+            ) from exc
 
     return df
 
@@ -103,16 +112,21 @@ def _query_qmt_daily_history(
 ) -> pd.DataFrame:
     xtdata = _import_xtdata()
 
-    raw = xtdata.get_market_data_ex(
-        field_list=["time", "close", "amount", "volume"],
-        stock_list=[symbol],
-        period=settings.period,
-        start_time=start,
-        end_time=end,
-        count=-1,
-        dividend_type=settings.dividend_type,
-        fill_data=True,
-    )
+    try:
+        raw = xtdata.get_market_data_ex(
+            field_list=["time", "close", "amount", "volume"],
+            stock_list=[symbol],
+            period=settings.period,
+            start_time=start,
+            end_time=end,
+            count=-1,
+            dividend_type=settings.dividend_type,
+            fill_data=True,
+        )
+    except Exception as exc:
+        raise ProviderUnavailableError(
+            f"QMT daily history query failed for {symbol}: {exc}"
+        ) from exc
 
     return _to_dataframe(raw, symbol)
 
@@ -133,7 +147,16 @@ def _download_qmt_daily_history(
             end,
         )
     except TypeError:
-        result = xtdata.download_history_data(symbol, settings.period, start, end)
+        try:
+            result = xtdata.download_history_data(symbol, settings.period, start, end)
+        except Exception as exc:
+            raise ProviderUnavailableError(
+                f"QMT daily history download failed for {symbol}: {exc}"
+            ) from exc
+    except Exception as exc:
+        raise ProviderUnavailableError(
+            f"QMT daily history download failed for {symbol}: {exc}"
+        ) from exc
 
     return True if result is None else bool(result)
 
@@ -183,7 +206,7 @@ def _load_qmt_daily_history(symbol: str, settings: QMTSettings) -> tuple[pd.Data
         df = _query_qmt_daily_history(symbol, start, end, settings)
 
     if df.empty:
-        raise RuntimeError(
+        raise ProviderUnavailableError(
             f"QMT 行情数据为空：{symbol}。"
             "请确认 QMT 已登录，且该标的日线数据可下载；"
             "也可手动执行 xtdata.download_history_data 后重试。"
@@ -235,7 +258,7 @@ def get_qmt_asset_data(symbol: str) -> dict:
 
     close_col = _find_column(df, ["close", "收盘"])
     if not close_col:
-        raise RuntimeError(f"QMT 行情数据缺少 close 字段，当前字段：{list(df.columns)}")
+        raise ProviderSchemaError(f"QMT price data missing close field: {list(df.columns)}")
 
     amount_col = _find_column(df, ["amount", "成交额"])
 
@@ -282,4 +305,16 @@ def get_qmt_asset_data(symbol: str) -> dict:
                 "as_of": str(date.today()),
             },
         },
+        "provider_run_log": [
+            {
+                "provider": "qmt",
+                "dataset": "price_data",
+                "symbol": symbol,
+                "status": "success",
+                "rows": qmt_status.get("row_count"),
+                "error": None,
+                "error_type": None,
+                "as_of": str(date.today()),
+            }
+        ],
     }

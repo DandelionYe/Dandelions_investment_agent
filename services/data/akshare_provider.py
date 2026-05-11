@@ -147,4 +147,16 @@ def get_akshare_asset_data(symbol: str) -> dict:
                 vendor=data_vendor,
             )
         },
+        "provider_run_log": [
+            {
+                "provider": "akshare",
+                "dataset": "price_data",
+                "symbol": symbol,
+                "status": "success",
+                "rows": len(df),
+                "error": None,
+                "error_type": None,
+                "as_of": str(date.today()),
+            }
+        ],
     }

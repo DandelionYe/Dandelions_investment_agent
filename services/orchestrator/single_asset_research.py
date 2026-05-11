@@ -1,9 +1,14 @@
 import uuid
+from datetime import date
 
 from services.data.mock_provider import get_mock_asset_data
 from services.data.akshare_provider import get_akshare_asset_data
 from services.data.qmt_provider import get_qmt_asset_data
 from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
+from services.data.provider_contracts import (
+    ProviderUnavailableError,
+    get_provider_error_type,
+)
 from services.research.scoring_engine import score_asset
 from services.agents.debate_agent import generate_debate_result
 from services.research.decision_guard import apply_decision_guard
@@ -30,11 +35,24 @@ def _load_asset_data(symbol: str, data_source: str) -> dict:
             asset_data = get_qmt_asset_data(symbol)
             asset_data["data_source_chain"] = ["qmt"]
             return ResearchDataAggregator().enrich(asset_data)
-        except Exception as qmt_error:
+        except ProviderUnavailableError as qmt_error:
             fallback_data = get_akshare_asset_data(symbol)
             fallback_data["data_source_chain"] = ["qmt_failed", "akshare_fallback"]
             fallback_data["data_warnings"] = [
                 f"QMT 数据源不可用，已回退到 AKShare：{qmt_error}"
+            ]
+            fallback_data["provider_run_log"] = [
+                {
+                    "provider": "qmt",
+                    "dataset": "price_data",
+                    "symbol": symbol,
+                    "status": "failed",
+                    "rows": 0,
+                    "error": str(qmt_error),
+                    "error_type": get_provider_error_type(qmt_error),
+                    "as_of": str(date.today()),
+                },
+                *fallback_data.get("provider_run_log", []),
             ]
             return ResearchDataAggregator().enrich(fallback_data)
 

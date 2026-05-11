@@ -3,7 +3,11 @@ from time import perf_counter
 
 import pandas as pd
 
-from services.data.provider_contracts import ProviderMetadata, ProviderResult
+from services.data.provider_contracts import (
+    ProviderMetadata,
+    ProviderResult,
+    get_provider_error_type,
+)
 from services.network.proxy_policy import disable_proxy_for_current_process
 
 
@@ -47,6 +51,7 @@ class AKShareEventProvider:
                     source_url="https://data.eastmoney.com/notices/",
                     success=False,
                     error=str(exc),
+                    error_type=get_provider_error_type(exc),
                     latency_ms=int((perf_counter() - started) * 1000),
                 ),
             )

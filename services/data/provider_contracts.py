@@ -4,6 +4,36 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 
+class ProviderError(Exception):
+    """Base class for provider-layer failures."""
+
+    error_type = "provider_error"
+
+
+class ProviderUnavailableError(ProviderError):
+    """Provider is unavailable, so a configured fallback may be used."""
+
+    error_type = "provider_unavailable"
+
+
+class ProviderSchemaError(ProviderError):
+    """Provider response shape is incompatible with the expected schema."""
+
+    error_type = "provider_schema"
+
+
+class ProviderDataQualityError(ProviderError):
+    """Provider returned data, but it is not good enough for safe use."""
+
+    error_type = "provider_data_quality"
+
+
+def get_provider_error_type(error: BaseException | None) -> str | None:
+    if error is None:
+        return None
+    return getattr(error, "error_type", error.__class__.__name__)
+
+
 def now_beijing_iso() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
 
@@ -14,6 +44,7 @@ class ProviderMetadata:
     request_time: str = field(default_factory=now_beijing_iso)
     success: bool = True
     error: str | None = None
+    error_type: str | None = None
     latency_ms: int | None = None
 
 

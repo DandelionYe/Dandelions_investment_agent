@@ -1,6 +1,7 @@
 from datetime import date
 
 from services.data.normalizers.etf_normalizer import ETFNormalizer
+from services.data.provider_contracts import ProviderDataQualityError
 from services.data.providers.etf_provider import AKShareETFProvider
 
 
@@ -43,6 +44,7 @@ class ETFDataService:
                 "status": "placeholder",
                 "rows": 1,
                 "error": None,
+                "error_type": None,
                 "as_of": str(date.today()),
             }
         ]
@@ -75,6 +77,7 @@ class ETFDataService:
                     "status": "success" if source == "akshare" else "placeholder",
                     "rows": len(info_result.data) + len(spot_result.data or []),
                     "error": None if source == "akshare" else "AKShare ETF data unavailable.",
+                    "error_type": None if source == "akshare" else ProviderDataQualityError.error_type,
                     "as_of": str(date.today()),
                 }
             ]

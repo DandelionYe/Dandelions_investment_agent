@@ -3,7 +3,12 @@ from time import perf_counter, time
 
 import pandas as pd
 
-from services.data.provider_contracts import ProviderMetadata, ProviderResult
+from services.data.provider_contracts import (
+    ProviderDataQualityError,
+    ProviderMetadata,
+    ProviderResult,
+    get_provider_error_type,
+)
 from services.network.proxy_policy import disable_proxy_for_current_process
 
 _etf_spot_cache: pd.DataFrame | None = None
@@ -60,6 +65,7 @@ class AKShareETFProvider:
                     source_url="https://fund.eastmoney.com/",
                     success=False,
                     error=str(exc),
+                    error_type=get_provider_error_type(exc),
                     latency_ms=int((perf_counter() - started) * 1000),
                 ),
             )
@@ -106,7 +112,11 @@ class AKShareETFProvider:
                 as_of=str(date.today()),
                 data=[],
                 raw={},
-                metadata=ProviderMetadata(success=False, error="Empty response from AKShare"),
+                metadata=ProviderMetadata(
+                    success=False,
+                    error="Empty response from AKShare",
+                    error_type=ProviderDataQualityError.error_type,
+                ),
             )
         except Exception as exc:
             return ProviderResult(
@@ -116,7 +126,11 @@ class AKShareETFProvider:
                 as_of=str(date.today()),
                 data=[],
                 raw={},
-                metadata=ProviderMetadata(success=False, error=str(exc)),
+                metadata=ProviderMetadata(
+                    success=False,
+                    error=str(exc),
+                    error_type=get_provider_error_type(exc),
+                ),
             )
 
     def _frame_to_records(self, value) -> list[dict]:

@@ -1,6 +1,7 @@
 from datetime import date
 
 from services.data.normalizers.fundamental_normalizer import FundamentalNormalizer
+from services.data.provider_contracts import ProviderDataQualityError
 from services.data.providers.akshare_fundamental_provider import AKShareFundamentalProvider
 from services.data.providers.qmt_financial_provider import QMTFinancialProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
@@ -17,7 +18,7 @@ class FundamentalService:
         symbol_info = asset_data.get("symbol_info", {})
 
         if asset_data.get("data_source") == "mock":
-            return self._placeholder_result(symbol, "mock data source selected")
+            return self._placeholder_result(symbol, "mock data source selected", [])
 
         provider_run_log = []
 
@@ -31,6 +32,7 @@ class FundamentalService:
                 "status": "success" if qmt_result.metadata.success else "failed",
                 "rows": sum(len(rows) for rows in qmt_result.data.values()) if isinstance(qmt_result.data, dict) else 0,
                 "error": qmt_result.metadata.error,
+                "error_type": qmt_result.metadata.error_type,
                 "as_of": str(date.today()),
             }
         )
@@ -66,6 +68,7 @@ class FundamentalService:
                 "status": "success" if akshare_result.metadata.success else "failed",
                 "rows": len(akshare_result.data) if isinstance(akshare_result.data, list) else 0,
                 "error": akshare_result.metadata.error,
+                "error_type": akshare_result.metadata.error_type,
                 "as_of": str(date.today()),
             }
         )
@@ -92,13 +95,18 @@ class FundamentalService:
                 )
 
         error = qmt_result.metadata.error or "QMT and AKShare fundamental data unavailable."
-        return self._placeholder_result(symbol, error)
+        return self._placeholder_result(symbol, error, provider_run_log)
 
-    def _placeholder_result(self, symbol: str, error: str | None) -> dict:
+    def _placeholder_result(
+        self,
+        symbol: str,
+        error: str | None,
+        provider_run_log: list[dict],
+    ) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)
         fundamental_data = dict(supplemental["fundamental_data"])
         metadata = dict(supplemental["source_metadata"]["fundamental_data"])
-        return self._build_result(
+        result = self._build_result(
             symbol=symbol,
             fundamental_data=fundamental_data,
             metadata=metadata,
@@ -106,6 +114,8 @@ class FundamentalService:
             rows=0,
             error=error,
         )
+        result["provider_run_log"] = provider_run_log + result["provider_run_log"]
+        return result
 
     def _build_result(
         self,
@@ -131,6 +141,7 @@ class FundamentalService:
                     "status": status,
                     "rows": rows,
                     "error": error,
+                    "error_type": ProviderDataQualityError.error_type if error else None,
                     "as_of": str(date.today()),
                 }
             ],
