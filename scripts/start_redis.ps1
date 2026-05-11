@@ -1,5 +1,5 @@
 # Dandelions investment agent — Redis launcher
-# Usage: powershell -ExecutionPolicy Bypass -File .\start_redis.ps1
+# Usage: powershell -ExecutionPolicy Bypass -File .\scripts\start_redis.ps1
 
 $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -27,4 +27,4 @@ if ($LASTEXITCODE -eq 0 -and $pyResult -match "True") {
     Write-Host "         $pyResult" -ForegroundColor Yellow
 }
 
-Write-Host "`nNext: restart uvicorn, then run .\API_Test.ps1" -ForegroundColor Cyan
+Write-Host "`nNext: restart uvicorn, then run .\scripts\API_Test.ps1" -ForegroundColor Cyan

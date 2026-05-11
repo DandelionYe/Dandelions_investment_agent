@@ -7,6 +7,7 @@ storage/reports/
 storage/cache/
 storage/logs/
 storage/artifacts/
+storage/runtime/
 storage/*.db
 *.pyc
 .pytest_cache/
@@ -25,9 +26,9 @@ QMT/
 CLAUDE.md
 Scheme.md
 .claude/
-claude-no-proxy.cmd
-test_etf_code_format.py
-test_announcement.py
-celerybeat-schedule*
-code_review_report_v0.2.14.md
-restore_project.md
+/claude-no-proxy.cmd
+local_tools/
+/test_etf_code_format.py
+/test_announcement.py
+/celerybeat-schedule*
+local_review_archive/

@@ -13,6 +13,8 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
+from apps.dashboard.components.login import auth_headers
+
 API_BASE = "http://localhost:8000"
 
 
@@ -56,7 +58,9 @@ def poll_task_progress(task_id: str, poll_interval: float = 1.0,
     while time.time() - started < max_duration:
         try:
             resp = requests.get(
-                f"{API_BASE}/api/v1/research/{task_id}", timeout=5
+                f"{API_BASE}/api/v1/research/{task_id}",
+                headers=auth_headers(),
+                timeout=5,
             )
             if resp.status_code >= 400:
                 status_text.error(f"查询失败 [{resp.status_code}]")
@@ -116,7 +120,9 @@ def poll_batch_progress(batch_id: str, poll_interval: float = 1.5,
     while time.time() - started < max_duration:
         try:
             resp = requests.get(
-                f"{API_BASE}/api/v1/watchlist/scan/{batch_id}", timeout=5
+                f"{API_BASE}/api/v1/watchlist/scan/{batch_id}",
+                headers=auth_headers(),
+                timeout=5,
             )
             if resp.status_code >= 400:
                 status_text.error(f"查询失败 [{resp.status_code}]")
@@ -175,6 +181,7 @@ def submit_research_task(symbol: str, data_source: str = "mock",
                 "data_source": data_source,
                 "use_llm": use_llm,
             },
+            headers=auth_headers(),
             timeout=10,
         )
         if resp.status_code == 202:
@@ -191,7 +198,9 @@ def fetch_task_result(task_id: str) -> dict | None:
     import requests
     try:
         resp = requests.get(
-            f"{API_BASE}/api/v1/research/{task_id}/result", timeout=15
+            f"{API_BASE}/api/v1/research/{task_id}/result",
+            headers=auth_headers(),
+            timeout=15,
         )
         if resp.status_code == 200:
             return resp.json()

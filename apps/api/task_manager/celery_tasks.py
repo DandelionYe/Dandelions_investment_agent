@@ -8,6 +8,7 @@
 """
 
 import shutil
+import sys
 from pathlib import Path
 
 from apps.api.celery_app import celery_app
@@ -15,7 +16,11 @@ from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.schemas.task import TaskStatus
 from apps.api.schemas.research import utc_now_iso, new_task_id
 from apps.api.websocket.progress_publisher import publish_task_progress
+from pathlib import Path
 
+# 将项目根目录添加到 Python 路径
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 @celery_app.task(
     bind=True,

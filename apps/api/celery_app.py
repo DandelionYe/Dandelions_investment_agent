@@ -4,10 +4,10 @@
     celery -A apps.api.celery_app worker --loglevel=info --concurrency=2
 
 启动 beat（另开终端）:
-    celery -A apps.api.celery_app beat --loglevel=info
+    celery -A apps.api.celery_app beat --loglevel=info --schedule storage/runtime/celerybeat-schedule
 
 同时启动 worker + beat（开发用）:
-    celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2
+    celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2 --schedule storage/runtime/celerybeat-schedule
 """
 
 import os

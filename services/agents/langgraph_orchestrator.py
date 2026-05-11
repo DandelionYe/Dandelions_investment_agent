@@ -41,6 +41,10 @@ from services.agents.supervisor import Supervisor
 from services.protocols.validation import validate_protocol
 
 
+_DEBATE_CHECKPOINTER = MemorySaver()
+_FULL_RESEARCH_CHECKPOINTER = MemorySaver()
+
+
 # ── 状态定义 ──────────────────────────────────────────────────────
 
 class DebateState(TypedDict):
@@ -263,18 +267,38 @@ def _node_committee_convergence(
                 "rating": state["research_result"].get("rating"),
             },
         }
-        interrupt(review_package)
+        resume_value = interrupt(review_package)
+    else:
+        resume_value = None
+
+    overrides = resume_value if isinstance(resume_value, dict) else {}
+    bull_case = overrides.get("bull_case") or state["bull_case"]
+    bear_case = overrides.get("bear_case") or state["bear_case"]
+    risk_review = overrides.get("risk_review") or state["risk_review"]
 
     secretary = CommitteeSecretary()
     conclusion = secretary.converge(
         research_result=state["research_result"],
-        bull_case=state["bull_case"],
-        bear_case=state["bear_case"],
-        risk_review=state["risk_review"],
+        bull_case=bull_case,
+        bear_case=bear_case,
+        risk_review=risk_review,
         debate_history=state.get("debate_history"),
     )
 
-    return {"committee_conclusion": conclusion}
+    if isinstance(overrides.get("action"), str) and overrides["action"].strip():
+        conclusion["action"] = overrides["action"].strip()
+    if (
+        isinstance(overrides.get("reviewer_notes"), str)
+        and overrides["reviewer_notes"].strip()
+    ):
+        conclusion["reviewer_notes"] = overrides["reviewer_notes"].strip()
+
+    return {
+        "bull_case": bull_case,
+        "bear_case": bear_case,
+        "risk_review": risk_review,
+        "committee_conclusion": conclusion,
+    }
 
 
 def _node_assemble_result(state: DebateState) -> dict:
@@ -396,7 +420,7 @@ def build_debate_graph() -> CompiledStateGraph:
     builder.add_edge("assemble_result", END)
     builder.add_edge("error_handler", END)
 
-    return builder.compile(checkpointer=MemorySaver())
+    return builder.compile(checkpointer=_DEBATE_CHECKPOINTER)
 
 
 # ── 公开 API ──────────────────────────────────────────────────────
@@ -939,7 +963,7 @@ def build_full_research_graph() -> CompiledStateGraph:
     builder.add_edge("handle_data_error", "validate_and_assemble")
     builder.add_edge("handle_debate_error", "validate_and_assemble")
 
-    return builder.compile(checkpointer=MemorySaver())
+    return builder.compile(checkpointer=_FULL_RESEARCH_CHECKPOINTER)
 
 
 # ── 全图公开 API ───────────────────────────────────────────────

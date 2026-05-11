@@ -1,5 +1,5 @@
 ﻿# Dandelions 投研智能体 API 测试脚本
-# 使用方法：在项目根目录运行 .\API_Test.ps1
+# 使用方法：在项目根目录运行 .\scripts\API_Test.ps1
 
 $API_BASE = "http://127.0.0.1:8000"
 $Color_Success = "Green"
