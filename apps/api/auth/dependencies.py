@@ -1,16 +1,10 @@
-"""FastAPI 认证依赖 — get_current_user。
+"""FastAPI authentication dependencies."""
 
-用法：
-    @router.get("/protected")
-    async def endpoint(user: dict = Depends(get_current_user)):
-        ...
-"""
-
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, ExpiredSignatureError
+from jose import ExpiredSignatureError, JWTError
 
-from apps.api.auth.security import decode_token
+from apps.api.auth.security import TokenRevocationUnavailableError, decode_token
 from apps.api.task_manager.store import get_user_store
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -22,28 +16,50 @@ oauth2_scheme = OAuth2PasswordBearer(
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
 ) -> dict:
-    """解码 JWT Bearer token，返回当前用户信息。
-
-    Raises:
-        HTTPException(401): token 无效、过期、或用户已被禁用。
-    """
+    """Decode JWT bearer token and return the current enabled user."""
     try:
         payload = decode_token(token)
     except ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="token 已过期", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="token 已过期",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except TokenRevocationUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="token 撤销存储不可用",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except JWTError:
-        raise HTTPException(status_code=401, detail="token 无效", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="token 无效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="无效的 token 类型", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="无效的 token 类型",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     username = payload.get("sub")
     if not username:
-        raise HTTPException(status_code=401, detail="token 缺少用户标识", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="token 缺少用户标识",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user = get_user_store().get_user_by_username(username)
     if not user:
-        raise HTTPException(status_code=401, detail="用户不存在", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="用户不存在",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if not user.get("enabled"):
         raise HTTPException(status_code=403, detail="用户已被禁用")
 
@@ -53,7 +69,7 @@ async def get_current_user(
 async def require_admin(
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """要求当前用户为管理员，否则返回 403。"""
+    """Require the current user to be an admin."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user

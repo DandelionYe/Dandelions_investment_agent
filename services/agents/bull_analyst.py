@@ -2,6 +2,8 @@ import json
 
 from services.llm.deepseek_client import get_deepseek_client
 from services.agents.debate_utils import format_debate_history
+from services.agents.json_call import chat_json_checked
+from services.agents.audit_metadata import build_agent_metadata
 
 
 class BullAnalyst:
@@ -79,14 +81,36 @@ class BullAnalyst:
             "}\n"
         )
 
-        return self._client.chat_json(
+        return chat_json_checked(
+            self._client,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=self._model,
             max_tokens=1500,
+            metadata=build_agent_metadata(
+                agent_role="bull",
+                prompt_version="bull_analyst_v1",
+                model=self._model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                research_result=research_result,
+                challenge=challenge,
+                debate_history=debate_history,
+            ),
+            required_fields=[
+                "thesis",
+                "key_arguments",
+                "catalysts",
+                "invalidation_conditions",
+            ],
+            field_types={
+                "thesis": str,
+                "key_arguments": list,
+                "catalysts": list,
+                "invalidation_conditions": list,
+            },
         )
 
-    @staticmethod
     @staticmethod
     def _format_debate_history(history: list) -> str:
         return format_debate_history(history)

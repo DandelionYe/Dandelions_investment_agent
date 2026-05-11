@@ -22,6 +22,7 @@ from apps.api.auth.security import (
     verify_password,
     JWT_SECRET,
     JWT_ALGORITHM,
+    TokenRevocationUnavailableError,
 )
 from fastapi import Request
 
@@ -101,7 +102,13 @@ async def refresh_token(request: Request, req: RefreshRequest):
     if jti:
         ttl = int((datetime.fromtimestamp(payload["exp"], tz=timezone.utc) - datetime.now(timezone.utc)).total_seconds())
         if ttl > 0:
-            revoke_token_by_jti(jti, ttl)
+            try:
+                revoke_token_by_jti(jti, ttl)
+            except TokenRevocationUnavailableError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="token 撤销存储不可用，请稍后重试",
+                ) from exc
 
     access_token = create_access_token(user["username"], user.get("role", "user"))
     new_refresh_token = create_refresh_token(user["username"])

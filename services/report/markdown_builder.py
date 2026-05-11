@@ -122,7 +122,7 @@ def build_markdown_report(result: dict) -> str:
     field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {}))
     evidence_preview_table = _build_evidence_preview(evidence_bundle)
     analysis_notice = ""
-    if analysis_mode == "template_no_llm":
+    if analysis_mode in {"template_no_llm", "llm_json_fallback_template"}:
         if not analysis_warnings:
             analysis_warnings = [
                 "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，不构成完整投研分析。"

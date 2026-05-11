@@ -23,9 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="数据源：qmt 为主数据源，akshare 仅用于 fallback/调试，mock 用于离线测试",
     )
     parser.add_argument(
-        "--no-pdf",
+        "--pdf",
         action="store_true",
-        help="跳过 Playwright PDF 导出，只生成 JSON/Markdown/HTML",
+        help="生成 Playwright PDF 报告。默认只生成 JSON/Markdown/HTML，避免 Chromium 环境问题影响 CLI 成功率",
     )
     parser.add_argument(
         "--use-graph",
@@ -50,7 +50,7 @@ def main():
     markdown_path = save_markdown_report(result)
     html_path = save_html_report(markdown_path)
     pdf_path = None
-    if not args.no_pdf:
+    if args.pdf:
         pdf_path = save_pdf_report_with_playwright(html_path)
 
     print("研究结果 JSON：")
@@ -62,7 +62,7 @@ def main():
     if pdf_path:
         print(f"PDF 报告已生成：{pdf_path}")
     else:
-        print("PDF 报告未生成。")
+        print("PDF 报告未生成（默认关闭；如需生成请加 --pdf）。")
     print(f"JSON 结果已生成：{json_path}")
 
 

@@ -1,6 +1,8 @@
 import json
 
 from services.llm.deepseek_client import get_deepseek_client
+from services.agents.json_call import chat_json_checked
+from services.agents.audit_metadata import build_agent_metadata
 
 
 class Supervisor:
@@ -36,11 +38,49 @@ class Supervisor:
             current_round=current_round,
             max_rounds=max_rounds,
         )
-        return self._client.chat_json(
+        return chat_json_checked(
+            self._client,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=self._model,
             max_tokens=1000,
+            metadata=build_agent_metadata(
+                agent_role="supervisor",
+                prompt_version="supervisor_v1",
+                model=self._model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                research_result=research_result,
+                debate_history=debate_history,
+                extra_inputs={
+                    "current_round": current_round,
+                    "max_rounds": max_rounds,
+                    "bull_case_metadata": bull_case.get("metadata"),
+                    "bear_case_metadata": bear_case.get("metadata"),
+                    "risk_review_metadata": risk_review.get("metadata"),
+                },
+            ),
+            required_fields=[
+                "is_converged",
+                "next_speaker",
+                "challenge",
+                "round_summary",
+            ],
+            field_types={
+                "is_converged": bool,
+                "convergence_reason": str,
+                "next_speaker": str,
+                "challenge": str,
+                "round_summary": str,
+            },
+            enum_fields={
+                "convergence_reason": {
+                    "all_agree",
+                    "no_new_arguments",
+                    "max_rounds_reached",
+                },
+                "next_speaker": {"bull", "bear", "risk"},
+            },
         )
 
     def _build_system_prompt(self) -> str:

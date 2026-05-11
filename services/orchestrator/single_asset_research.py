@@ -11,6 +11,7 @@ from services.data.provider_contracts import (
 )
 from services.research.scoring_engine import score_asset
 from services.agents.debate_agent import generate_debate_result
+from services.llm.json_guard import LLMJsonError
 from services.research.decision_guard import apply_decision_guard
 from services.protocols.validation import validate_protocol
 
@@ -18,6 +19,9 @@ from services.protocols.validation import validate_protocol
 NO_LLM_TEMPLATE_WARNING = (
     "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，"
     "不构成完整投研分析。"
+)
+LLM_JSON_FALLBACK_WARNING = (
+    "LLM JSON 输出解析或校验失败，已回退到无 LLM 模板化观点。"
 )
 
 
@@ -104,6 +108,36 @@ def mark_no_llm_template_result(result: dict) -> dict:
         warnings.append(NO_LLM_TEMPLATE_WARNING)
     result["analysis_warnings"] = warnings
     return result
+
+
+def mark_llm_json_fallback_result(
+    result: dict,
+    error: BaseException | str | None = None,
+) -> dict:
+    mark_no_llm_template_result(result)
+    result["analysis_mode"] = "llm_json_fallback_template"
+    warnings = list(result.get("analysis_warnings", []))
+    warning = LLM_JSON_FALLBACK_WARNING
+    if error:
+        warning = f"{warning} 错误：{error}"
+    if warning not in warnings:
+        warnings.append(warning)
+    result["analysis_warnings"] = warnings
+    return result
+
+
+def _is_llm_json_runtime_error(error: BaseException) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "json",
+            "missing required fields",
+            "invalid value",
+            "must be",
+            "no valid",
+        )
+    )
 
 
 def start_hitl_research(
@@ -231,36 +265,44 @@ def run_single_asset_research(
     result = _build_partial_result(asset_data, data_source, score_result)
 
     if use_llm:
-        debate_result = generate_debate_result(result)
+        try:
+            debate_result = generate_debate_result(result)
+        except LLMJsonError as exc:
+            mark_llm_json_fallback_result(result, exc)
+        except RuntimeError as exc:
+            if not _is_llm_json_runtime_error(exc):
+                raise
+            mark_llm_json_fallback_result(result, exc)
+        else:
 
-        result["debate_result"] = debate_result
+            result["debate_result"] = debate_result
 
-        committee = debate_result.get("committee_conclusion", {})
-        risk_review = debate_result.get("risk_review", {})
+            committee = debate_result.get("committee_conclusion", {})
+            risk_review = debate_result.get("risk_review", {})
 
-        result["bull_case"] = debate_result.get("bull_case", {}).get(
-            "thesis",
-            result["bull_case"],
-        )
-        result["bear_case"] = debate_result.get("bear_case", {}).get(
-            "thesis",
-            result["bear_case"],
-        )
-        result["risk_review"] = risk_review.get(
-            "risk_summary",
-            result["risk_review"],
-        )
-        result["final_opinion"] = committee.get(
-            "final_opinion",
-            result["final_opinion"],
-        )
-        result["action"] = committee.get("action", result["action"])
-        result["max_position"] = risk_review.get(
-            "max_position",
-            result["max_position"],
-        )
-        result["analysis_mode"] = "llm_debate"
-        result["llm_enabled"] = True
+            result["bull_case"] = debate_result.get("bull_case", {}).get(
+                "thesis",
+                result["bull_case"],
+            )
+            result["bear_case"] = debate_result.get("bear_case", {}).get(
+                "thesis",
+                result["bear_case"],
+            )
+            result["risk_review"] = risk_review.get(
+                "risk_summary",
+                result["risk_review"],
+            )
+            result["final_opinion"] = committee.get(
+                "final_opinion",
+                result["final_opinion"],
+            )
+            result["action"] = committee.get("action", result["action"])
+            result["max_position"] = risk_review.get(
+                "max_position",
+                result["max_position"],
+            )
+            result["analysis_mode"] = "llm_debate"
+            result["llm_enabled"] = True
     else:
         mark_no_llm_template_result(result)
 

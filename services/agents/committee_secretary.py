@@ -2,6 +2,8 @@ import json
 
 from services.llm.deepseek_client import get_deepseek_client
 from services.agents.debate_utils import format_debate_history
+from services.agents.json_call import chat_json_checked
+from services.agents.audit_metadata import build_agent_metadata
 
 
 class CommitteeSecretary:
@@ -101,14 +103,61 @@ class CommitteeSecretary:
             '- action 可选：买入 / 分批买入 / 持有 / 观察 / 回避\n'
         )
 
-        return self._client.chat_json(
+        return chat_json_checked(
+            self._client,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             model=self._model,
             max_tokens=1500,
+            metadata=build_agent_metadata(
+                agent_role="committee",
+                prompt_version="committee_secretary_v1",
+                model=self._model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                research_result=research_result,
+                debate_history=debate_history,
+                extra_inputs={
+                    "bull_case": {
+                        "thesis": bull_case.get("thesis"),
+                        "metadata": bull_case.get("metadata"),
+                    },
+                    "bear_case": {
+                        "thesis": bear_case.get("thesis"),
+                        "metadata": bear_case.get("metadata"),
+                    },
+                    "risk_review": {
+                        "risk_level": risk_review.get("risk_level"),
+                        "risk_summary": risk_review.get("risk_summary"),
+                        "metadata": risk_review.get("metadata"),
+                    },
+                },
+            ),
+            required_fields=[
+                "stance",
+                "action",
+                "confidence",
+                "final_opinion",
+            ],
+            field_types={
+                "stance": str,
+                "action": str,
+                "confidence": (int, float),
+                "final_opinion": str,
+            },
+            enum_fields={
+                "action": {
+                    "买入",
+                    "分批买入",
+                    "持有",
+                    "观察",
+                    "回避",
+                    "回调关注",
+                    "谨慎观察",
+                }
+            },
         )
 
-    @staticmethod
     @staticmethod
     def _format_debate_history(history: list) -> str:
         return format_debate_history(history)

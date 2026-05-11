@@ -76,6 +76,14 @@ python -m pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
+如果需要复现当前验证环境，可改用锁定文件：
+
+```powershell
+python -m pip install -r requirements.lock
+```
+
+工程化配置文件已放在根目录：`pyproject.toml` 管理 pytest/Ruff 基础配置，`mypy.ini` 保留类型检查配置，GitHub Actions 使用 `requirements.lock` 做可复现安装和核心测试。
+
 如需使用 QMT 主数据源，还需要安装 `xtquant` 并启动本机 QMT mini 服务。完整步骤见 [QMT_SETUP.md](QMT_SETUP.md)。
 
 ```powershell
@@ -108,16 +116,16 @@ Copy-Item .env.example .env
 python main.py --symbol 600519.SH --data-source mock --no-llm
 ```
 
-如果当前终端或沙箱环境不允许 Playwright 启动 Chromium，可跳过 PDF，只验证核心流水线：
+CLI 默认只生成 JSON、Markdown 和 HTML，避免 Playwright/Chromium 环境问题影响 smoke test。若确认本机 Playwright 可用，可显式生成 PDF：
 
 ```powershell
-python main.py --symbol 600519.SH --data-source mock --no-llm --no-pdf
+python main.py --symbol 600519.SH --data-source mock --no-llm --pdf
 ```
 
 CLI 默认使用顺序单资产流水线；如需运行完整 LangGraph 编排流程，可增加 `--use-graph`：
 
 ```powershell
-python main.py --symbol 600519.SH --data-source mock --use-graph --no-pdf
+python main.py --symbol 600519.SH --data-source mock --use-graph
 ```
 
 使用 QMT 主数据源。若 QMT 不可用，主流程会尝试回退 AKShare：
@@ -212,6 +220,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start_redis.ps1
 
 ```powershell
 wsl -d Ubuntu -- sudo service redis-server start
+```
+
+如果本机 Docker 网络可用，也可以使用仓库内的 `docker-compose.yml` 启动 Redis：
+
+```powershell
+docker compose up -d redis
 ```
 
 > **注意**：WSL2 虚拟机在所有 shell 退出后会自动关闭，Redis 也随之停止。每次电脑重启后需要用上述命令重新启动 Redis。Docker 方案在国内网络环境可能因无法访问 Docker Hub 而失败。
@@ -350,6 +364,17 @@ curl http://localhost:8000/api/v1/research/history \
 ```
 
 Token 有效期：access_token 30 分钟，refresh_token 7 天。Streamlit 看板启动时自动展示登录表单，token 过期时自动无感刷新。
+
+生产部署安全项：
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+- `JWT_SECRET` 至少 32 字符，生产环境应使用上面命令生成的随机值。
+- `AUTH_REVOCATION_FAIL_MODE=open|closed` 控制 Redis 撤销表异常时的行为；生产环境建议 `closed`，Redis 不可用时拒绝依赖 token 撤销状态的认证请求。
+- 反向代理后启用限流真实 IP 识别时，只配置可信代理：`TRUSTED_PROXY_IPS=127.0.0.1,10.0.0.10`，并设置 `RATE_LIMIT_CLIENT_IP_HEADER=X-Forwarded-For`。不要在未受信任网络中直接信任该 header。
+- `CORS_ORIGINS` 使用逗号分隔的明确来源，例如 `http://localhost:8501`，生产环境不要使用通配来源。
 
 ### 观察池与定时调度
 

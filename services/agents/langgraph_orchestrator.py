@@ -892,7 +892,10 @@ def _full_node_handle_data_error(state: FullResearchState) -> dict:
 
 def _full_node_handle_debate_error(state: FullResearchState) -> dict:
     """辩论失败时降级为 placeholder 辩论结果."""
+    from services.orchestrator.single_asset_research import mark_llm_json_fallback_result
+
     partial_result = dict(state["partial_result"])
+    mark_llm_json_fallback_result(partial_result, state.get("debate_error"))
 
     partial_result["debate_result"] = {
         "bull_case": {"thesis": f"辩论异常：{state.get('debate_error', '未知错误')}"},
