@@ -200,3 +200,69 @@ Result:
 ```text
 263 passed, 15 skipped
 ```
+
+## 2026-05-12 Web News Event Enhancement
+
+Scope:
+
+- Added `services/data/providers/web_news_provider.py` as a default-off
+  domestic news provider backed by Baidu News RSS.
+- The provider enforces direct domestic connectivity for news crawling by:
+  - removing common proxy environment variables;
+  - setting `NO_PROXY=*`;
+  - using `requests.Session.trust_env = False`;
+  - passing explicit empty proxy settings to `requests`.
+- Added `EventNormalizer.normalize_web_news()` and merged optional web news
+  events into `EventService` without blocking the official announcement path.
+- Added event-level evidence entries so high-priority official/news events can
+  appear in `evidence_bundle`.
+- Added `tests/test_web_news_provider.py` for disabled mode, forced no-proxy
+  behavior, web news normalization, event merge, and evidence propagation.
+
+Targeted provider/event tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_provider_errors.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+23 passed
+```
+
+Static checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check services/data/providers/web_news_provider.py services/data/normalizers/event_normalizer.py services/research/event_engine.py services/data/aggregator/evidence_builder.py services/network/proxy_policy.py tests/test_web_news_provider.py
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+Updated CI-targeted local test run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+90 passed
+```
+
+Full default local test suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+267 passed, 15 skipped
+```

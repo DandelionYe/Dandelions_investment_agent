@@ -10,6 +10,7 @@ SOURCE_SCORES = {
     "akshare": 0.75,
     "eastmoney": 0.75,
     "web_news": 0.55,
+    "baidu_news": 0.55,
     "mock": 0.20,
     "mock_placeholder": 0.25,
 }

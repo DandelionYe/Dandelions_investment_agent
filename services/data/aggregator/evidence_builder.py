@@ -207,3 +207,35 @@ class EvidenceBuilder:
             event.get("major_event"),
             str(event.get("major_event", "暂无")),
         )
+        metadata = self._metadata(asset_data, "event_data")
+        ranked_events = sorted(
+            event.get("events", []),
+            key=lambda item: (
+                {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(
+                    item.get("severity"),
+                    0,
+                ),
+                item.get("publish_time") or "",
+            ),
+            reverse=True,
+        )
+        for index, item in enumerate(ranked_events[:3], start=1):
+            event_id = item.get("event_id") or f"event_{index}"
+            items.append(
+                {
+                    "evidence_id": f"ev_{event_id}",
+                    "category": "event",
+                    "title": item.get("title") or "新闻/公告事件",
+                    "value": item.get("summary") or item.get("title"),
+                    "display_value": (
+                        f"{item.get('severity', 'unknown')} / "
+                        f"{item.get('sentiment', 'unknown')}"
+                    ),
+                    "source": item.get("source") or metadata.get("source", "unknown"),
+                    "source_date": item.get("publish_time") or metadata.get("as_of"),
+                    "confidence": float(item.get("relevance") or metadata.get("confidence", 0.0)),
+                    "url": item.get("url"),
+                    "publisher": item.get("publisher"),
+                    "source_type": item.get("source_type"),
+                }
+            )

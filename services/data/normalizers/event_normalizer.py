@@ -1,7 +1,6 @@
 import hashlib
 import re
 from datetime import date
-from typing import Any
 
 from services.data.normalizers.common import _first_present
 
@@ -38,19 +37,39 @@ class EventNormalizer:
     def normalize_akshare(self, provider_result: dict, symbol: str, lookback_days: int = 90) -> list[dict]:
         return self._normalize(provider_result, symbol, lookback_days, source="akshare", source_type="announcement")
 
-    def _normalize(self, provider_result: dict, symbol: str, lookback_days: int, source: str, source_type: str) -> list[dict]:
+    def normalize_web_news(self, provider_result: dict, symbol: str, lookback_days: int = 14) -> list[dict]:
+        return self._normalize(
+            provider_result,
+            symbol,
+            lookback_days,
+            source="web_news",
+            source_type="web_news",
+            allow_critical=False,
+        )
+
+    def _normalize(
+        self,
+        provider_result: dict,
+        symbol: str,
+        lookback_days: int,
+        source: str,
+        source_type: str,
+        allow_critical: bool = True,
+    ) -> list[dict]:
         records = provider_result.get("data", [])
         events = []
         for row in records:
-            title = str(_first_present(row, ["公告标题", "公告名称", "title"]) or "")
+            title = str(_first_present(row, ["公告标题", "公告名称", "title", "新闻标题"]) or "")
             if not title:
                 continue
             publish_time = str(
-                _first_present(row, ["公告时间", "公告日期", "publish_time", "date"])
+                _first_present(row, ["公告时间", "公告日期", "publish_time", "date", "pubDate"])
                 or date.today().isoformat()
             )
             event_type = self.classify_event_type(title)
             severity, sentiment = self.map_risk(event_type, title)
+            if severity == "critical" and not allow_critical:
+                severity = "high"
             dedupe_key = hashlib.sha1(
                 f"{symbol}|{_clean_title(title)}|{publish_time[:10]}|{event_type}".encode("utf-8")
             ).hexdigest()
@@ -63,11 +82,12 @@ class EventNormalizer:
                     "publish_time": publish_time,
                     "source": source,
                     "source_type": source_type,
-                    "url": _first_present(row, ["公告链接", "url", "URL"]),
+                    "url": _first_present(row, ["公告链接", "url", "URL", "link"]),
                     "severity": severity,
                     "sentiment": sentiment,
-                    "relevance": 0.95 if source == "cninfo" else 0.85,
-                    "summary": title,
+                    "relevance": self._relevance(source),
+                    "summary": _first_present(row, ["summary", "摘要", "description"]) or title,
+                    "publisher": _first_present(row, ["publisher", "source_name", "媒体", "来源"]),
                     "keywords": self._keywords(title),
                     "dedupe_key": dedupe_key,
                 }
@@ -110,3 +130,12 @@ class EventNormalizer:
             for keyword in keywords
             if keyword in title
         ][:5]
+
+    def _relevance(self, source: str) -> float:
+        if source == "cninfo":
+            return 0.95
+        if source == "akshare":
+            return 0.85
+        if source == "web_news":
+            return 0.62
+        return 0.50

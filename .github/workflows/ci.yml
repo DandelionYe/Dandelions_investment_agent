@@ -15,6 +15,8 @@ jobs:
       AUTH_REVOCATION_FAIL_MODE: "open"
       RESEARCH_CACHE_ENABLED: "false"
       MARKET_DATA_DISABLE_PROXY: "true"
+      WEB_NEWS_ENABLED: "false"
+      WEB_NEWS_FORCE_NO_PROXY: "true"
       QMT_AUTO_DOWNLOAD: "false"
       QMT_FINANCIAL_AUTO_DOWNLOAD: "false"
     steps:
@@ -38,8 +40,9 @@ jobs:
           python -m py_compile services/llm/json_guard.py services/llm/deepseek_client.py
           python -m py_compile apps/api/auth/security.py apps/api/auth/dependencies.py apps/api/limiter.py
           python -m py_compile apps/api/celery_app.py apps/api/routers/research.py
+          python -m py_compile services/data/providers/web_news_provider.py services/research/event_engine.py
           python -m py_compile services/orchestrator/single_asset_research.py
 
       - name: Run targeted tests
         run: |
-          python -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py -q -p no:cacheprovider
+          python -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py -q -p no:cacheprovider
