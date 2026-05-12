@@ -85,3 +85,118 @@ Result:
 ```text
 262 passed, 7 skipped
 ```
+
+## 2026-05-12 Live Integration Test Baseline
+
+Scope:
+
+- Added opt-in integration markers in `pyproject.toml`.
+- Added `tests/integration/` live tests for:
+  - FastAPI auth, health, research task, result, and report-info flow.
+  - Redis broker reachability, Celery worker registered tasks, active queues,
+    and health-check task roundtrip.
+  - WebSocket task progress terminal event.
+  - Local QMT minimal data smoke.
+  - AKShare network smoke, disabled unless explicitly requested.
+- Fixed `/api/v1/research/history` route ordering so it is not captured by the
+  dynamic `/api/v1/research/{task_id}` route.
+- Removed custom `beat` queue routing from Celery Beat schedule because the
+  development worker listens on the default `celery` queue.
+
+Default integration collection:
+
+```powershell
+$env:JWT_SECRET='ci-secret-token-uses-more-than-32-characters'
+$env:AUTH_ADMIN_PASS='ci-admin-password'
+$env:AUTH_REVOCATION_FAIL_MODE='open'
+.\.venv\Scripts\python.exe -m pytest tests/integration -q
+```
+
+Result without live flags:
+
+```text
+8 skipped
+```
+
+FastAPI/Celery/Redis/WebSocket live run:
+
+```powershell
+$env:RUN_LIVE_INTEGRATION='1'
+Remove-Item Env:RUN_QMT_INTEGRATION -ErrorAction SilentlyContinue
+Remove-Item Env:RUN_AKSHARE_NETWORK -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe -m pytest tests/integration -q
+```
+
+Result:
+
+```text
+6 passed, 2 skipped
+```
+
+QMT local smoke:
+
+```powershell
+Remove-Item Env:RUN_LIVE_INTEGRATION -ErrorAction SilentlyContinue
+$env:RUN_QMT_INTEGRATION='1'
+Remove-Item Env:RUN_AKSHARE_NETWORK -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe -m pytest tests/integration/test_qmt_local_live.py -q
+```
+
+Result:
+
+```text
+1 passed, 1 warning
+```
+
+Static checks for the changed integration baseline:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check apps/api/celery_app.py apps/api/routers/research.py tests/test_celery_schedule.py tests/integration
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+Updated CI-targeted local test run:
+
+```powershell
+$env:JWT_SECRET='ci-secret-token-uses-more-than-32-characters'
+$env:AUTH_ADMIN_PASS='ci-admin-password'
+$env:AUTH_REVOCATION_FAIL_MODE='open'
+$env:RESEARCH_CACHE_ENABLED='false'
+$env:MARKET_DATA_DISABLE_PROXY='true'
+$env:QMT_AUTO_DOWNLOAD='false'
+$env:QMT_FINANCIAL_AUTO_DOWNLOAD='false'
+.\.venv\Scripts\python.exe -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py -q
+```
+
+Result:
+
+```text
+86 passed
+```
+
+Full default local test suite after adding integration tests:
+
+```powershell
+$env:JWT_SECRET='ci-secret-token-uses-more-than-32-characters'
+$env:AUTH_ADMIN_PASS='ci-admin-password'
+$env:AUTH_REVOCATION_FAIL_MODE='open'
+$env:RESEARCH_CACHE_ENABLED='false'
+$env:MARKET_DATA_DISABLE_PROXY='true'
+$env:QMT_AUTO_DOWNLOAD='false'
+$env:QMT_FINANCIAL_AUTO_DOWNLOAD='false'
+Remove-Item Env:RUN_LIVE_INTEGRATION -ErrorAction SilentlyContinue
+Remove-Item Env:RUN_QMT_INTEGRATION -ErrorAction SilentlyContinue
+Remove-Item Env:RUN_AKSHARE_NETWORK -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Result:
+
+```text
+263 passed, 15 skipped
+```

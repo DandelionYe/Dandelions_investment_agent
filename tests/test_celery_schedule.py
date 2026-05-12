@@ -15,3 +15,11 @@ def test_beat_schedule_tasks_are_registered():
 
     assert missing == set()
 
+
+def test_beat_schedule_uses_default_worker_queue():
+    routed_queues = {
+        entry.get("options", {}).get("queue")
+        for entry in celery_app.conf.beat_schedule.values()
+    }
+
+    assert routed_queues <= {None, "celery"}
