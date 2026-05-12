@@ -245,6 +245,16 @@ pip install fastapi "uvicorn[standard]" celery redis aiosqlite croniter requests
 
 ### 启动
 
+开发测试时可一键启动 Redis、FastAPI、Celery worker、Celery Beat 和 Streamlit。脚本会先在当前窗口启动并验证 Redis，然后为其余服务分别打开独立 PowerShell 窗口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start_dev_services.ps1
+```
+
+如需跳过定时调度，可加 `-SkipBeat`；如 Redis 已经运行，可加 `-SkipRedis`。
+
+也可以手动分别启动：
+
 ```powershell
 # 终端 1：FastAPI 服务
 uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload

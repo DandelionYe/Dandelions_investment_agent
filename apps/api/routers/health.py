@@ -28,7 +28,7 @@ async def health_check():
         checks["db"] = {"status": "error", "detail": str(exc)}
 
     try:
-        r = redis.from_url(REDIS_URL)
+        r = redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
         r.close()
         checks["redis"] = {"status": "ok"}
@@ -51,6 +51,11 @@ async def readiness_check():
     try:
         store = get_task_store()
         store.list_tasks(page=1, page_size=1)
+        import redis
+
+        r = redis.from_url(REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        r.ping()
+        r.close()
         return {"status": "ready"}
     except Exception as exc:
         return Response(

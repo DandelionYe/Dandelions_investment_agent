@@ -42,6 +42,23 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    broker_connection_timeout=3,
+    broker_transport_options={
+        "socket_connect_timeout": 3,
+        "socket_timeout": 3,
+        "retry_on_timeout": False,
+    },
+    task_publish_retry_policy={
+        "max_retries": 1,
+        "interval_start": 0,
+        "interval_step": 0.2,
+        "interval_max": 0.5,
+    },
+    result_backend_transport_options={
+        "socket_connect_timeout": 3,
+        "socket_timeout": 3,
+        "retry_on_timeout": False,
+    },
     task_soft_time_limit=600,   # 10 min 软超时
     task_time_limit=900,        # 15 min 硬超时
     broker_connection_retry_on_startup=True,

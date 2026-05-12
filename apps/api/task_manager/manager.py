@@ -18,6 +18,10 @@ from apps.api.schemas.research import ResearchRequest, utc_now_iso, new_task_id
 from apps.api.schemas.task import TaskStatus
 
 
+class TaskQueueUnavailableError(RuntimeError):
+    """Raised when the async task queue cannot accept a task."""
+
+
 class TaskManager:
     """研究任务管理器。"""
 
@@ -49,13 +53,23 @@ class TaskManager:
         # 发送到 Celery
         from apps.api.task_manager.celery_tasks import run_research_task
 
-        celery_result = run_research_task.apply_async(
-            kwargs={
-                "task_id": task_id,
-                "params": req.model_dump(),
-            },
-            task_id=task_id,
-        )
+        try:
+            celery_result = run_research_task.apply_async(
+                kwargs={
+                    "task_id": task_id,
+                    "params": req.model_dump(),
+                },
+                task_id=task_id,
+            )
+        except Exception as exc:
+            self.store.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message=f"Task queue unavailable: {exc}",
+            )
+            raise TaskQueueUnavailableError(
+                "无法提交异步研究任务：Redis/Celery 队列不可用，请确认 Redis 和 Celery worker 已启动。"
+            ) from exc
 
         # 回填 celery_task_id
         self.store.update_status(

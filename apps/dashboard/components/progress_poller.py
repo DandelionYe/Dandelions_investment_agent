@@ -188,6 +188,9 @@ def submit_research_task(symbol: str, data_source: str = "mock",
             return resp.json()
         st.error(f"提交失败 [{resp.status_code}]: {resp.text[:300]}")
         return None
+    except requests.Timeout:
+        st.error("提交超时：FastAPI 没有及时返回。请确认 Redis 窗口仍在运行，且 Celery worker 已启动。")
+        return None
     except requests.ConnectionError:
         st.error("无法连接 API 服务，请确认 FastAPI 已启动（uvicorn apps.api.main:app）")
         return None

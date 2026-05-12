@@ -39,6 +39,7 @@ from services.agents.risk_officer import RiskOfficer
 from services.agents.committee_secretary import CommitteeSecretary
 from services.agents.supervisor import Supervisor
 from services.protocols.validation import validate_protocol
+from services.research.decision_guard import apply_decision_guard
 
 
 _DEBATE_CHECKPOINTER = MemorySaver()

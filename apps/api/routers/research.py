@@ -8,7 +8,7 @@ from apps.api.schemas.research import (
     TaskStatusResponse,
     TaskHistoryResponse,
 )
-from apps.api.task_manager.manager import TaskManager
+from apps.api.task_manager.manager import TaskManager, TaskQueueUnavailableError
 from apps.api.auth.dependencies import get_current_user
 
 router = APIRouter(tags=["research"])
@@ -29,7 +29,10 @@ async def submit_research(req: ResearchRequest, user: dict = Depends(get_current
     任务提交后立即返回 task_id，研究过程在 Celery worker 中异步执行。
     使用 GET /api/v1/research/{task_id} 查询进度。
     """
-    return _manager().submit(req, created_by=user["username"])
+    try:
+        return _manager().submit(req, created_by=user["username"])
+    except TaskQueueUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.get(
