@@ -1,15 +1,26 @@
 from datetime import date
 
 from services.data.normalizers.valuation_normalizer import ValuationNormalizer
-from services.data.provider_contracts import ProviderDataQualityError
+from services.data.provider_contracts import (
+    ProviderDataQualityError,
+    ProviderError,
+    get_provider_error_type,
+)
 from services.data.providers.akshare_valuation_provider import AKShareValuationProvider
 from services.data.supplemental_provider import get_placeholder_supplemental_data
+from services.research.industry_valuation_engine import IndustryValuationService
 
 
 class ValuationService:
-    def __init__(self):
-        self.normalizer = ValuationNormalizer()
-        self.akshare_provider = AKShareValuationProvider()
+    def __init__(
+        self,
+        normalizer: ValuationNormalizer | None = None,
+        akshare_provider: AKShareValuationProvider | None = None,
+        industry_service: IndustryValuationService | None = None,
+    ):
+        self.normalizer = normalizer or ValuationNormalizer()
+        self.akshare_provider = akshare_provider or AKShareValuationProvider()
+        self.industry_service = industry_service or IndustryValuationService()
 
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
@@ -61,6 +72,11 @@ class ValuationService:
             )
 
         valuation_data.setdefault("valuation_label", self._label(valuation_data))
+        self._attach_industry_valuation(
+            asset_data=asset_data,
+            valuation_data=valuation_data,
+            provider_run_log=provider_run_log,
+        )
         return {
             "data": {"valuation_data": valuation_data},
             "source_metadata": {"valuation_data": metadata},
@@ -104,6 +120,62 @@ class ValuationService:
 
     def _has_core_fields(self, data: dict) -> bool:
         return any(data.get(field) is not None for field in ("pe_ttm", "pb_mrq", "market_cap"))
+
+    def _attach_industry_valuation(
+        self,
+        *,
+        asset_data: dict,
+        valuation_data: dict,
+        provider_run_log: list[dict],
+    ) -> None:
+        if asset_data.get("asset_type") != "stock":
+            return
+
+        symbol = asset_data["symbol"]
+        try:
+            industry_result = self.industry_service.build(asset_data, valuation_data)
+            valuation_data.update(industry_result.get("fields", {}))
+            provider_run_log.extend(industry_result.get("provider_run_log", []))
+        except ProviderError as exc:
+            self._record_industry_valuation_failure(
+                valuation_data,
+                provider_run_log,
+                symbol=symbol,
+                error=exc,
+            )
+        except Exception as exc:
+            wrapped = ProviderDataQualityError(
+                f"Industry valuation failed without blocking base valuation: {exc}"
+            )
+            self._record_industry_valuation_failure(
+                valuation_data,
+                provider_run_log,
+                symbol=symbol,
+                error=wrapped,
+            )
+
+    def _record_industry_valuation_failure(
+        self,
+        valuation_data: dict,
+        provider_run_log: list[dict],
+        *,
+        symbol: str,
+        error: BaseException,
+    ) -> None:
+        warnings = valuation_data.setdefault("industry_valuation_warnings", [])
+        warnings.append(str(error))
+        provider_run_log.append(
+            {
+                "provider": "qmt",
+                "dataset": "industry_valuation",
+                "symbol": symbol,
+                "status": "failed",
+                "rows": 0,
+                "error": str(error),
+                "error_type": get_provider_error_type(error),
+                "as_of": str(date.today()),
+            }
+        )
 
     def _label(self, data: dict) -> str:
         pe_percentile = data.get("pe_percentile")

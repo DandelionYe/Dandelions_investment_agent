@@ -8,10 +8,9 @@ HTML 结构有效性、CSS 页面定义、JSON 序列化往返。
 import json
 from pathlib import Path
 
-from services.report.markdown_builder import build_markdown_report, save_markdown_report
 from services.report.html_builder import build_html_report, save_html_report
 from services.report.json_builder import save_json_result
-
+from services.report.markdown_builder import build_markdown_report, save_markdown_report
 
 # ── 共用测试数据 ──────────────────────────────────────────────────
 
@@ -45,6 +44,30 @@ def _minimal_result(**overrides):
             "volatility_60d": 0.186,
             "avg_turnover_20d": 4800000000,
             "data_vendor": "eastmoney",
+        },
+        "valuation_data": {
+            "pe_ttm": 21.5,
+            "pb_mrq": 5.2,
+            "ps_ttm": 10.1,
+            "market_cap": 2_100_000_000_000,
+            "pe_percentile": 0.42,
+            "pb_percentile": 0.51,
+            "ps_percentile": 0.47,
+            "dividend_yield": 0.018,
+            "valuation_label": "neutral",
+            "industry_level": "SW1",
+            "industry_name": "SW1食品饮料",
+            "industry_peer_count": 35,
+            "industry_valid_peer_count": 32,
+            "industry_valid_peer_count_pe": 32,
+            "industry_valid_peer_count_pb": 33,
+            "industry_valid_peer_count_ps": 31,
+            "industry_pe_percentile": 0.30,
+            "industry_pb_percentile": 0.40,
+            "industry_ps_percentile": 0.50,
+            "industry_valuation_label": "industry_reasonable",
+            "industry_valuation_source": "qmt_sector+qmt_financial+qmt_price",
+            "industry_valuation_warnings": [],
         },
         "data_quality": {
             "overall_confidence": 0.85,
@@ -180,6 +203,16 @@ def test_markdown_contains_score_breakdown_dimensions():
     assert "事件/政策" in md
 
 
+def test_markdown_contains_industry_valuation_section():
+    md = build_markdown_report(_minimal_result())
+    assert "估值概览" in md
+    assert "行业横截面估值" in md
+    assert "SW1食品饮料" in md
+    assert "PE 行业分位" in md
+    assert "30.00%" in md
+    assert "qmt_sector+qmt_financial+qmt_price" in md
+
+
 def test_markdown_contains_bull_bear_risk_content():
     md = build_markdown_report(_minimal_result())
     assert "短期趋势改善明显" in md
@@ -261,8 +294,9 @@ def test_save_markdown_filename_matches_symbol():
     result = _minimal_result()
     result["symbol"] = "000001.SZ"
 
-    from services.report.markdown_builder import save_markdown_report
     import tempfile
+
+    from services.report.markdown_builder import save_markdown_report
     with tempfile.TemporaryDirectory() as tmpdir:
         path = save_markdown_report(result, output_dir=tmpdir)
         assert "000001.SZ" in Path(path).name

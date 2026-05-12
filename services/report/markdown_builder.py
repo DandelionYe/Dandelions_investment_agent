@@ -56,6 +56,75 @@ def _build_evidence_preview(evidence_bundle: dict, limit: int = 8) -> str:
     return "\n".join(rows)
 
 
+def _format_count(value: Any) -> str:
+    if value is None:
+        return "暂无"
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _format_text(value: Any) -> str:
+    if value in (None, ""):
+        return "暂无"
+    return str(value)
+
+
+def _build_valuation_summary_table(valuation_data: dict) -> str:
+    rows = ["| 指标 | 数值 |", "|---|---:|"]
+    for field, title, formatter in [
+        ("pe_ttm", "PE TTM", format_number),
+        ("pb_mrq", "PB MRQ", format_number),
+        ("ps_ttm", "PS TTM", format_number),
+        ("market_cap", "总市值", format_number),
+        ("pe_percentile", "PE 历史分位", format_percent),
+        ("pb_percentile", "PB 历史分位", format_percent),
+        ("ps_percentile", "PS 历史分位", format_percent),
+        ("dividend_yield", "股息率", format_percent),
+        ("valuation_label", "估值标签", _format_text),
+    ]:
+        rows.append(f"| {title} | {formatter(valuation_data.get(field))} |")
+    return "\n".join(rows)
+
+
+def _build_industry_valuation_table(valuation_data: dict) -> str:
+    display_fields = [
+        "industry_name",
+        "industry_level",
+        "industry_peer_count",
+        "industry_valid_peer_count",
+        "industry_valid_peer_count_pe",
+        "industry_valid_peer_count_pb",
+        "industry_valid_peer_count_ps",
+        "industry_pe_percentile",
+        "industry_pb_percentile",
+        "industry_ps_percentile",
+        "industry_valuation_label",
+        "industry_valuation_source",
+    ]
+    if not any(valuation_data.get(field) not in (None, "") for field in display_fields):
+        return "暂无行业横截面估值数据。"
+
+    rows = ["| 指标 | 数值 |", "|---|---:|"]
+    for field, title, formatter in [
+        ("industry_name", "行业名称", _format_text),
+        ("industry_level", "行业层级", _format_text),
+        ("industry_peer_count", "行业样本数", _format_count),
+        ("industry_valid_peer_count", "行业有效估值样本数", _format_count),
+        ("industry_valid_peer_count_pe", "PE 有效样本数", _format_count),
+        ("industry_valid_peer_count_pb", "PB 有效样本数", _format_count),
+        ("industry_valid_peer_count_ps", "PS 有效样本数", _format_count),
+        ("industry_pe_percentile", "PE 行业分位", format_percent),
+        ("industry_pb_percentile", "PB 行业分位", format_percent),
+        ("industry_ps_percentile", "PS 行业分位", format_percent),
+        ("industry_valuation_label", "行业估值标签", _format_text),
+        ("industry_valuation_source", "行业估值来源", _format_text),
+    ]:
+        rows.append(f"| {title} | {formatter(valuation_data.get(field))} |")
+    return "\n".join(rows)
+
+
 def build_markdown_report(result: dict) -> str:
     """
     把研究结果转换成 Markdown 报告。
@@ -64,6 +133,7 @@ def build_markdown_report(result: dict) -> str:
 
     score_breakdown = result.get("score_breakdown", {})
     price_data = result.get("price_data", {})
+    valuation_data = result.get("valuation_data", {})
     decision_guard = result.get("decision_guard", {})
     debate_result = result.get("debate_result", {})
     data_quality = result.get("data_quality", {})
@@ -121,6 +191,9 @@ def build_markdown_report(result: dict) -> str:
     data_quality_notes = build_data_quality_notes(price_data)
     field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {}))
     evidence_preview_table = _build_evidence_preview(evidence_bundle)
+    valuation_summary_table = _build_valuation_summary_table(valuation_data)
+    industry_valuation_table = _build_industry_valuation_table(valuation_data)
+    industry_valuation_warnings = valuation_data.get("industry_valuation_warnings", [])
     analysis_notice = ""
     if analysis_mode in {"template_no_llm", "llm_json_fallback_template"}:
         if not analysis_warnings:
@@ -211,6 +284,18 @@ def build_markdown_report(result: dict) -> str:
 | 估值性价比 | {score_breakdown.get("valuation", "暂无")} |
 | 风险控制 | {score_breakdown.get("risk_control", "暂无")} |
 | 事件/政策 | {score_breakdown.get("event_policy", "暂无")} |
+
+### 4.1 估值概览
+
+{valuation_summary_table}
+
+### 4.2 行业横截面估值
+
+{industry_valuation_table}
+
+#### 行业估值提示
+
+{_as_bullets(industry_valuation_warnings)}
 
 ## 五、多头观点
 

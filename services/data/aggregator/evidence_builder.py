@@ -20,6 +20,15 @@ def _format_number(value: Any) -> str:
         return str(value)
 
 
+def _format_integer(value: Any) -> str:
+    if value is None:
+        return "暂无"
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 class EvidenceBuilder:
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
@@ -54,6 +63,7 @@ class EvidenceBuilder:
         title: str,
         value: Any,
         display_value: str,
+        source: str | None = None,
     ) -> None:
         metadata = self._metadata(asset_data, section)
         items.append(
@@ -63,7 +73,7 @@ class EvidenceBuilder:
                 "title": title,
                 "value": value,
                 "display_value": display_value,
-                "source": metadata.get("source", "unknown"),
+                "source": source or metadata.get("source", "unknown"),
                 "source_date": metadata.get("as_of", asset_data.get("as_of")),
                 "confidence": metadata.get("confidence", 0.0),
             }
@@ -133,6 +143,35 @@ class EvidenceBuilder:
                 _format_percent(valuation.get(field))
                 if field in {"pe_percentile", "pb_percentile", "dividend_yield"}
                 else _format_number(valuation.get(field)),
+            )
+
+        industry_source = valuation.get("industry_valuation_source")
+        industry_fields = {
+            "industry_name": ("申万行业", str),
+            "industry_peer_count": ("行业样本数", _format_integer),
+            "industry_valid_peer_count": ("行业有效估值样本数", _format_integer),
+            "industry_valid_peer_count_pe": ("行业 PE 有效样本数", _format_integer),
+            "industry_valid_peer_count_pb": ("行业 PB 有效样本数", _format_integer),
+            "industry_valid_peer_count_ps": ("行业 PS 有效样本数", _format_integer),
+            "industry_pe_percentile": ("PE 行业分位", _format_percent),
+            "industry_pb_percentile": ("PB 行业分位", _format_percent),
+            "industry_ps_percentile": ("PS 行业分位", _format_percent),
+            "industry_valuation_label": ("行业估值标签", str),
+        }
+        for field, (title, formatter) in industry_fields.items():
+            value = valuation.get(field)
+            if value in (None, ""):
+                continue
+            self._append(
+                items,
+                asset_data,
+                "valuation_data",
+                f"ev_val_{field}",
+                "valuation",
+                title,
+                value,
+                formatter(value),
+                source=industry_source,
             )
 
     def _add_etf_items(self, items: list[dict], asset_data: dict) -> None:

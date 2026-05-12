@@ -101,6 +101,19 @@ QMT_DIVIDEND_TYPE=front
 QMT_FINANCIAL_AUTO_DOWNLOAD=false
 ```
 
+QMT 行业横截面估值会在股票估值成功后轻量接入：通过 QMT sector 解析行业成分，再批量读取成分股价格、基础证券信息和本地财务表，计算 PE/PB/PS 行业分位。该能力只对 A 股股票启用，ETF 会跳过；如果行业数据、peer 财务表或样本数不足，只会写入 `industry_valuation_warnings` 和 `provider_run_log`，不会阻断主研究流程。
+
+```text
+QMT_INDUSTRY_LEVEL=SW1
+QMT_INDUSTRY_AUTO_DOWNLOAD=true
+QMT_INDUSTRY_MIN_VALID_PEERS=20
+QMT_INDUSTRY_PEER_CHUNK_SIZE=80
+QMT_INDUSTRY_FINANCIAL_AUTO_DOWNLOAD=false
+QMT_INDUSTRY_MAX_PE=300
+QMT_INDUSTRY_MAX_PB=50
+QMT_INDUSTRY_MAX_PS=100
+```
+
 复制环境变量模板：
 
 ```powershell
@@ -550,6 +563,8 @@ QMT_FINANCIAL_AUTO_DOWNLOAD=false
 QMT_FINANCIAL_AUTO_DOWNLOAD=true
 ```
 
+股票行业横截面估值已接入 QMT：行业/板块来自 `xtdata.get_sector_list()` 和 `xtdata.get_stock_list_in_sector()`，同行成分股估值输入来自 QMT 最新价格、`get_instrument_detail()` 和 `get_financial_data()`。报告会在“估值概览”后展示“行业横截面估值”，EvidenceBundle 也会记录行业样本数、有效样本数和 PE/PB/PS 行业分位。行业估值与历史估值分位是两个不同概念，当前不会把行业分位写回 `pe_percentile/pb_percentile`。
+
 事件/公告数据目前没有在 `xtdata` 中发现稳定的公告查询接口，因此第一版使用 AKShare/东方财富公告接口作为真实事件源；如果该接口失败，会降级为 `mock_placeholder`，并通过 `data_quality` 和 `decision_guard` 限制建议强度。
 
 当前已验证 QMT 日 K 接入链路：
@@ -558,7 +573,7 @@ QMT_FINANCIAL_AUTO_DOWNLOAD=true
 - `xtdata.download_history_data('600519.SH', '1d', '20250101', '')` 可下载日线。
 - 项目使用 `--data-source qmt` 后会自动连接 QMT；若本地日 K 为空，会自动下载一次，然后读取 QMT 的 `close`、`volume`、`amount` 并进入评分。
 - QMT 财务表已接入读取链路；本地未下载财务表时会显式降级为 placeholder。
-- 估值已支持 QMT 派生核心字段；PE/PB 历史分位仍待后续实现。
+- 估值已支持 QMT 派生核心字段；股票行业横截面估值分位已接入；PE/PB 历史分位仍待后续实现。
 - 公告事件暂用 AKShare/东方财富接口；QMT 未确认有稳定公告 API。
 
 ## 常见问题

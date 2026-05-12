@@ -1,9 +1,10 @@
 import json
-import pytest
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
 from services.data.akshare_provider import get_akshare_asset_data
 from services.data.normalizers.event_normalizer import EventNormalizer
 from services.data.normalizers.fundamental_normalizer import FundamentalNormalizer
@@ -323,3 +324,237 @@ def test_report_artifacts_are_generated():
     assert saved["symbol"] == "600519.SH"
     assert "投研报告" in Path(markdown_path).read_text(encoding="utf-8")
     assert "<html" in Path(html_path).read_text(encoding="utf-8").lower()
+
+
+class _PipelineFundamentalService:
+    def build(self, asset_data: dict) -> dict:
+        symbol = asset_data["symbol"]
+        return {
+            "data": {
+                "fundamental_data": {
+                    "roe": 0.18,
+                    "gross_margin": 0.52,
+                    "net_margin": 0.22,
+                    "revenue_growth": 0.09,
+                    "net_profit_growth": 0.11,
+                    "debt_ratio": 0.42,
+                    "net_profit_ttm": 100,
+                    "revenue_ttm": 500,
+                    "bps": 5,
+                },
+                "fundamental_analysis": {
+                    "quality_label": "high",
+                    "growth_label": "moderate_growth",
+                    "cashflow_label": "good",
+                    "leverage_label": "normal",
+                    "key_points": ["盈利质量较高。"],
+                    "warnings": [],
+                },
+            },
+            "source_metadata": {
+                "fundamental_data": {
+                    "source": "qmt_financial",
+                    "confidence": 0.78,
+                    "as_of": "2026-05-12",
+                }
+            },
+            "provider_run_log": [
+                {
+                    "provider": "qmt_financial",
+                    "dataset": "fundamental_data",
+                    "symbol": symbol,
+                    "status": "success",
+                    "rows": 4,
+                    "error": None,
+                    "error_type": None,
+                    "as_of": "2026-05-12",
+                }
+            ],
+        }
+
+
+class _PipelineValuationService:
+    def build(self, asset_data: dict) -> dict:
+        symbol = asset_data["symbol"]
+        return {
+            "data": {
+                "valuation_data": {
+                    "pe_ttm": 20,
+                    "pb_mrq": 2,
+                    "ps_ttm": 4,
+                    "market_cap": 2000,
+                    "valuation_label": "reasonable",
+                    "industry_level": "SW1",
+                    "industry_name": "SW1食品饮料",
+                    "industry_peer_count": 35,
+                    "industry_valid_peer_count": 32,
+                    "industry_valid_peer_count_pe": 32,
+                    "industry_valid_peer_count_pb": 33,
+                    "industry_valid_peer_count_ps": 31,
+                    "industry_pe_percentile": 0.30,
+                    "industry_pb_percentile": 0.40,
+                    "industry_ps_percentile": 0.50,
+                    "industry_valuation_label": "industry_reasonable",
+                    "industry_valuation_source": "qmt_sector+qmt_financial+qmt_price",
+                    "industry_valuation_warnings": [],
+                }
+            },
+            "source_metadata": {
+                "valuation_data": {
+                    "source": "qmt_derived",
+                    "confidence": 0.78,
+                    "as_of": "2026-05-12",
+                }
+            },
+            "provider_run_log": [
+                {
+                    "provider": "qmt",
+                    "dataset": "industry_valuation",
+                    "symbol": symbol,
+                    "status": "success",
+                    "rows": 35,
+                    "error": None,
+                    "error_type": None,
+                    "as_of": "2026-05-12",
+                },
+                {
+                    "provider": "qmt_derived",
+                    "dataset": "valuation_data",
+                    "symbol": symbol,
+                    "status": "success",
+                    "rows": 1,
+                    "error": None,
+                    "error_type": None,
+                    "as_of": "2026-05-12",
+                },
+            ],
+        }
+
+
+class _PipelineEventService:
+    def build(self, asset_data: dict) -> dict:
+        symbol = asset_data["symbol"]
+        return {
+            "data": {
+                "event_data": {
+                    "major_event": "暂无重大事件",
+                    "recent_news_sentiment": "neutral",
+                    "policy_risk": "low",
+                    "event_summary": {
+                        "critical_count": 0,
+                        "high_severity_count": 0,
+                        "negative_count": 0,
+                    },
+                    "events": [],
+                }
+            },
+            "source_metadata": {
+                "event_data": {
+                    "source": "akshare",
+                    "confidence": 0.68,
+                    "as_of": "2026-05-12",
+                }
+            },
+            "provider_run_log": [
+                {
+                    "provider": "akshare",
+                    "dataset": "event_data",
+                    "symbol": symbol,
+                    "status": "success",
+                    "rows": 0,
+                    "error": None,
+                    "error_type": None,
+                    "as_of": "2026-05-12",
+                }
+            ],
+        }
+
+
+class _NoopCache:
+    def store_run(self, asset_data: dict) -> None:
+        return None
+
+
+def test_qmt_industry_valuation_reaches_pipeline_evidence_and_reports(monkeypatch, tmp_path):
+    def fake_qmt_asset_data(symbol: str) -> dict:
+        return {
+            "symbol": symbol,
+            "name": "Pipeline QMT Stock",
+            "asset_type": "stock",
+            "as_of": "2026-05-12",
+            "data_source": "qmt",
+            "price_data": {
+                "close": 10,
+                "change_20d": 0.03,
+                "change_60d": 0.08,
+                "ma20_position": "above",
+                "ma60_position": "above",
+                "max_drawdown_60d": -0.05,
+                "volatility_60d": 0.18,
+                "avg_turnover_20d": 800_000_000,
+                "data_vendor": "qmt",
+            },
+            "basic_info": {"total_volume": 200, "float_volume": 160},
+            "source_metadata": {
+                "price_data": {
+                    "source": "qmt",
+                    "vendor": "qmt",
+                    "confidence": 0.90,
+                    "as_of": "2026-05-12",
+                }
+            },
+        }
+
+    def fake_aggregator_factory():
+        aggregator = ResearchDataAggregator()
+        aggregator.fundamental_service = _PipelineFundamentalService()
+        aggregator.valuation_service = _PipelineValuationService()
+        aggregator.event_service = _PipelineEventService()
+        aggregator.cache = _NoopCache()
+        return aggregator
+
+    monkeypatch.setattr(
+        "services.orchestrator.single_asset_research.get_qmt_asset_data",
+        fake_qmt_asset_data,
+    )
+    monkeypatch.setattr(
+        "services.orchestrator.single_asset_research.ResearchDataAggregator",
+        fake_aggregator_factory,
+    )
+
+    result = run_single_asset_research(
+        "600519.SH",
+        use_llm=False,
+        data_source="qmt",
+    )
+
+    valuation = result["valuation_data"]
+    evidence_by_id = {
+        item["evidence_id"]: item
+        for item in result["evidence_bundle"]["items"]
+    }
+
+    assert valuation["industry_name"] == "SW1食品饮料"
+    assert valuation["industry_pe_percentile"] == pytest.approx(0.30)
+    assert evidence_by_id["ev_val_industry_pe_percentile"]["display_value"] == "30.0%"
+    assert evidence_by_id["ev_val_industry_pe_percentile"]["source"] == (
+        "qmt_sector+qmt_financial+qmt_price"
+    )
+    assert any(
+        item["dataset"] == "industry_valuation" and item["status"] == "success"
+        for item in result["provider_run_log"]
+    )
+
+    output_dir = tmp_path / "reports"
+    markdown_path = save_markdown_report(result, output_dir=str(output_dir))
+    html_path = save_html_report(markdown_path, output_dir=str(output_dir))
+
+    markdown_text = Path(markdown_path).read_text(encoding="utf-8")
+    html_text = Path(html_path).read_text(encoding="utf-8")
+
+    assert "行业横截面估值" in markdown_text
+    assert "SW1食品饮料" in markdown_text
+    assert "PE 行业分位" in markdown_text
+    assert "30.00%" in markdown_text
+    assert "行业横截面估值" in html_text
+    assert "SW1食品饮料" in html_text

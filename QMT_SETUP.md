@@ -114,7 +114,7 @@ QMT_AUTO_DOWNLOAD=false
 ## 6. 验证项目是否真正走 QMT
 
 ```powershell
-python main.py --symbol 600519.SH --data-source qmt --no-llm --no-pdf
+python main.py --symbol 600519.SH --data-source qmt --no-llm
 ```
 
 成功走 QMT 时，输出 JSON 应包含：
@@ -169,6 +169,8 @@ python main.py --symbol 600519.SH --data-source qmt --no-llm --no-pdf
 - 基础证券信息 `get_instrument_detail`
 - 本地 QMT 财务表读取链路：`Balance`、`Income`、`CashFlow`、`PershareIndex`
 - QMT 派生估值核心字段：总市值、流通市值、PE、PB、PS
+- QMT 行业/板块读取链路：`get_sector_list()`、`get_stock_list_in_sector()`
+- 股票行业横截面估值分位：批量构造同行成分股价格、股本、财务指标，计算 PE/PB/PS 行业分位
 
 尚未接入：
 
@@ -198,7 +200,60 @@ QMT_FINANCIAL_AUTO_DOWNLOAD=true
 
 这表示它只是保持流程可运行的低置信度占位数据，不应当当作真实投研证据。事件数据目前使用 AKShare/东方财富公告接口作为真实 fallback；若接口不可用，同样会降级并触发数据质量提示。
 
-## 8. 常见问题
+## 8. QMT 行业估值分位
+
+行业横截面估值只对 A 股股票启用，ETF 会跳过。流程如下：
+
+1. 使用 QMT sector 解析目标股票所属行业。
+2. 读取该行业成分股列表。
+3. 批量读取成分股最新收盘价、总股本/流通股本、本地财务表。
+4. 构造同行成分股估值输入，计算 PE/PB/PS 行业分位。
+5. 把结果写入 `valuation_data`、EvidenceBundle 和 Markdown/HTML 报告。
+
+可在 `.env` 中配置：
+
+```text
+QMT_INDUSTRY_LEVEL=SW1
+QMT_INDUSTRY_AUTO_DOWNLOAD=true
+QMT_INDUSTRY_MIN_VALID_PEERS=20
+QMT_INDUSTRY_PEER_CHUNK_SIZE=80
+QMT_INDUSTRY_FINANCIAL_AUTO_DOWNLOAD=false
+QMT_INDUSTRY_MAX_PE=300
+QMT_INDUSTRY_MAX_PB=50
+QMT_INDUSTRY_MAX_PS=100
+```
+
+字段含义：
+
+- `QMT_INDUSTRY_LEVEL`：默认 `SW1`。当前优先使用一级行业，避免 SW2 样本数过少。
+- `QMT_INDUSTRY_AUTO_DOWNLOAD`：是否尝试调用 QMT sector 下载接口。
+- `QMT_INDUSTRY_MIN_VALID_PEERS`：行业有效样本数低于该阈值时，行业分位返回 `None` 并写 warning。
+- `QMT_INDUSTRY_PEER_CHUNK_SIZE`：批量读取成分股价格/财务数据的 chunk 大小。
+- `QMT_INDUSTRY_FINANCIAL_AUTO_DOWNLOAD`：是否为同行成分股自动下载财务表。首次运行可能较慢，默认关闭。
+- `QMT_INDUSTRY_MAX_PE/PB/PS`：过滤极端估值值，避免异常值污染行业分位。
+
+成功时，JSON 结果中的 `valuation_data` 会包含类似字段：
+
+```json
+{
+  "industry_level": "SW1",
+  "industry_name": "SW1食品饮料",
+  "industry_peer_count": 35,
+  "industry_valid_peer_count_pe": 32,
+  "industry_pe_percentile": 0.3,
+  "industry_pb_percentile": 0.4,
+  "industry_ps_percentile": 0.5,
+  "industry_valuation_label": "industry_reasonable",
+  "industry_valuation_source": "qmt_sector+qmt_financial+qmt_price",
+  "industry_valuation_warnings": []
+}
+```
+
+如果 QMT 行业数据不可用、同行财务字段不足或有效样本数不足，主流程不会失败。项目会在 `industry_valuation_warnings` 和 `provider_run_log` 中记录原因，报告中“行业横截面估值”小节会显示可用字段或提示暂无。
+
+注意：行业横截面分位和历史估值分位不是同一概念。当前行业分位用于展示和后续评分校准准备，不会覆盖 `pe_percentile` / `pb_percentile` 这类历史分位字段。
+
+## 9. 常见问题
 
 `scan_available_server_addr()` 返回空，但 `xtdata.connect()` 成功：
 
