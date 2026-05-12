@@ -1,1605 +1,799 @@
-# Dandelions 投研智能体 - 实现情况报告
+# Dandelions 投研智能体 - v0.2.21 实现情况报告
 
-## 生成时间
-2026年5月7日
+## 0. 核验范围与口径
 
-## 总体评估
+- **核验版本**：tag `v0.2.21`
+- **对应提交**：`0075e99`
+- **提交主题**：`feat: 接入 QMT 行业横截面估值分位`
+- **报告口径**：本报告只评价 `v0.2.21` 版本的仓库状态，不沿用旧版 `report.md` 中已过时的百分比和进度描述。
+- **当前工作区补充修正**：2026-05-12 已修正 Celery Beat schedule 使用的任务名，使其匹配 worker 实际注册名；新增 `tests/test_celery_schedule.py` 防止再次漂移；新增 `docs/verification.md` 记录本地验证基线。
+- **测试口径说明**：
+  - “有测试验证”指仓库内存在对应测试文件，且部分测试被 CI 定向执行；不等同于我已经在本地完整运行过全部测试。
+  - “静态/手动验证”指代码、配置、页面或脚本已经存在，但缺少稳定自动化测试或缺少真实外部环境的可复现验收。
+  - QMT、AKShare、Redis、Celery、Playwright、DeepSeek 等外部依赖能力，即使代码存在，也需要在真实环境中单独验收。
 
-**完成度：约 98%**
+## 1. 总体结论
 
-项目已经实现了核心的研究闭环，包括数据获取、因子计算、DeepSeek 辩论、报告生成等关键功能。近期完成了十项重要升级：**(1)** 将单体 Debate Agent 拆分为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary 四个独立 Agent 模块；**(2)** 测试覆盖率从 11 个用例提升至 138 个；**(3)** 引入 LangGraph 构建有状态辩论工作流，支持 human-in-the-loop 中断；**(4)** 引入 LLM 驱动的 Supervisor 节点，实现真正的多轮质询辩论（Bull ↔ Bear 互相挑战，Supervisor 动态调度，分歧度阈值收敛）；**(5)** 将 HITL API 集成到 Streamlit 前端，用户可在看板中启用人工审核模式、审阅三方 Agent 输出和辩论历程、修改结论后确认生成最终报告；**(6)** 构建 LangGraph 完整端到端研究 pipeline 图（数据加载→评分→辩论子图→决策保护器→协议验证），支持检查点、HITL 中断恢复、错误降级；**(7)** 构建 FastAPI 后端网关（Celery + Redis 异步任务队列 + SQLite 任务持久化 + Celery Beat 定时调度），提供 13 个 REST API 端点，支持异步研究任务提交/进度查询/报告下载/健康检查；**(8)** 实现观察池（Watchlist）批量研究系统：文件夹 + 标签两级分组、逐票自定义 cron 调度、Celery Beat 定时扫描 + 高频 checker 轮询、17 个观察池 REST API 端点、Streamlit `3_观察池.py` 管理页面，支持批量触发扫描和评分历史追踪；**(9)** 实现 WebSocket 实时进度推送：Redis Pub/Sub 跨进程消息传递（Celery Worker → Redis → FastAPI WebSocket），3 个 WebSocket 端点（task/batch/events），Streamlit 异步 API 模式 + 短间隔轮询进度条，Home.py 和观察池页面均可实时查看研究/扫描进度；**(10)** 实现 JWT 用户认证/授权：`apps/api/auth/` 安全模块（JWT 签发/验证 + bcrypt 密码哈希），4 个 Auth 端点（login/refresh/me/register），FastAPI Depends 依赖注入保护全部 REST/WS 端点，SQLite `users` 表 + UserStore，种子管理员用户，Streamlit 登录表单 + token 自动刷新。
+截至 `v0.2.21`，项目已经具备比较完整的投研智能体 MVP：可以围绕单只 A 股/ETF 进行数据加载、评分、Agent 辩论、决策保护和报告生成；同时仓库中已经存在 FastAPI 后端、Celery/Redis 异步任务、观察池、JWT 登录认证、WebSocket/进度推送、Streamlit 页面和测试体系。
 
----
+但是，当前版本不宜再写“总体完成度约 98%”。更客观的判断是：
 
-## 一、已实现功能详细分析
+- **MVP 主链路已基本完成**：单票研究、评分、报告、Agent 辩论、决策保护器已经形成闭环。
+- **工程化框架已较完整**：FastAPI、任务队列、观察池、认证、进度推送均已有代码实现。
+- **生产级验收仍不足**：真实 QMT/AKShare 数据源、Redis/Celery/WebSocket 跨进程链路、PDF 生成、Streamlit 登录与异步模式、API 全端点联调，需要补充集成测试或手动验收记录。
+- **研究能力仍有明显边界**：网页搜索、新闻/政策/舆情增强、Qlib、组合优化、历史回测、系统设置 UI 等尚未完成。
 
-### 1.1 数据层 ✅ (90%)
+## 2. v0.2.21 的关键变化
 
-**实现内容：**
+`v0.2.21` 的核心新增点是 **QMT 行业横截面估值分位**。该版本新增或修改了：
 
-1. **QMT 主数据源**
-   - ✅ 行情数据获取（日线 K 线、成交额、成交量）
-   - ✅ 基础信息获取（交易所、产品 ID、股东数、总股本、前收盘价）
-   - ✅ 自动下载历史数据
-   - ✅ 财务表读取（Balance、Income、CashFlow、PershareIndex）
-   - ✅ 估值派生（市值、PE、PB、PS）
-   - ✅ 数据质量追踪
+- `.env.example`：新增 QMT 行业估值相关环境变量。
+- `QMT_SETUP.md`：新增行业/板块读取与行业估值验证说明。
+- `README.md`：更新项目边界和运行说明。
+- `services/data/providers/qmt_industry_provider.py`：新增 QMT 行业/板块信息 provider。
+- `services/data/providers/qmt_peer_valuation_loader.py`：新增同行成分股估值数据加载器。
+- `services/research/industry_valuation_engine.py`：新增行业横截面估值分位计算逻辑。
+- `services/research/valuation_engine.py`：接入行业估值分位。
+- `services/data/aggregator/evidence_builder.py`：扩展估值证据。
+- `services/report/markdown_builder.py`：报告中补充行业估值信息。
+- `tests/test_industry_valuation.py`、`tests/test_report_builders.py`、`tests/test_report_pipeline.py`：补充相关测试或断言。
 
-2. **AKShare 补充数据源**
-   - ✅ 股票行情（东财 → 腾讯 → 新浪 fallback）
-   - ✅ ETF 行情和基本信息
-   - ✅ 基本面数据
-   - ✅ 估值数据
-   - ✅ 事件/公告数据（东方财富、巨潮资讯）
-   - ✅ 自动回退机制
+该功能的准确表述应为：
 
-3. **Mock 数据源**
-   - ✅ 离线测试数据
-   - ✅ Placeholder 数据生成
+> 已在代码层接入 QMT 行业横截面 PE/PB/PS 分位，并有单元测试覆盖核心计算与报告输出；但真实 QMT 行业成分、同行财务表批量读取、样本数不足等生产数据场景仍需要本地 QMT 环境验收。
 
-4. **数据聚合器**
-   - ✅ ResearchDataAggregator：整合所有数据源
-   - ✅ 数据标准化
-   - ✅ 数据缓存（SQLite）
-   - ✅ 数据质量检测
-   - ✅ 证据构建（EvidenceBuilder）
+## 3. 四类状态总览
 
-**Tushare 替代方案：**
-- ✅ **基本面数据**：QMT 财务表（优先）→ AKShare（fallback）
-- ✅ **估值数据**：QMT 派生（优先）→ AKShare（fallback）
-- ✅ **事件/公告数据**：巨潮资讯（优先）→ AKShare（fallback）
-
-**评价：** QMT 作为主数据源的设计合理，AKShare 作为 fallback 确保了系统的可用性。数据质量检测机制完善。
-
----
-
-### 1.2 研究引擎 ✅ (95%)
-
-**实现内容：**
-
-1. **基本面引擎 FundamentalService**
-   - ✅ QMT 财务表读取
-   - ✅ AKShare 基本面数据
-   - ✅ 基本面数据标准化
-   - ✅ 财务分析（ROE、毛利率、净利率、营收/净利润增速、现金流、负债率）
-   - ✅ 质量评级（low/medium/high）
-
-2. **估值引擎 ValuationService**
-   - ✅ QMT 估值派生（市值、PE、PB、PS）
-   - ✅ AKShare 估值数据
-   - ✅ 估值标签（cheap/reasonable/slightly_expensive/expensive）
-   - ✅ 历史分位计算（PE、PB）
-
-3. **事件引擎 EventService**
-   - ✅ 巨潮资讯公告查询
-   - ✅ AKShare 东方财富公告
-   - ✅ 事件分类（监管问询、分红、业绩预告等）
-   - ✅ 情感分析（positive/neutral/negative）
-   - ✅ 风险等级（low/medium/high/critical）
-   - ✅ 事件摘要
-
-4. **ETF 引擎 ETFDataService**
-   - ✅ ETF 基本信息（规模、跟踪指数、管理费）
-   - ✅ ETF 行情和净值
-   - ✅ 折溢价计算
-   - ✅ 跟踪误差（预留）
-
-5. **评分引擎 ScoringEngine**
-   - ✅ **趋势动量**（20日/60日涨跌幅、MA 位置）
-   - ✅ **流动性**（成交额）
-   - ✅ **基本面质量**（ROE、毛利率、营收/净利润增速）
-   - ✅ **估值性价比**（PE/PB 分位）
-   - ✅ **风险控制**（最大回撤、波动率）
-   - ✅ **事件/政策**（公告风险）
-   - ✅ ETF 专用评分逻辑
-
-6. **风险引擎 RiskEngine**
-   - ✅ 风险定级
-   - ✅ 仓位约束
-   - ✅ 风险触发条件
-
-**评价：** 研究引擎实现完整，评分体系与设计方案完全一致。ETF 支持良好。
+| 分类 | 含义 | 当前判断 |
+|---|---|---|
+| 已实现且有测试验证 | 有明确代码模块，并有对应测试文件或 CI 定向测试覆盖 | 单票研究主流程、评分、决策保护、报告构建、LLM JSON guard、CLI、部分估值分位、部分行业估值、部分协议/错误处理 |
+| 已实现但仅静态验证/手动验证 | 代码存在，但缺少完整自动化集成测试或依赖真实外部环境 | FastAPI 运行态、Celery/Redis、WebSocket 跨进程推送、Streamlit 页面、QMT/AKShare 真实数据、PDF 生成、JWT 全链路运行 |
+| 部分实现 | 有基础能力，但还没有达到完整设计目标或生产目标 | 统一数据证据结构、报告模板体系、RBAC/多用户隔离、网页事件增强入口、条件触发器真实行情联动、文档体系 |
+| 未实现 | 仓库中没有可用实现，或当前版本明确不做 | 网页搜索服务、Qlib、系统设置页面、自动交易、组合优化、历史回测、生产部署体系 |
 
 ---
 
-### 1.3 Agent 系统 ✅ (98%)
+# 一、已实现且有测试验证
 
-**实现内容：**
+## 1.1 CLI 单票研究入口 ✅ 已完成
 
-1. **BullAnalyst（多头分析师）** — `services/agents/bull_analyst.py`
-   - ✅ 独立的 BullAnalyst 类，专注看多视角
-   - ✅ 角色专属 system prompt：聚焦趋势、基本面、催化因素
-   - ✅ `analyze(research_result, challenge=None, debate_history=None)` → `bull_case` dict
-   - ✅ 支持接收 Supervisor 质询并针对性回应
-   - ✅ 可独立调用，作为 LangGraph 节点
+**状态**：已完成，有 `tests/test_cli.py`，CI 中也定向执行 `test_cli.py`。
 
-2. **BearAnalyst（空头分析师）** — `services/agents/bear_analyst.py`
-   - ✅ 独立的 BearAnalyst 类，专注看空视角
-   - ✅ 角色专属 system prompt：聚焦估值分位、回撤、负面事件
-   - ✅ `analyze(research_result, challenge=None, debate_history=None)` → `bear_case` dict
-   - ✅ 支持接收 Supervisor 质询并针对性回应
+**实际实现**：
 
-3. **RiskOfficer（风险官）** — `services/agents/risk_officer.py`
-   - ✅ 独立的 RiskOfficer 类，保守风控评估
-   - ✅ 角色专属 system prompt：聚焦数据质量、事件风险、仓位约束
-   - ✅ `review(research_result, challenge=None, debate_history=None)` → `risk_review` dict
-   - ✅ 支持接收 Supervisor 质询并针对性回应
+- `main.py` 支持：
+  - `--symbol`
+  - `--no-llm`
+  - `--data-source {qmt,akshare,mock}`
+  - `--pdf`
+  - `--use-graph`
+- CLI 默认生成 JSON、Markdown、HTML。
+- PDF 默认关闭，需要显式加 `--pdf`。
+- `--use-graph` 用于切换完整 LangGraph 编排流程。
 
-4. **CommitteeSecretary（投委会秘书）** — `services/agents/committee_secretary.py`
-   - ✅ 独立的 CommitteeSecretary 类，接收三方意见 + 辩论历史做真正权衡
-   - ✅ 角色专属 system prompt：基于原始数据 + 三方论据 + 辩论历程做出判断
-   - ✅ `converge(research_result, bull_case, bear_case, risk_review, debate_history=None)` → `committee_conclusion` dict
+**注意**：
 
-5. **Supervisor（辩论主持人）** — `services/agents/supervisor.py`（新增）
-   - ✅ LLM 驱动的辩论调度器，每轮结束后评估收敛状态
-   - ✅ 输出 `{is_converged, convergence_reason, next_speaker, challenge, round_summary}`
-   - ✅ 三条收敛标准写入 prompt：立场一致(all_agree) / 无新论据(no_new_arguments) / 达上限(max_rounds_reached)
-   - ✅ 质询针对具体数据分歧生成，非模板化
+旧报告中写的 `--no-pdf` 是错误的。`v0.2.21` 的正确参数是 `--pdf`。
 
-6. **Debate Agent（编排器）** — `services/agents/debate_agent.py`
-   - ✅ 优先使用 LangGraph 编排器 `langgraph_orchestrator.py`
-   - ✅ langgraph 不可用时自动回退到顺序编排
-   - ✅ `generate_debate_result()` 接口保持向后兼容
+## 1.2 单票研究主流程 ✅ 已完成
 
-7. **LangGraph 编排器（多轮辩论版）** — `services/agents/langgraph_orchestrator.py`
-   - ✅ 构建有状态多轮辩论工作流：
-     ```
-     START → run_initial_round (Bull/Bear/Risk 并行)
-                → supervisor_judge (评估收敛)
-                   ├── 收敛 → committee_convergence (HITL) → assemble → END
-                   └── 未收敛 → bull/bear/risk_challenge → supervisor_judge (循环)
-     ```
-   - ✅ Round 1 使用 ThreadPoolExecutor 并行执行 3 个 Agent
-   - ✅ Supervisor → challenge → Supervisor 循环边，支持 2-4 轮可配置（max_rounds）
-   - ✅ 条件边：error → error_handler / converged → committee / next_speaker → 对应 challenge 节点
-   - ✅ 支持 human-in-the-loop：在 committee_convergence 节点通过 `interrupt()` 暂停
-   - ✅ `start_hitl_debate()` / `resume_hitl_debate()` HITL API
-   - ✅ 全量上下文策略：Agent 收到 research_result + debate_history + pending_challenge
+**状态**：已完成，有 `tests/test_report_pipeline.py` 覆盖主流程相关场景。
 
-**评价：** Agent 系统已从单轮独立分析演进为 LLM 驱动的多轮质询辩论。Supervisor 动态识别分歧点、生成针对性质询，三轮收敛标准确保辩论不被无限拉长或过早截断。每个 Agent 有专属 prompt、可独立测试、可作为图节点替换。HITL 机制为人工审核流程提供了基础。
+**实际实现**：
 
----
+- 主入口位于 `services/orchestrator/single_asset_research.py`。
+- 支持顺序流水线和完整 LangGraph pipeline 两种运行方式。
+- 输出研究结果后，调用 report builder 保存 JSON、Markdown、HTML，必要时保存 PDF。
+- 支持 `mock` 离线数据源，用于 smoke test 和 CI 场景。
 
-### 1.4 DeepSeek 集成 ✅ (90%)
+**边界**：
 
-**实现内容：**
+- 对 QMT、AKShare 的真实数据可用性不能仅凭 mock 测试确认。
+- DeepSeek 真实调用需要 API Key 和网络环境，测试中主要以 mock 或 JSON guard 的方式验证。
 
-1. **DeepSeekClient**
-   - ✅ OpenAI 兼容接口
-   - ✅ 支持 deepseek-v4-flash（快速模型）
-   - ✅ 支持 deepseek-v4-pro（推理模型）
-   - ✅ JSON 输出支持（response_format={"type": "json_object"}）
-   - ✅ Token 使用追踪（预留）
+## 1.3 评分引擎 ✅ 已完成
 
-2. **Prompt 模板**
-   - ✅ 系统提示词：投委会研究助手角色
-   - ✅ 用户提示词：结构化 JSON 输出要求
-   - ✅ 严格规则：不编造数据、基于证据、提示 placeholder
+**状态**：已完成，有 `tests/test_scoring_engine.py`。
 
-**与设计方案差异：**
-- ✅ **模型选择正确**：使用 deepseek-v4-flash 和 deepseek-v4-pro
-- ✅ **JSON 输出**：符合设计方案要求
+**实际实现**：
 
-**评价：** DeepSeek 集成完善，JSON 输出稳定。
+- `services/research/scoring_engine.py` 提供评分逻辑。
+- 评分维度包括趋势动量、流动性、基本面质量、估值性价比、风险控制、事件/政策。
+- 支持股票和 ETF 的不同评分路径。
+- 测试覆盖边界值、异常数据、placeholder 数据上限、正负事件影响等场景。
 
----
+**边界**：
 
-### 1.5 报告系统 ✅ (85%)
+- 评分权重和阈值目前是规则体系，不是回测校准后的统计模型。
+- 行业分位加入后，估值分数解释性增强，但仍需要实盘样本验证有效性。
 
-**实现内容：**
+## 1.4 决策保护器 ✅ 已完成
 
-1. **Streamlit 看板**
-   - ✅ 单票研究界面
-   - ✅ 输入股票/ETF 代码
-   - ✅ 选择数据源（QMT/AKShare/Mock）
-   - ✅ 启用/禁用 DeepSeek 辩论
-   - ✅ **启用人工审核模式**（新增）：辩论完成后暂停，可查看三方 Agent 输出和辩论历程，支持覆盖操作建议后确认生成报告
-   - ✅ 显示投委会结论
-   - ✅ 显示行情摘要
-   - ✅ 显示量化因子打分卡
-   - ✅ 显示多头/空头/风险官辩论
-   - ✅ 显示决策保护器
-   - ✅ 下载 PDF/Markdown/JSON/HTML
-   - ✅ 报告库页面（2_Report_Library.py）
+**状态**：已完成，有 `tests/test_decision_guard.py`。
 
-2. **JSON 报告**
-   - ✅ 完整的研究结果结构化输出
-   - ✅ 协议验证
+**实际实现**：
 
-3. **Markdown 报告**
-   - ✅ 完整的投委会纪要格式
-   - ✅ 包含所有必要章节
-   - ✅ 数据质量提示
-   - ✅ 辩论过程展示
+- `services/research/decision_guard.py` 用于限制 LLM 或投委会建议的激进程度。
+- 约束来源包括：
+  - 本地评分阈值；
+  - 风险等级；
+  - 数据质量；
+  - placeholder 数据；
+  - critical 事件；
+  - 缺失 fundamental/valuation 数据。
+- 能记录降级原因，并在报告中展示。
 
-4. **HTML 报告**
-   - ✅ Markdown 转 HTML
-   - ✅ 专业的 CSS 样式
-   - ✅ A4 页面布局
+**结论**：
 
-5. **PDF 报告**
-   - ✅ Playwright/Chromium 导出
-   - ✅ WeasyPrint 备用方案
-   - ✅ 缺失依赖时优雅降级
+这是当前项目中比较成熟的风险约束模块，建议后续继续作为所有 Agent 建议的最终保护层。
 
-**与设计方案差异：**
-- ✅ **报告结构**：与设计方案一致（投委会结论、量化因子打分卡、行情分析、多头/空头/风险官辩论、风险官意见、辩论收敛纪要等）
-- ✅ **导出格式**：JSON/Markdown/HTML/PDF 全部实现
+## 1.5 报告构建模块 ✅ 已完成
 
-**评价：** 报告系统完整，格式专业。缺少 Jinja2 HTML 模板，但当前的 Markdown + CSS 方案已足够。
+**状态**：已完成，有 `tests/test_report_builders.py`。
 
----
+**实际实现**：
 
-### 1.6 决策保护器 ✅ (95%)
+- `services/report/json_builder.py`
+- `services/report/markdown_builder.py`
+- `services/report/html_builder.py`
+- `services/report/pdf_builder.py`
+- `services/report/pdf_builder_playwright.py`
 
-**实现内容：**
+当前支持 JSON、Markdown、HTML、PDF 四类输出。Markdown 报告包含基本信息、投委会结论、数据来源、评分卡、多空观点、风险官意见、决策保护器说明、辩论收敛纪要、后续跟踪建议和免责声明。
 
-1. **评分限制**
-   - ✅ 根据本地评分限制 DeepSeek 建议激进程度
-   - ✅ 分数 < 55：最高建议"回避"
-   - ✅ 分数 55-64：最高建议"谨慎观察"
-   - ✅ 分数 65-74：最高建议"观察"
-   - ✅ 分数 75-84：最高建议"分批买入"
-   - ✅ 分数 ≥ 85：最高建议"买入"
+**边界**：
 
-2. **风险等级限制**
-   - ✅ 风险等级为 high 时，最多只能"观察"
-   - ✅ 风险等级为 medium 且分数 < 75 时，最多只能"观察"
+- PDF 生成依赖 Playwright/Chromium 或 WeasyPrint，真实运行需要本地依赖完整。
+- 报告样式仍以 Markdown + CSS 为主，不是完整的 Jinja2 模板体系。
 
-3. **数据质量限制**
-   - ✅ 存在 placeholder 数据：最高建议限制为"观察"
-   - ✅ 存在数据质量阻断项：最高建议限制为"观察"
-   - ✅ 存在 critical 事件：最高建议限制为"回避"
-   - ✅ 缺失 valuation_data：最高建议限制为"观察"
-   - ✅ 缺失 fundamental_data：最高建议限制为"观察"
+## 1.6 LLM JSON 输出防护 ✅ 已完成
 
-4. **降级机制**
-   - ✅ 将 DeepSeek 的原始建议降级为系统允许的最高建议
-   - ✅ 记录降级原因
-   - ✅ 在报告中明确说明
+**状态**：已完成，有 `tests/test_llm_json_guard.py`，CI 定向执行。
 
-**评价：** 决策保护器实现完善，有效防止 DeepSeek 给出过激建议。
+**实际实现**：
 
----
+- `services/llm/json_guard.py` 提供 JSON 提取、校验、重试或 fallback 相关逻辑。
+- Agent 调用中增加 JSON 输出稳定性控制。
+- Agent 输出包含一定审计 metadata，例如 prompt 版本、prompt hash、input snapshot 等。
 
-### 1.7 协议和验证 ✅ (95%)
+**边界**：
 
-**实现内容：**
+- 该模块能降低 LLM 输出格式错误风险，但不能保证 LLM 内容本身完全准确。
+- 对 DeepSeek 真实 API 的异常、限速、网络错误仍需要端到端测试补充。
 
-1. **协议定义**
-   - ✅ research_task.schema.json
-   - ✅ factor_score.schema.json
-   - ✅ debate_result.schema.json
-   - ✅ final_decision.schema.json
-   - ✅ data_quality.schema.json
-   - ✅ evidence_bundle.schema.json
+## 1.7 Agent 拆分与多轮辩论 ✅ 已完成
 
-2. **协议验证**
-   - ✅ validate_protocol() 函数
-   - ✅ JSON Schema 验证（Draft202012Validator）
-   - ✅ 验证错误提示
+**状态**：已完成，有 `tests/test_langgraph_orchestrator.py` 和 `tests/test_multi_round_debate.py`。
 
-**评价：** 协议设计合理，验证机制完善。
+**实际实现**：
 
----
+Agent 文件包括：
 
-### 1.8 测试 ✅ (88%)
+- `services/agents/bull_analyst.py`
+- `services/agents/bear_analyst.py`
+- `services/agents/risk_officer.py`
+- `services/agents/committee_secretary.py`
+- `services/agents/supervisor.py`
+- `services/agents/debate_agent.py`
+- `services/agents/langgraph_orchestrator.py`
 
-**实现内容：**
+`langgraph_orchestrator.py` 中实现了辩论子图和完整 pipeline 图：
 
-1. **测试文件（6 个，138 个用例）**
+- 辩论子图：初始三方分析、Supervisor 判断、按 next speaker 质询、投委会收敛、结果组装、错误处理。
+- 完整 pipeline 图：数据加载、评分、辩论子图、HITL 审核、决策保护器、协议验证与组装。
 
-   | 文件 | 用例数 | 覆盖范围 |
-   |------|--------|---------|
-   | `tests/test_report_pipeline.py` | 11 | 端到端流程、QMT/AKShare/mock 数据源、估值/事件标准化 |
-   | `tests/test_decision_guard.py` | 25 | 5 级评分阈值、风险降级（high/medium/low）、数据质量阻断（placeholder/blocking/critical/missing data）、clamp_action 逻辑、完整 apply_decision_guard 流程 |
-   | `tests/test_scoring_engine.py` | 28 | 趋势动量/流动性/风险控制/基本面/估值/事件 六大维度边界值、负PE、极端波动率回撤、placeholder 上限、正负向事件得分、总分和评级 |
-   | `tests/test_report_builders.py` | 22 | Markdown 11 章节完整性、缺失数据优雅降级、HTML 结构/CSS/A4 页面、JSON 往返序列化、文件保存 |
-   | `tests/test_langgraph_orchestrator.py` | 29 | 图结构验证、路由函数测试（_route_after_initial / _route_after_supervisor）、节点隔离测试（初始并行/质询回应/Supervisor 强制收敛）、完整多轮图执行（mock DeepSeek）、HITL 中断/恢复、错误路由、向后兼容、thread_id 隔离 |
-   | `tests/test_multi_round_debate.py` | 15 | Supervisor 单元测试（schema 验证/收敛检测/质询生成/空历史）、完整端到端（一轮收敛/质询后收敛/max_rounds 强制终止/debate_history 累积/协议验证）、向后兼容（无 challenge 调用/无 history 调用）、HITL 保持（中断含 debate_history/恢复完整保留）、错误路径 |
+**修正旧报告错误**：
 
-2. **测试框架**
-   - ✅ pytest + monkeypatch
-   - ✅ LangGraph 节点隔离测试（mock DeepSeek API）
-   - ✅ HITL 中断/恢复流程验证
+旧报告中“多头/空头/风险官辩论已完成但未使用 LangGraph 编织”的说法已经不符合 `v0.2.21`。当前版本已经有 LangGraph 编排，是否启用完整 pipeline 取决于 CLI 或调用参数中的 `use_graph`。
 
-**评价：** 测试覆盖从 11 个提升至 138 个。决策保护器每个边界条件均有测试，评分引擎六个维度各自覆盖正常/边界/异常值，报告生成器验证了结构完整性和缺失数据降级，LangGraph 编排器验证了多轮图结构、Supervisor 收敛逻辑、HITL 流程和循环终止。后续可补充 QMT/AKShare 真实网络集成测试。
+## 1.8 协议 Schema 与验证 ✅ 已完成
+
+**状态**：已完成，有协议文件和相关流程测试。
+
+**实际实现**：
+
+`protocols/` 下包含：
+
+- `research_task.schema.json`
+- `factor_score.schema.json`
+- `debate_result.schema.json`
+- `final_decision.schema.json`
+- `data_quality.schema.json`
+- `evidence_bundle.schema.json`
+
+**边界**：
+
+- 目前 schema 能约束结构，但不能完全约束金融含义、数据时点一致性和外部数据质量。
+- 后续应把 schema 验证结果纳入 API 响应和报告审计部分。
+
+## 1.9 估值分位与行业横截面估值 ✅ 已完成，但真实数据需验收
+
+**状态**：核心计算已完成，有 `tests/test_valuation_percentile.py` 和 `tests/test_industry_valuation.py`。
+
+**实际实现**：
+
+- `services/research/valuation_engine.py` 负责估值服务。
+- `services/research/industry_valuation_engine.py` 负责行业横截面分位计算。
+- `services/data/providers/qmt_industry_provider.py` 和 `qmt_peer_valuation_loader.py` 接入 QMT 行业成分和同行估值数据。
+- 报告层已经展示行业估值信息。
+- `.env.example` 增加了 QMT 行业估值配置。
+
+**边界**：
+
+- 单元测试能够验证核心计算逻辑，但不能替代真实 QMT 终端环境测试。
+- 行业成分解析、同行财务表可用性、样本数不足、极端估值过滤等场景，需要本地 QMT 验收并记录结果。
+- ETF 会跳过行业估值，该行为是合理边界，不是缺陷。
+
+## 1.10 安全配置与认证基础逻辑 ✅ 已完成
+
+**状态**：基础逻辑有测试，相关测试包括 `tests/test_auth.py` 和 `tests/test_security_config.py`；CI 定向执行 `test_security_config.py`。
+
+**实际实现**：
+
+- `apps/api/auth/security.py`：JWT 签发/验证、bcrypt 密码哈希。
+- `apps/api/auth/dependencies.py`：FastAPI Depends 鉴权依赖。
+- `apps/api/routers/auth.py`：登录、刷新、当前用户、注册接口。
+- `apps/api/task_manager/store.py`：包含 UserStore 和 users 表相关逻辑。
+- Streamlit 中有 `apps/dashboard/components/login.py`。
+
+**边界**：
+
+- 已经有 JWT 认证，不等于完整 RBAC。
+- 当前主要是“登录后可访问”的保护，不应夸大为严格多租户权限体系。
+- register 端点需要已登录用户，这属于基础管控，但仍需明确管理员权限边界。
 
 ---
 
-### 1.9 命令行工具 ✅ (80%)
+# 二、已实现但仅静态验证/手动验证
 
-**实现内容：**
+## 2.1 FastAPI 后端网关 ✅ 已实现，需运行态验收
 
-1. **main.py**
-   - ✅ --symbol：指定股票/ETF 代码
-   - ✅ --no-llm：不调用 DeepSeek，使用本地 mock 文本
-   - ✅ --data-source：选择数据源（qmt/akshare/mock）
-   - ✅ --no-pdf：跳过 PDF 导出
-   - ✅ JSON/Markdown/HTML/PDF 报告生成
+**状态**：已实现，但整体运行态需要启动服务后验收。
 
-**评价：** 命令行工具完善，支持离线测试。
+**实际实现**：
 
----
+- `apps/api/main.py` 创建 FastAPI 应用。
+- 注册 router：
+  - `auth`
+  - `health`
+  - `reports`
+  - `research`
+  - `watchlist`
+  - `ws`
+- 存在全局异常处理和 lifespan 管理。
+- `apps/api/routers/research.py` 提供异步研究任务接口。
+- `apps/api/routers/reports.py` 提供报告查询/下载接口。
+- `apps/api/routers/health.py` 提供健康检查接口。
 
-### 1.10 FastAPI 后端服务 ✅ (95%) — 新增
+**边界**：
 
-**实现内容：**
+- CI 没有完整启动 FastAPI 服务并跑全量 HTTP 集成测试。
+- `/docs`、`/redoc`、鉴权、任务提交、报告下载等需要本地或 CI 服务级联调确认。
+- 旧报告中“缺少 FastAPI Gateway”的说法应删除。
 
-1. **FastAPI 应用入口** — `apps/api/main.py`
-   - ✅ FastAPI 应用 + CORS + lifespan 生命周期
-   - ✅ 全局异常处理中间件（Exception / ValueError / KeyError / 404）
-   - ✅ 自动生成 OpenAPI 文档（`/docs`、`/redoc`）
+## 2.2 Celery + Redis 异步任务 ✅ 已实现，需跨进程验收
 
-2. **REST API 端点** — `apps/api/routers/`
-   - ✅ `POST /api/v1/research/single` — 提交异步研究任务，返回 task_id（202 Accepted）
-   - ✅ `GET /api/v1/research/{task_id}` — 查询任务进度（含 progress 0.0-1.0）
-   - ✅ `GET /api/v1/research/{task_id}/result` — 获取完整研究结果 JSON
-   - ✅ `DELETE /api/v1/research/{task_id}` — 取消进行中的任务
-   - ✅ `GET /api/v1/research/history` — 历史任务列表（分页 + 按 symbol/status 筛选）
-   - ✅ `GET /api/v1/reports/{task_id}/info` — 查看可用报告格式
-   - ✅ `GET /api/v1/reports/{task_id}/{fmt}` — 下载报告文件（json/md/html/pdf）
-   - ✅ `GET /api/v1/health` — 健康检查（API + DB + Redis 连通性）
-   - ✅ `GET /api/v1/health/ready` — K8s 就绪探针
+**状态**：代码已实现，真实任务队列运行需要 Redis、Celery worker 和 API 同时启动。
 
-3. **Celery 异步任务队列** — `apps/api/task_manager/celery_tasks.py` / `apps/api/celery_app.py`
-   - ✅ Celery + Redis broker/backend
-   - ✅ `run_research_task` — 异步执行完整单票研究 pipeline（调用共享 services/ 层）
-   - ✅ 任务状态流转：pending → running → completed / failed / cancelled
-   - ✅ 进度上报（progress 0.0 → 1.0，含中文进度消息）
-   - ✅ 超时保护（软超时 10 min，硬超时 15 min）
-   - ✅ `concurrency=2` 限制避免 DeepSeek API 速率超限
+**实际实现**：
 
-4. **Celery Beat 定时调度** — `apps/api/celery_app.py`
-   - ✅ `daily-health-check` — 每日 3:17 AM 自动健康检查（验证 DB + Redis 连通）
-   - ✅ `watchlist-scan` — 观察池定时扫描（已预留配置，观察池 CRUD 实现后启用）
-   - ✅ crontab 表达式配置，Asia/Shanghai 时区
+- `apps/api/celery_app.py`
+- `apps/api/task_manager/celery_tasks.py`
+- `apps/api/task_manager/manager.py`
+- `apps/api/task_manager/store.py`
 
-5. **SQLite 任务持久化** — `apps/api/task_manager/store.py`
-   - ✅ `research_tasks` 表：记录 symbol/data_source/status/progress/score/rating/action/report_paths
-   - ✅ 线程安全（threading.Lock + WAL 模式）
-   - ✅ 支持按 symbol/status 筛选 + 分页查询
-   - ✅ `schedule_id` 预留字段供观察池使用
-   - ✅ 接口化设计，可替换为 PostgreSQL
+支持研究任务提交、状态持久化、进度更新、观察池扫描任务和 Celery Beat 调度配置。2026-05-12 已修正 Beat schedule 的任务名，使 `daily-health-check`、`watchlist-scheduler-check`、`watchlist-scan-weekday-close` 分别指向 worker 实际注册的 `beat.daily_health_check`、`beat.watchlist_scheduler_check`、`beat.watchlist_scan`。
 
-6. **Pydantic 数据模型** — `apps/api/schemas/`
-   - ✅ ResearchRequest（symbol/data_source/use_llm/max_debate_rounds/use_graph）
-   - ✅ TaskStatusResponse（含 progress/progress_message）
-   - ✅ TaskHistoryResponse（分页）
-   - ✅ ReportInfo（可用格式列表）
+**边界**：
 
-7. **与现有系统的关系**
-   - ✅ 共享 Service 层：FastAPI / Streamlit / CLI 三者共用 `services/` 业务逻辑
-   - ✅ Streamlit 保持原样，不引入 httpx 调用 — API 是新的并行入口
-   - ✅ `run_single_asset_research()` 和 `run_full_research_graph()` 均可作为 Celery 任务目标
+- 单元测试不能充分验证跨进程消息队列。
+- Beat 任务名已有 `tests/test_celery_schedule.py` 覆盖，但仍需要在真实 Beat 触发时间或手动调度场景下记录执行结果。
+- 需要补充：
+  - Redis 不可用时降级行为；
+  - Celery worker 超时行为；
+  - 任务取消行为；
+  - 多任务并发；
+  - DeepSeek 限速或异常时的状态流转。
 
-**评价：** FastAPI 后端实现完善。Celery 异步任务 + SQLite 持久化 + Beat 定时调度为多用户并发、观察池批量研究、外部系统集成奠定了基础。API 端点覆盖了完整的任务生命周期（提交→监控→结果获取→报告下载）。
+## 2.3 WebSocket / 进度推送 ✅ 已实现，需运行态验收
 
-#### Redis 运行环境说明（2026-05-07 验证）
+**状态**：模块和测试存在，但真实端到端链路需要 Redis + API + worker 联调。
 
-Redis 是 FastAPI 后端的必需依赖（Celery broker + WebSocket Pub/Sub），在 Windows 环境下有几种部署方式：
+**实际实现**：
 
-| 方式 | 可行性 | 说明 |
-|------|--------|------|
-| **WSL2 Ubuntu** | ✅ 推荐 | `apt install redis-server`，项目提供 `scripts/start_redis.ps1` 一键启动脚本 |
-| **Docker Desktop** | ⚠️ 受限 | 国内网络环境可能无法访问 Docker Hub（`registry-1.docker.io` 被墙），镜像拉取失败 |
-| **Windows 原生** | ❌ | Redis 无官方 Windows 版本，微软存档版已停止维护 |
+- `apps/api/routers/ws.py`
+- `apps/api/websocket/redis_pubsub.py`
+- `apps/api/websocket/progress_publisher.py`
+- `apps/api/websocket/connection_manager.py`
+- `tests/test_websocket.py`
 
-**注意事项**：
-- WSL2 虚拟机在所有 shell 退出后会自动关闭，Redis 随之停止。每次电脑重启后需重新运行 `scripts/start_redis.ps1` 启动 Redis
-- FastAPI 启动前务必确保 Redis 已运行，否则健康检查返回 503（`/api/v1/health` 会同时检查 API、DB、Redis 三项连通性，任意一项失败则整体返回 503）
-- uvicorn 的 `--reload` 只监听文件变更，Redis 启动/停止不触发重载，需手动重启
+**边界**：
 
-**测试脚本**：项目提供 `scripts/API_Test.ps1`，覆盖健康检查、登录、观察池 CRUD、任务提交/查询等核心流程。脚本第 7 步已修复：提交任务成功后保存真实 `task_id`，查询步骤使用真实 ID 而非硬编码值。
+- 后端 WebSocket 端点存在。
+- Streamlit 侧主要采用短间隔 HTTP 轮询展示进度，而不是原生 WebSocket 前端连接。
+- 真实链路“Celery worker → Redis Pub/Sub → FastAPI WS → 前端展示”需要单独验收。
 
----
+## 2.4 Streamlit 看板 ✅ 已实现，需 UI 手动验收
 
-### 1.11 配置管理 ✅ (90%)
+**状态**：页面文件存在，功能需要运行 `streamlit` 后手动验收。
 
-**实现内容：**
+**实际实现**：
 
-1. **配置文件**
-   - ✅ app.yaml：应用配置
-   - ✅ deepseek.yaml.example：DeepSeek 配置示例
-   - ✅ scoring.yaml：评分权重配置
-   - ✅ data_sources.yaml：数据源配置
+- `apps/dashboard/Home.py`
+- `apps/dashboard/pages/1_Single_Asset_Research.py`
+- `apps/dashboard/pages/2_Report_Library.py`
+- `apps/dashboard/pages/3_观察池.py`
+- `apps/dashboard/components/login.py`
+- `apps/dashboard/components/progress_poller.py`
 
-2. **环境变量**
-   - ✅ .env.example：环境变量模板
-   - ✅ DEEPSEEK_API_KEY
-   - ✅ DEEPSEEK_BASE_URL
-   - ✅ QMT 配置
-   - ✅ 缓存配置
+支持单票研究、报告库、观察池、登录和进度展示。
 
-**评价：** 配置管理规范，支持灵活配置。
+**边界**：
 
----
+- 当前没有稳定的 UI 自动化测试。
+- HITL 页面、异步模式、登录刷新、API 离线 fallback 等需要手动验收记录。
+- 不存在 `4_系统设置.py`。
 
-### 1.12 观察池 ✅ (100%) — 2026-05-06 完成
+## 2.5 QMT 主数据源 ✅ 已实现，需本地 QMT 验收
 
-**实现内容：**
+**状态**：provider 和配置已实现，但真实可用性依赖 Windows + QMT/xtquant 环境。
 
-1. **数据模型**
-   - ✅ `watchlist_folders` 表 — 文件夹（唯一归属）
-   - ✅ `watchlist_items` 表 — 观察项（symbol + schedule_config + 最近评分）
-   - ✅ `watchlist_tags` 表 — 标签（多对多）
-   - ✅ `watchlist_item_tags` 表 — 项-标签关联（级联删除）
-   - ✅ `watchlist_batches` 表 — 批量扫描追踪
+**实际实现**：
 
-2. **存储层（WatchlistStore）**
-   - ✅ 27 个 DAO 方法（文件夹/观察项/标签 CRUD + 批量扫描 + 到期查询）
-   - ✅ 线程安全（threading.Lock + WAL 模式）
-   - ✅ 模块级单例 `get_watchlist_store()`
+- `services/data/qmt_provider.py`
+- `services/data/providers/qmt_financial_provider.py`
+- `services/data/qmt_realtime_quote.py`
+- `services/data/providers/qmt_industry_provider.py`
+- `services/data/providers/qmt_peer_valuation_loader.py`
+- `QMT_SETUP.md`
 
-3. **业务逻辑层（WatchlistManager）**
-   - ✅ 封装 WatchlistStore + TaskStore 交互
-   - ✅ 调度计算：`croniter` 基于 crontab 计算 `next_scan_at`（Asia/Shanghai 时区）
-   - ✅ 批量扫描编排：支持按 item_ids / folder_id / 全部触发
+**边界**：
 
-4. **REST API 端点** — `apps/api/routers/watchlist.py`（17 个端点）
-   - ✅ `GET/POST /api/v1/watchlist/folders` + `PUT/DELETE /api/v1/watchlist/folders/{folder_id}`
-   - ✅ `GET/POST /api/v1/watchlist/items` + `GET/PUT/DELETE /api/v1/watchlist/items/{item_id}`
-   - ✅ `GET/POST /api/v1/watchlist/tags` + `PUT/DELETE /api/v1/watchlist/tags/{tag_id}`
-   - ✅ `POST /api/v1/watchlist/scan` + `GET /api/v1/watchlist/scan/{batch_id}` + `GET /api/v1/watchlist/results`
+- QMT 连接、历史数据下载、财务表读取、行业成分读取、实时行情读取，都需要本地环境验收。
+- 如果 QMT 环境不可用，系统应 fallback 至 AKShare 或 mock；该 fallback 行为也需要实际验证。
 
-5. **Celery 异步任务**
-   - ✅ `watchlist_scheduler_check` — 高频 checker（每 5 分钟），检查逐票自定义 cron 到期项
-   - ✅ `scan_single_watchlist_item` — 单票扫描（创建 research_task → 调用 run_single_asset_research → 更新评分/next_scan_at）
-   - ✅ `scan_watchlist` — 收盘后批量扫描（工作日 15:07）
-   - ✅ Celery Beat 双调度已启用
+## 2.6 AKShare / 巨潮资讯数据源 ✅ 已实现，需网络集成测试
 
-6. **Pydantic Schemas**
-   - ✅ `ScheduleConfig` / `ConditionTriggers` — 调度配置模型（cron / interval / manual_only）
-   - ✅ `WatchlistFolderCreate/Update/Response` — 文件夹模型
-   - ✅ `WatchlistItemCreate/Update/Response` — 观察项模型（含 tags + scan_history）
-   - ✅ `WatchlistTagCreate/Update/Response` — 标签模型
-   - ✅ `ScanRequest/ScanAcceptResponse/ScanProgressResponse/ScanHistoryResponse` — 扫描模型
+**状态**：provider 代码存在，但真实网络数据质量和接口稳定性需要集成测试。
 
-7. **Streamlit UI** — `apps/dashboard/pages/3_观察池.py`
-   - ✅ 侧边栏：文件夹树 + 标签筛选 + 添加观察标的/文件夹/标签对话框
-   - ✅ 主区域：概览指标 + 可筛选数据表 + 点击查看详情（评分/调度/标签/历史记录）
-   - ✅ 批量扫描：立即扫描全部 / 选中文件夹 / 单票
-   - ✅ 双模式：API 可用时走 REST 调用，不可用时直接访问 SQLite
+**实际实现**：
 
-8. **测试** — `tests/test_watchlist_store.py`（32 个用例）
-   - ✅ 文件夹 CRUD + 非空删除拒绝
-   - ✅ 观察项 CRUD + 按文件夹/标签/启用状态筛选 + 分页
-   - ✅ 标签 CRUD + 重复名称拒绝 + 级联删除保留项
-   - ✅ 多对多标签关联 + 全量替换
-   - ✅ 批量扫描创建 + 进度追踪 + 完成状态
-   - ✅ 到期查询（无 next_scan_at / 已禁用 / 未来时间）
+- `services/data/akshare_provider.py`
+- `services/data/providers/akshare_fundamental_provider.py`
+- `services/data/providers/akshare_valuation_provider.py`
+- `services/data/providers/akshare_event_provider.py`
+- `services/data/providers/cninfo_event_provider.py`
+- `services/data/providers/etf_provider.py`
 
-**与设计方案差异：**
-- ✅ 完全按照设计方案实现（文件夹 + 标签两级分组、逐票自定义调度、扩展 tasks.db）
-- ✅ 条件触发器（价格涨跌/评分阈值/成交量异动）已启用，QMT get_full_tick 实时优先 + 日线 fallback
+**边界**：
 
-**评价：** 观察池系统实现完整。逐票自定义 cron 通过高频 checker 轮询实现（避免动态 Beat 需重启 worker），条件触发器留待实时行情数据源就绪后启用。Streamlit 页面支持离线直连模式，与 Home.py / 报告库页面风格一致。
+- AKShare 接口字段、数据源可用性、网络代理、限流、空结果等问题，需要真实网络测试。
+- 巨潮资讯/东方财富公告接口变化会影响事件数据稳定性。
+
+## 2.7 PDF 生成 ✅ 已实现，需本地依赖验收
+
+**状态**：代码已实现，但真实生成依赖 Playwright/Chromium 或 WeasyPrint 环境。
+
+**实际实现**：
+
+- `services/report/pdf_builder_playwright.py`
+- `services/report/pdf_builder.py`
+
+**边界**：
+
+- CLI 默认不生成 PDF，目的是避免 Chromium 环境问题影响 smoke test。
+- 报告中应写“PDF 能力已实现，但运行环境需单独安装并验证”，不应写成无条件完成。
+
+## 2.8 Docker / Redis 启动脚本 ✅ 已实现，需运行验证
+
+**状态**：配置存在，但未确认跨平台稳定性。
+
+**实际实现**：
+
+- `docker-compose.yml`
+- `scripts/start_redis.ps1`
+- `scripts/API_Test.ps1`
+
+**边界**：
+
+- Windows + WSL2、Docker Desktop、国内网络环境下的可用性不同。
+- 应在文档中明确推荐 WSL2 Redis，并记录每次重启后的启动步骤。
 
 ---
 
-### 1.13 WebSocket 实时进度推送 ✅ (100%) — 2026-05-06 完成
+# 三、部分实现
 
-**实现内容：**
+## 3.1 数据证据结构和质量追踪 ⚠️ 部分实现
 
-1. **Redis Pub/Sub 基础设施** — `apps/api/websocket/`
-   - ✅ `redis_pubsub.py` — 双客户端设计：`redis.asyncio` 异步长连接（FastAPI 侧）+ `redis` 同步短连接（Celery 侧），独立 Redis DB#2
-   - ✅ `progress_publisher.py` — 统一进度消息格式：`publish_task_progress()`（单票）+ `publish_batch_progress()`（批量扫描）
-   - ✅ `connection_manager.py` — WebSocket 连接管理器（备选架构）
-   - ✅ 进程级单例 `get_async_redis()` + `close_async_redis()`，lifespan 中管理生命周期
+**状态**：部分实现。
 
-2. **WebSocket 端点** — `apps/api/routers/ws.py`（3 个端点）
-   - ✅ `ws/task/{task_id}` — 单票研究任务实时进度：先推送 SQLite 当前状态，再订阅 Redis 频道增量推送
-   - ✅ `ws/batch/{batch_id}` — 观察池批量扫描实时进度
-   - ✅ `ws/events` — 全局事件流（供仪表盘等全局视图使用）
+**已有能力**：
 
-3. **Celery 任务改造** — `apps/api/task_manager/celery_tasks.py`
-   - ✅ `run_research_task()` — 5 个 `store.update_status()` 调用点后各加 1 行 `publish_task_progress()`
-   - ✅ `scan_single_watchlist_item()` — 3 个 `store.update_status()` 调用点后各加 1 行 `publish_task_progress()`
-   - ✅ 总计 8 个发布点，覆盖 pending → running (0.1/0.3/0.7) → completed (1.0) / failed 全生命周期
+- `source_metadata`
+- `data_quality`
+- `evidence_bundle`
+- `provider_run_log`
+- provider contract 与错误类型
+- SQLite cache / normalized snapshot 的基础能力
 
-4. **Streamlit 进度轮询** — `apps/dashboard/components/progress_poller.py`
-   - ✅ `poll_task_progress()` — 1 秒间隔轮询 GET endpoint，`st.progress()` 实时进度条
-   - ✅ `poll_batch_progress()` — 批量扫描进度轮询，显示 completed/total/failed 计数
-   - ✅ `submit_research_task()` / `fetch_task_result()` — API 提交/获取结果的便捷封装
+**未完全达到的目标**：
 
-5. **Home.py 异步模式**
-   - ✅ 新增「异步模式（显示实时进度）」复选框，默认启用
-   - ✅ 异步模式：POST 提交到 FastAPI → 轮询进度 → 实时进度条 → 获取完成结果
-   - ✅ 同步模式保留为 fallback（取消勾选时使用）
-   - ✅ HITL 模式暂保持同步（异步模式下自动禁用 HITL 复选框）
+还没有把所有数据层输出统一重构为严格的：
 
-6. **3_观察池.py 批量进度**
-   - ✅ 扫描按钮后调用 `poll_batch_progress()`，实时展示批量扫描进度
-   - ✅ 单票立即扫描按钮同样接入进度展示
-
-7. **WebSocket 消息格式（统一 JSON）**
-   - ✅ `type` — progress / completed / failed / cancelled
-   - ✅ 完整字段：task_id, symbol, status, progress, progress_message, score, rating, action, error_message, timestamp
-   - ✅ 发布到两个频道：`task:{task_id}` / `batch:{batch_id}` + `events`（全局）
-
-8. **测试** — `tests/test_websocket.py`（8 个用例 + 2 个 Redis 集成测试跳过）
-   - ✅ 进度消息格式验证（必需字段完整性）
-   - ✅ 完成/失败消息携带 score/error 验证
-   - ✅ 批量进度消息格式验证
-   - ✅ 状态→类型映射
-   - ✅ Redis 不可用时的优雅降级
-   - ✅ ConnectionManager 连接管理
-   - ⏭ 2 个 Redis Pub/Sub 集成测试（需本地 Redis 运行时启用）
-
-**与设计方案差异：**
-- ✅ 完全按照设计方案实现（Redis Pub/Sub + WebSocket 端点 + Streamlit 轮询）
-- ✅ 额外增加了全局 `ws/events` 端点和 `ConnectionManager` 备选架构
-- ⚠️ Streamlit 因服务端渲染限制采用 HTTP 短间隔轮询而非原生 WebSocket（效果等价）
-
-**评价：** WebSocket 实时进度推送系统实现完整。Celery Worker → Redis Pub/Sub → FastAPI WebSocket 三层架构清晰，消息格式统一。Streamlit 侧用 1 秒轮询实现同等实时体验，无需引入 JavaScript。发布失败静默降级，不影响主研究流程。
-
----
-
-### 1.14 JWT 用户认证/授权 ✅ (100%) — 2026-05-06 完成
-
-**实现内容：**
-
-1. **用户存储** — `apps/api/task_manager/store.py`
-   - ✅ `users` 表（id/username/password_hash/role/enabled）
-   - ✅ `UserStore` 类（create_user/get/list/update/delete，7 个 DAO 方法）
-   - ✅ `get_user_store()` 模块级单例 + 首次启动自动种子 admin 用户
-
-2. **JWT 安全模块** — `apps/api/auth/`
-   - ✅ `security.py`：`create_access_token()`（30 min）+ `create_refresh_token()`（7 days）+ `decode_token()` + `hash_password()` / `verify_password()`（bcrypt）
-   - ✅ `dependencies.py`：`get_current_user()` — `OAuth2PasswordBearer` + JWT 解码 + 用户启用检查
-   - ✅ 环境变量配置：`JWT_SECRET` / `JWT_ALGORITHM` / `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS`
-
-3. **Auth REST 端点** — `apps/api/routers/auth.py`（4 个端点）
-   - ✅ `POST /api/v1/auth/login` — 用户名+密码 → access_token + refresh_token
-   - ✅ `POST /api/v1/auth/refresh` — refresh_token → 新 access_token + refresh_token
-   - ✅ `GET /api/v1/auth/me` — 当前用户信息（需认证）
-   - ✅ `POST /api/v1/auth/register` — 注册新用户（需已登录）
-
-4. **受保护端点改造**
-   - ✅ `research.py` — 5 个端点添加 `user: dict = Depends(get_current_user)`
-   - ✅ `watchlist.py` — 16 个端点添加 `user: dict = Depends(get_current_user)`
-   - ✅ `reports.py` — 2 个端点添加 `user: dict = Depends(get_current_user)`
-   - ✅ `ws.py` — 3 个 WebSocket 端点接受 `?token=...` 查询参数验证
-   - ✅ 公开端点：`/api/v1/health/*`, `/api/v1/auth/login`, `/api/v1/auth/refresh`
-
-5. **created_by 字段激活**
-   - ✅ `TaskManager.submit()` 接受 `created_by` 参数，路由层传入认证用户名
-   - ✅ Celery 扫描任务使用 `created_by="watchlist_scanner"`
-
-6. **Streamlit 登录** — `apps/dashboard/components/login.py`
-   - ✅ `require_login()` — 侧边栏登录表单，未登录时 `st.stop()` 阻止页面渲染
-   - ✅ `auth_headers()` / `api_get()` / `api_post()` — 自动携带 Bearer token
-   - ✅ Token 过期自动刷新（401 → POST /refresh → 重试原请求）
-   - ✅ `Home.py` + `3_观察池.py` 启动时调用 `require_login()`
-
-7. **测试** — `tests/test_auth.py`（16 个用例 + 5 个集成测试跳过）
-   - ✅ 密码哈希/校验（正确/错误/不同 salt）
-   - ✅ JWT 签发/解码/无效 token/过期 token
-   - ✅ 用户 CRUD（创建/重复名称/列表/更新/删除/管理员种子）
-   - ⏭ 5 个端点集成测试（需启动 FastAPI 服务）
-
-**与设计方案差异：**
-- ✅ 完全按照设计方案实现（JWT Bearer + SQLite users 表 + 全局开关 + Streamlit 登录）
-- ✅ `passlib` 替换为 `bcrypt` 直接调用（避免 passlib 与新版 bcrypt 的兼容性问题）
-
-**评价：** 认证系统实现完整。JWT 签发/验证/刷新链路完整，全部 REST + WebSocket 端点受保护，Streamlit 看板强制登录。种子管理员用户通过环境变量配置，首次启动自动创建。`created_by` 字段从硬编码 "default" 激活为真实用户名。
-
----
-
-## 二、未实现功能详细分析
-
-### 2.1 FastAPI 后端服务 ✅ (95%) — 2026-05-06 完成
-
-**设计方案要求：**
-- FastAPI 作为 Streamlit、任务队列、报告服务和数据服务的统一入口
-- 核心接口：POST /research/single, GET /research/{task_id}, GET /reports/{task_id}/pdf 等
-
-**当前实现：**
-- ✅ FastAPI 应用已就绪（`apps/api/main.py`），30 个 REST 端点 + 3 个 WebSocket 端点（含 17 个观察池端点）
-- ✅ Celery + Redis 异步任务队列，支持任务提交/进度查询/取消
-- ✅ SQLite 任务持久化（`storage/tasks.db`），含进度追踪和结果摘要
-- ✅ Celery Beat 定时调度（3 个定时任务：每日健康检查 + 观察池调度检查 + 收盘扫描）
-- ✅ Pydantic 请求/响应模型，自动 OpenAPI 文档
-- ✅ 全局异常处理中间件
-- ✅ 共享 Service 层：Streamlit 和 FastAPI 共用 `services/` 业务逻辑
-- ✅ WebSocket 实时进度推送（Redis Pub/Sub + 3 WS 端点 + Streamlit 异步轮询模式）
-- ✅ JWT 用户认证/授权（bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录）
-
-**与设计方案差异：**
-- ✅ 所有核心端点均已实现，与设计方案一致
-- ✅ WebSocket 实时进度推送已实现（2026-05-06）
-- ✅ JWT 用户认证/授权已实现（2026-05-06）
-
-**影响：**
-- 为多用户并发、观察池批量研究、外部系统集成奠定了基础
-- Streamlit 看板和 CLI 工具功能不受影响，三者并行可用
-
----
-
-### 2.3 网页搜索服务 ❌ (0%)
-
-**设计方案要求：**
-- 使用网页搜索获取新闻、公告、政策等补充数据
-- 作为 AKShare 的补充源
-
-**当前实现：**
-- 没有网页搜索服务
-- 事件数据完全依赖 AKShare/巨潮资讯
-
-**影响：**
-- 无法获取实时新闻
-- 无法获取社交媒体观点
-- 无法获取政策动态
-
-**建议：**
-- 第一版可以保持现状，因为 AKShare 已经包含了主要的数据源
-- 第二版可以引入网页搜索服务，使用 SerpAPI、Google Custom Search API 等
-
----
-
-### 2.4 观察池 ✅ (100%) — 2026-05-06 完成
-
-**设计方案要求：**
-- 管理观察池，支持批量研究
-- 支持定期扫描
-- 支持条件筛选
-
-**当前实现：**
-- ✅ 文件夹 + 标签两级分组（唯一文件夹 + 多对多标签）
-- ✅ 逐票自定义 cron 调度（per-item schedule_config + croniter 计算 next_scan_at）
-- ✅ Celery Beat 双调度（每 5 分钟高频 checker + 工作日 15:07 收盘扫描）
-- ✅ 17 个 REST API 端点（文件夹/观察项/标签 CRUD + 扫描触发/进度/历史）
-- ✅ Streamlit `3_观察池.py` 管理页面（双模式：API + 本地离线）
-- ✅ 32 个存储层测试
-- ✅ 批量扫描追踪（watchlist_batches 表）
-
-**与设计方案差异：**
-- ✅ 完全按设计方案实现（文件夹 + 标签 + 逐票调度）
-- ✅ 条件触发器（价格涨跌/评分阈值/成交量异动）已启用，QMT get_full_tick 实时优先 + 日线 fallback
-
-**评价：**
-- 观察池已从 0% 完整实现，批量研究、定时扫描、条件筛选三大需求均已覆盖
-
----
-
-### 2.5 系统设置页面 ❌ (0%)
-
-**设计方案要求：**
-- 系统设置页面
-- 管理配置、数据源、代理设置等
-
-**当前实现：**
-- 没有系统设置页面
-- 配置通过 .env 文件和配置文件管理
-
-**影响：**
-- 无法通过 UI 管理配置
-- 无法动态调整数据源
-- 无法管理 API Key
-
-**建议：**
-- 第一版可以保持现状，因为配置可以通过 .env 文件管理
-- 第二版可以实现系统设置页面
-
----
-
-### 2.6 Qlib 框架 ❌ (0%)
-
-**设计方案要求：**
-- 接入 Qlib 全量研究框架
-- 支持更复杂的因子挖掘和组合优化
-
-**当前实现：**
-- 没有接入 Qlib
-- 研究引擎是轻量级的
-
-**影响：**
-- 无法使用 Qlib 的因子挖掘功能
-- 无法使用 Qlib 的组合优化功能
-- 研究引擎功能受限
-
-**建议：**
-- 第一版可以保持现状，因为第一版目标是轻量级研究
-- 第二版可以逐步接入 Qlib
-
----
-
-### 2.7 报告模板 ❌ (30%)
-
-**设计方案要求：**
-- Jinja2 HTML 模板
-- WeasyPrint 生成 PDF
-- 专业的 PDF 样式
-
-**当前实现：**
-- 使用 Markdown + CSS 生成 HTML
-- Playwright/WeasyPrint 生成 PDF
-
-**差异：**
-- ✅ HTML 生成方式不同（Markdown + CSS vs Jinja2 模板）
-- ✅ PDF 生成方式相同（Playwright/WeasyPrint）
-
-**影响：**
-- 模板维护不够灵活
-- 难以实现复杂的 PDF 布局
-
-**建议：**
-- 第一版可以保持现状，因为 Markdown + CSS 已经足够
-- 第二版可以迁移到 Jinja2 模板
-
----
-
-### 2.8 文档 ❌ (0%)
-
-**设计方案要求：**
-- docs/architecture.md：系统架构文档
-- docs/agent_protocol.md：Agent 协议文档
-- docs/data_schema.md：数据 schema 文档
-- docs/future_qmt_trading.md：未来 QMT 交易方案
-
-**当前实现：**
-- 没有文档
-- 只有 README.md 和 QMT_SETUP.md
-
-**影响：**
-- 新用户上手困难
-- 维护成本高
-- 缺少设计思路的记录
-
-**建议：**
-- 第一版可以保持现状
-- 第二版应该补充文档
-
----
-
-## 三、Tushare 替代方案总结
-
-### 3.1 基本面数据
-
-**设计方案：**
-- 使用 Tushare 获取财务数据
-
-**当前实现：**
-- ✅ **QMT 财务表**（优先）
-  - Balance（资产负债表）
-  - Income（利润表）
-  - CashFlow（现金流量表）
-  - PershareIndex（每股指标）
-- ✅ **AKShare 基本面数据**（fallback）
-  - ak.stock_financial_analysis
-  - ak.stock_fundamentals
-
-**评价：** QMT 作为主数据源是合理的，因为 QMT 终端在 Windows 侧，数据更实时。AKShare 作为 fallback 确保了可用性。
-
----
-
-### 3.2 估值数据
-
-**设计方案：**
-- 使用 Tushare 获取估值数据
-
-**当前实现：**
-- ✅ **QMT 派生估值**（优先）
-  - 市值 = 股价 × 总股本
-  - PE = 市值 / 净利润 TTM
-  - PB = 市值 / 净资产
-  - PS = 市值 / 营收 TTM
-  - PE/PB 历史分位 ✅（QMT 1500 天价格比例法 + AKShare 历史日线补充）
-- ✅ **AKShare 估值数据**（fallback）
-  - ak.stock_zh_val_a_indicator
-
-**评价：** QMT 派生估值是合理的，因为 QMT 已经有股价和股本数据。AKShare 作为补充确保了估值数据的完整性。
-
----
-
-### 3.3 事件/公告数据
-
-**设计方案：**
-- 使用 Tushare 获取公告数据
-
-**当前实现：**
-- ✅ **巨潮资讯**（优先）
-  - ak.cninfo_announcement
-  - ak.stock_news_a
-- ✅ **AKShare 东方财富公告**（fallback）
-  - ak.stock_zh_a_notice
-
-**评价：** 巨潮资讯是官方公告源，数据最权威。AKShare 作为 fallback 确保了可用性。
-
----
-
-### 3.4 Tushare 使用情况
-
-**当前实现：**
-- ❌ **完全未使用 Tushare**
-
-**替代方案：**
-- ✅ QMT 作为主数据源
-- ✅ AKShare 作为 fallback
-
-**评价：** Tushare token 缺失，使用 QMT + AKShare 替代是合理的。QMT 数据更实时，AKShare 数据更全面。
-
----
-
-## 四、与设计方案的对比
-
-### 4.1 技术选型对比
-
-| 组件 | 设计方案 | 当前实现 | 状态 |
-|------|---------|---------|------|
-| LLM 接口层 | DeepSeek API | DeepSeek API | ✅ |
-| 主编排层 | LangGraph | LangGraph StateGraph (5 节点 + HITL) | ✅ (基础) |
-| 后端 API | FastAPI | 无 | ❌ |
-| 前端 | Streamlit | Streamlit | ✅ |
-| 报告导出 | Markdown + Jinja2 + WeasyPrint | Markdown + CSS + Playwright | ⚠️ |
-| 数据层 | QMT 为主，AKShare/Web 为补充 | QMT 为主，AKShare 为补充 | ✅ |
-| 运行方式 | Windows 原生 | Windows 原生 | ✅ |
-
----
-
-### 4.2 模块目录对比
-
-**设计方案：**
-```
-apps/dashboard/Home.py
-apps/dashboard/pages/1_单票研究.py
-apps/dashboard/pages/2_研究报告库.py
-apps/dashboard/pages/3_观察池.py
-apps/dashboard/pages/4_系统设置.py
-apps/dashboard/components/factor_card.py
-apps/dashboard/components/debate_view.py
-apps/dashboard/components/risk_panel.py
-apps/dashboard/components/report_preview.py
+```json
+{
+  "value": "...",
+  "source": "...",
+  "as_of": "...",
+  "quality": "...",
+  "warnings": []
+}
 ```
 
-**当前实现：**
-```
-apps/dashboard/Home.py                        # 单票研究主界面
-apps/dashboard/streamlit_app.py               # 备用入口
-apps/dashboard/pages/2_Report_Library.py      # 报告库页面
-apps/dashboard/pages/3_观察池.py              # 观察池管理页面（NEW）
-apps/api/
-  ├── main.py                                 # FastAPI 入口（30 REST 端点）
-  ├── celery_app.py                           # Celery + Beat 调度（3 个定时任务）
-  ├── routers/
-  │   ├── research.py                         # 研究任务端点 (5)
-  │   ├── reports.py                          # 报告下载端点 (2)
-  │   ├── health.py                           # 健康检查端点 (2)
-  │   └── watchlist.py                        # 观察池端点 (17)（NEW）
-  ├── schemas/
-  │   ├── research.py                         # 研究请求/响应模型
-  │   ├── task.py                             # 任务状态常量
-  │   ├── report.py                           # 报告信息模型
-  │   └── watchlist.py                        # 观察池模型 (17)（NEW）
-  └── task_manager/
-      ├── manager.py                          # TaskManager + WatchlistManager（NEW）
-      ├── celery_tasks.py                     # Celery 任务（含观察池扫描）（NEW）
-      └── store.py                            # TaskStore + WatchlistStore（NEW）
-services/agents/
-  ├── bull_analyst.py                         # BullAnalyst 类（支持质询回应）
-  ├── bear_analyst.py                         # BearAnalyst 类（支持质询回应）
-  ├── risk_officer.py                         # RiskOfficer 类（支持质询回应）
-  ├── committee_secretary.py                  # CommitteeSecretary 类（支持辩论历史）
-  ├── supervisor.py                           # Supervisor 类（LLM 辩论主持人）
-  ├── debate_agent.py                         # 编排入口（委托 LangGraph）
-  └── langgraph_orchestrator.py               # 多轮辩论工作流 + HITL API
-tests/
-  ├── test_report_pipeline.py                 # 端到端流程 (11)
-  ├── test_decision_guard.py                  # 决策保护器边界 (25)
-  ├── test_scoring_engine.py                  # 评分引擎边界 (28)
-  ├── test_report_builders.py                 # 报告生成验证 (22)
-  ├── test_langgraph_orchestrator.py          # LangGraph 多轮编排 (29)
-  ├── test_multi_round_debate.py              # 多轮辩论专用 (15)
-  └── test_watchlist_store.py                 # 观察池存储 (32)（NEW）
-```
+**结论**：
 
-**差异：**
-- ✅ 1_Single_Asset_Research.py 已实现（NEW），Home.py 改为引导页
-- ✅ 3_观察池.py 已实现（NEW）
-- ❌ 缺少 4_系统设置.py
-- ✅ components/ 目录已实现（NEW：login.py / progress_poller.py）
-- ✅ Agent 目录从空壳演进为 7 个实装文件（含 Supervisor + LangGraph 多轮编排器）
-- ✅ tests/ 目录从 1 个文件 11 用例演进为 10 个文件 223 用例
-- ✅ apps/api/ 目录演进为完整后端网关（含观察池子模块）
+当前证据能力已经足够支撑报告和决策保护器，但尚未完成全链路统一数据包装。这个方向会牵涉 provider、scoring、report、cache 多处协议变化，不适合作为小修。
 
----
+## 3.2 报告模板体系 ⚠️ 部分实现
 
-### 4.3 系统架构对比
+**状态**：部分实现。
 
-**设计方案：**
-```
-Streamlit 投研看板
-  ↓
-FastAPI Gateway
-  ↓
-LangGraph Orchestrator
-  ↓
-数据服务 / 研究计算 / Web研究服务
-  ↓
-DeepSeek Agent Runtime
-  ↓
-Report Service
-```
+**已有能力**：
 
-**当前实现：**
-```
-Streamlit 投研看板 / main.py
-  ├── [HITL 模式] 辩论暂停 → 人工审核面板 → 确认/修改 → 继续
-  │
-LangGraph 完整 Pipeline 图（新增）← NEW
-  ├── load_research_data (QMT/AKShare/Mock + aggregator.enrich)
-  ├── score_asset (6 维度评分)
-  ├── run_debate_subgraph (8 节点辩论子图)
-  ├── hitl_review (HITL 中断点)
-  ├── apply_decision_guard (决策保护器)
-  └── validate_and_assemble (协议验证)
-  ↓
-Report Service (JSON → MD → HTML → PDF)
-```
+- JSON、Markdown、HTML、PDF 输出完整。
+- `services/report/templates` 目录存在。
+- Markdown + CSS 已经能生成可读报告。
 
-**差异：**
-- ❌ 缺少 FastAPI Gateway
-- ✅ **LangGraph 多轮辩论编排器已实现**（8 节点 StateGraph + Supervisor 动态调度 + 循环边 + HITL）
-- ✅ 独立 Agent 类已实现（Bull/Bear/Risk/Secretary/Supervisor）
-- ✅ 数据服务、研究引擎、Report Service 都已实现
-- ✅ DeepSeek Agent Runtime 已实现（每个 Agent 独立调用）
+**未完全达到的目标**：
 
----
+- 还不是完整 Jinja2 模板驱动的报告体系。
+- 专业 PDF 版式、图表、分页控制、页眉页脚、模板版本管理仍不足。
 
-### 4.4 Agent 设计对比
+**结论**：
 
-**设计方案：**
-```
-Supervisor
-  ↓
-Bull Analyst
-  ↓
-Bear Analyst
-  ↓
-Risk Officer
-  ↓
-Committee Secretary
-```
+当前报告系统满足 MVP，但不应写成“专业模板体系已完成”。
 
-**当前实现（多轮辩论版）：**
-```
-LangGraph StateGraph
-  ├── run_initial_round (Bull/Bear/Risk 并行)
-  ├── supervisor_judge (LLM 主持人) ←──────────┐
-  │     ├── 收敛 → committee_convergence        │
-  │     └── 未收敛 → bull/bear/risk_challenge ──┘ (循环)
-  ├── committee_convergence (CommitteeSecretary) ← HITL interrupt
-  └── assemble_result (协议验证 + debate_history)
-```
+## 3.3 观察池条件触发器 ⚠️ 部分实现
 
-**差异：**
-- ✅ **Supervisor 已实现**：LLM 驱动动态调度，根据 next_speaker 字段选择目标节点
-- ✅ **多轮质询已实现**：Supervisor → challenge → Supervisor 循环边，支持真正辩论
-- ✅ BullAnalyst、BearAnalyst、RiskOfficer、CommitteeSecretary 均已实现独立类
-- ✅ 每个 Agent 有专属 system prompt，可独立调用和测试
-- ✅ LangGraph StateGraph 作为编排器，支持 HITL 中断
-- ✅ 三轮收敛标准（all_agree / no_new_arguments / max_rounds_reached）写入 Supervisor prompt
+**状态**：观察池 CRUD 和批量扫描较完整；条件触发器真实行情联动仍需验收。
+
+**已有能力**：
+
+- `apps/api/routers/watchlist.py`
+- `apps/api/task_manager/manager.py`
+- `apps/api/task_manager/store.py`
+- `apps/dashboard/pages/3_观察池.py`
+- `tests/test_watchlist_store.py`
+- `tests/test_condition_triggers.py`
+
+**未完全达到的目标**：
+
+- 条件触发器需要真实行情源验证。
+- 实时行情优先、日线 fallback、价格/成交量异动触发，在生产场景中需要更多样本测试。
+
+## 3.4 认证与授权 ⚠️ 部分实现
+
+**状态**：JWT 登录认证已实现；细粒度授权仍不足。
+
+**已有能力**：
+
+- JWT access/refresh token。
+- bcrypt 密码哈希。
+- REST/WS 端点鉴权。
+- Streamlit 登录表单与 token 刷新。
+- users 表和 UserStore。
+
+**未完全达到的目标**：
+
+- 不是完整 RBAC。
+- 不确定是否已经按用户隔离任务、报告、观察池数据。
+- 管理员权限、普通用户权限、注册权限的边界需要更严格定义和测试。
+
+## 3.5 文档体系 ⚠️ 部分实现
+
+**状态**：部分实现。
+
+**已有文档**：
+
+- `README.md`
+- `QMT_SETUP.md`
+- `.env.example`
+- `report.md`
+- 部分脚本说明
+
+**缺少文档**：
+
+- `docs/architecture.md`
+- `docs/agent_protocol.md`
+- `docs/data_schema.md`
+- `docs/api.md`
+- `docs/verification.md`
+- `docs/qmt_industry_valuation.md`
+- `docs/deployment.md`
+
+**结论**：
+
+README 已经包含较多使用说明，但还不能替代正式架构文档和验证文档。
+
+## 3.6 CI / 自动化测试体系 ⚠️ 部分实现
+
+**状态**：部分实现。
+
+**已有能力**：
+
+- `.github/workflows/ci.yml`
+- Windows runner
+- Python 3.13
+- `requirements.lock`
+- 定向 py_compile
+- 定向 pytest
+
+**当前 CI 定向测试包括**：
+
+- `tests/test_cli.py`
+- `tests/test_llm_json_guard.py`
+- `tests/test_security_config.py`
+- `tests/test_celery_schedule.py`
+- `tests/test_provider_errors.py`
+- `tests/test_report_pipeline.py`
+- `tests/test_valuation_percentile.py`
+- `tests/test_scoring_engine.py`
+
+**未完全达到的目标**：
+
+- CI 当前没有跑全量测试文件，也尚未包含 `tests/test_celery_schedule.py`。
+- 没有 FastAPI 服务级集成测试。
+- 没有 Redis/Celery/WebSocket 联调测试。
+- 没有 QMT/AKShare 真实数据源测试。
+- 没有 Streamlit UI 测试。
+- 没有 Playwright PDF 生成测试。
+
+**结论**：
+
+CI 已经具备基础保护，但不能作为全项目生产可用的证明。
 
 ---
 
-### 4.5 报告结构对比
+# 四、未实现
 
-**设计方案：**
-```
-封面
-一、投委会结论
-二、量化因子打分卡
-三、行情与趋势分析
-四、基本面与估值分析
-五、多头观点
-六、空头观点
-七、风险官意见
-八、辩论收敛纪要
-九、跟踪计划
-免责声明
-```
+## 4.1 网页搜索 / 新闻政策舆情服务 ❌ 未完成
 
-**当前实现：**
-```
-一、基本信息
-二、投委会结论
-三、数据来源与行情摘要
-四、量化因子打分卡
-五、多头观点
-六、空头观点
-七、风险官意见
-八、决策保护器说明
-九、辩论收敛纪要
-十、后续跟踪建议
-十一、免责声明
-```
+**状态**：未实现。
 
-**差异：**
-- ✅ 核心内容一致
-- ✅ 章节顺序略有调整
-- ✅ 增加了决策保护器说明
+**当前情况**：
 
----
+- 事件数据主要依赖 AKShare、巨潮资讯、东方财富公告等。
+- 没有独立的网页搜索 provider。
+- 没有 SerpAPI、Google Custom Search、Bing Search 或类似新闻搜索接入。
+- 没有社交媒体观点、政策动态、实时新闻摘要链路。
 
-### 4.6 打分体系对比
+**影响**：
 
-**设计方案：**
-```
-1. 趋势动量：20分
-2. 量能与流动性：15分
-3. 基本面质量：20分
-4. 估值性价比：15分
-5. 风险控制：20分
-6. 新闻/政策/事件：10分
-```
+- 风险官和事件引擎无法获得公告以外的实时外部信息。
+- 对政策、舆情、突发新闻敏感的标的，研究报告信息滞后。
 
-**当前实现：**
-```
-1. 趋势动量：20分
-2. 流动性：15分（与设计方案一致）
-3. 基本面质量：20分
-4. 估值性价比：15分
-5. 风险控制：20分
-6. 事件/政策：10分
-```
+**建议优先级**：高。完成状态收敛和验证文档后，下一步最适合推进该模块。
 
-**差异：**
-- ✅ 完全一致
+## 4.2 Qlib 框架 ❌ 未完成
 
----
+**状态**：未实现。
 
-### 4.7 买卖建议对比
+**当前情况**：
 
-**设计方案：**
-```
-1. 买入
-2. 分批买入
-3. 持有
-4. 观察
-5. 回避
-```
+- 仓库没有接入 Qlib。
+- 当前研究引擎是轻量规则引擎，不是 Qlib 因子研究/组合优化框架。
 
-**当前实现：**
-```
-1. 买入
-2. 分批买入
-3. 持有
-4. 观察
-5. 回避
-```
+**建议优先级**：中低。只有在基础数据验证、网页信息增强和回测需求明确后再做。
 
-**差异：**
-- ✅ 完全一致
+## 4.3 系统设置页面 ❌ 未完成
 
----
+**状态**：未实现。
 
-## 五、核心功能实现情况
+**当前情况**：
 
-### 5.1 单票研究 ✅
+- Dashboard 页面包括 Home、单票研究、报告库、观察池。
+- 不存在 `4_系统设置.py`。
+- API Key、数据源、代理、JWT、Redis、QMT 配置仍通过 `.env` 和配置文件管理。
 
-**实现内容：**
-- ✅ 输入股票/ETF 代码
-- ✅ 选择数据源
-- ✅ 计算因子和评分
-- ✅ 生成多头/空头/风险官辩论
-- ✅ 生成投委会结论
-- ✅ 生成 Markdown 报告
-- ✅ 生成 PDF 报告
-- ✅ 通过 Streamlit 展示
+**建议优先级**：中。适合在后端配置管理稳定后做。
 
-**状态：** ✅ 已完成
+## 4.4 自动交易 / QMT 下单 ❌ 未完成
+
+**状态**：未实现，且当前版本明确不应实现自动下单。
+
+**当前情况**：
+
+- 当前系统只输出研究建议，不调用 QMT 交易接口。
+- 没有委托下单、撤单、持仓同步、风控拦截、交易审计等模块。
+
+**建议优先级**：低。除非先完成更严格风控、权限、审计和人工确认流程，否则不建议推进。
+
+## 4.5 历史回测、行业估值回测、极端行情测试 ❌ 未完成
+
+**状态**：未实现。
+
+**当前情况**：
+
+- 有评分规则和估值分位，但没有系统性回测。
+- 没有行业估值分位对未来收益/回撤的有效性验证。
+- 没有极端行情压力测试。
+
+**建议优先级**：中。建议在数据源稳定后推进。
+
+## 4.6 组合优化 / 多标的资产配置 ❌ 未完成
+
+**状态**：未实现。
+
+**当前情况**：
+
+- 当前核心对象是单票 A 股或 ETF。
+- 观察池支持批量扫描，但不是组合优化器。
+- 没有组合层面的仓位、相关性、行业暴露、风险预算约束。
+
+**建议优先级**：中低。应在单票研究质量稳定后再推进。
+
+## 4.7 生产部署体系 ❌ 未完成
+
+**状态**：未完成。
+
+**当前情况**：
+
+- 有 Docker Compose，但没有完整生产部署方案。
+- SQLite 仍是本地持久化方案。
+- 没有 PostgreSQL、对象存储、日志采集、监控告警、备份恢复、K8s deployment 等生产配置。
+
+**建议优先级**：中。若只是个人本地投研工具，可暂缓；若要多人使用，应尽快规划。
 
 ---
 
-### 5.2 量化打分卡 ✅
+# 五、模块级完成状态表
 
-**实现内容：**
-- ✅ 6 大因子评分
-- ✅ 总分计算
-- ✅ 评级生成（A/B+/B/C/D）
-- ✅ 操作建议生成
-
-**状态：** ✅ 已完成
-
----
-
-### 5.3 多头/空头/风险官辩论 ✅
-
-**实现内容：**
-- ✅ 多头观点（thesis、key_arguments、catalysts、invalidation_conditions）
-- ✅ 空头观点（thesis、key_arguments、main_concerns、invalidation_conditions）
-- ✅ 风险官意见（risk_level、blocking、risk_summary、max_position、risk_triggers）
-- ✅ 投委会结论（stance、action、confidence、final_opinion）
-
-**状态：** ✅ 已完成（但未使用 LangGraph 编织）
-
----
-
-### 5.4 买卖建议 ✅
-
-**实现内容：**
-- ✅ 5 类建议（买入/分批买入/持有/观察/回避）
-- ✅ 置信度
-- ✅ 建议仓位
-- ✅ 入场/止损/止盈条件
-
-**状态：** ✅ 已完成
-
----
-
-### 5.5 Markdown 报告 ✅
-
-**实现内容：**
-- ✅ 完整的投委会纪要格式
-- ✅ 包含所有必要章节
-- ✅ 数据质量提示
-- ✅ 辩论过程展示
-
-**状态：** ✅ 已完成
+| 模块 | 完成状态 | 分类 | 说明 |
+|---|---:|---|---|
+| CLI 单票研究 | ✅ 已完成 | 已实现且有测试验证 | 参数应写 `--pdf`，不是 `--no-pdf` |
+| 单票研究主流程 | ✅ 已完成 | 已实现且有测试验证 | 支持顺序和 LangGraph pipeline |
+| Mock 数据源 | ✅ 已完成 | 已实现且有测试验证 | 可用于离线 smoke test |
+| QMT 行情/财务/行业估值 | ✅ 已实现 | 静态/手动验证 | 真实 QMT 环境仍需验收 |
+| AKShare / CNInfo 数据 | ✅ 已实现 | 静态/手动验证 | 网络接口需集成测试 |
+| ETF 数据路径 | ✅ 已实现 | 已实现且有测试验证/部分手动 | ETF 行业估值跳过是合理边界 |
+| 评分引擎 | ✅ 已完成 | 已实现且有测试验证 | 六维评分规则已实现 |
+| 估值引擎 | ✅ 已完成 | 已实现且有测试验证 | v0.2.21 新增行业横截面分位 |
+| 事件引擎 | ✅ 已实现 | 静态/手动验证 | 依赖公告/新闻数据源稳定性 |
+| 风险引擎 | ✅ 已实现 | 已实现且有测试验证 | 与决策保护器配合 |
+| 决策保护器 | ✅ 已完成 | 已实现且有测试验证 | 较成熟 |
+| Agent 拆分 | ✅ 已完成 | 已实现且有测试验证 | Bull/Bear/Risk/Secretary/Supervisor |
+| LangGraph 辩论子图 | ✅ 已完成 | 已实现且有测试验证 | 有多轮质询与收敛逻辑 |
+| LangGraph 完整 pipeline | ✅ 已完成 | 已实现且有测试验证/静态验证 | 运行态仍需更多 e2e |
+| HITL API | ✅ 已实现 | 静态/手动验证 | UI 流程需验收 |
+| DeepSeek client | ✅ 已实现 | 静态/手动验证 | 真实 API 调用需环境验证 |
+| LLM JSON guard | ✅ 已完成 | 已实现且有测试验证 | CI 覆盖 |
+| JSON/Markdown/HTML 报告 | ✅ 已完成 | 已实现且有测试验证 | 可作为 MVP 输出 |
+| PDF 报告 | ✅ 已实现 | 静态/手动验证 | 依赖 Playwright/Chromium |
+| FastAPI 后端 | ✅ 已实现 | 静态/手动验证 | 缺服务级全量集成测试 |
+| Celery/Redis | ✅ 已实现 | 静态/手动验证 | Beat 任务名已加测试，仍缺跨进程联调记录 |
+| WebSocket 端点 | ✅ 已实现 | 静态/手动验证 | 后端存在，前端主要轮询 |
+| JWT 认证 | ✅ 已实现 | 部分完成 | 基础认证完成，RBAC/隔离不足 |
+| 观察池 CRUD | ✅ 已实现 | 已实现且有测试验证 | Store 层测试存在 |
+| 观察池批量扫描 | ✅ 已实现 | 静态/手动验证 | Celery 运行态需验收 |
+| 条件触发器 | ⚠️ 部分实现 | 部分实现 | 真实行情联动需测试 |
+| 系统设置页面 | ❌ 未完成 | 未实现 | 不存在页面 |
+| 网页搜索服务 | ❌ 未完成 | 未实现 | 当前最值得补的研究增强模块 |
+| Qlib | ❌ 未完成 | 未实现 | 暂无接入 |
+| 自动交易 | ❌ 未完成 | 未实现 | 当前版本不下单 |
+| 回测/压力测试 | ❌ 未完成 | 未实现 | 规则有效性未验证 |
+| 生产部署 | ❌ 未完成 | 未实现 | 仍偏本地工具形态 |
 
 ---
 
-### 5.6 PDF 报告 ✅
+# 六、对旧版 report.md 的主要修正
 
-**实现内容：**
-- ✅ Playwright/Chromium 导出
-- ✅ WeasyPrint 备用方案
-- ✅ A4 页面布局
+旧版 `report.md` 不建议继续直接使用，主要问题包括：
 
-**状态：** ✅ 已完成
+1. **FastAPI 状态前后矛盾**  
+   旧报告既写 FastAPI 已完成，又在架构对比处写“缺少 FastAPI Gateway”。`v0.2.21` 中 FastAPI 代码实际存在，应统一改为“已实现，但需运行态集成验收”。
 
----
+2. **测试数量不统一**  
+   旧报告中同时出现 138、223 等不同测试数量说法。更负责任的写法是列出测试文件，并说明“未在本报告中重新执行 pytest，准确数量以 `pytest --collect-only -q` 输出为准”。
 
-### 5.7 Streamlit 看板 ✅
+3. **CLI 参数错误**  
+   旧报告写 `--no-pdf`，实际是 `--pdf`。CLI 默认不生成 PDF，显式 `--pdf` 才生成 PDF。
 
-**实现内容：**
-- ✅ 单票研究界面
-- ✅ 输入股票/ETF 代码
-- ✅ 选择数据源
-- ✅ 启用/禁用 DeepSeek 辩论
-- ✅ 显示投委会结论
-- ✅ 显示行情摘要
-- ✅ 显示量化因子打分卡
-- ✅ 显示多头/空头/风险官辩论
-- ✅ 显示决策保护器
-- ✅ 下载 PDF/Markdown/JSON/HTML
-- ✅ 报告库页面
+4. **LangGraph 表述过时**  
+   旧报告写“辩论已完成但未使用 LangGraph 编织”，这与当前 `langgraph_orchestrator.py` 不一致。应改为“LangGraph 辩论子图和完整 pipeline 图已存在，是否启用取决于调用参数”。
 
-**状态：** ✅ 已完成
+5. **v0.2.21 最新变化未突出**  
+   旧报告没有把 QMT 行业横截面估值分位作为核心更新。新版报告应单独说明该功能的实现范围、测试范围和真实数据边界。
+
+6. **“完成度 98%”不够审慎**  
+   项目功能很多，但还有真实数据源、集成测试、网页搜索、系统设置、Qlib、回测、生产部署等明显缺口。建议用四类状态替代单一百分比。
 
 ---
 
-## 六、完成度评分
+# 七、下一步开发建议
 
-| 模块 | 完成度 | 评分 | 说明 |
-|------|--------|------|------|
-| 数据层 | 90% | ✅ | QMT/AKShare/Mock 三源 + 聚合器 + 标准化 + 缓存 |
-| 研究引擎 | 95% | ✅ | 6 维度评分（双路径：股票+ETF）|
-| Agent 系统 | 98% | ✅ | 4 个独立 Agent 类 + Supervisor + LangGraph 多轮辩论 + HITL |
-| DeepSeek 集成 | 90% | ✅ | OpenAI 兼容接口，支持 v4-flash/v4-pro |
-| 报告系统 | 85% | ✅ | JSON → MD → HTML → PDF 全链路 |
-| 决策保护器 | 95% | ✅ | 评分/风险/数据质量 三道防线 |
-| 协议和验证 | 95% | ✅ | 6 JSON Schemas + Draft202012Validator |
-| 测试 | 95% | ✅ | 223 用例（10 文件），覆盖全部模块边界与集成 |
-| 命令行工具 | 80% | ✅ | main.py 4 个参数 |
-| 配置管理 | 90% | ✅ | YAML + .env 双层配置 |
-| **LangGraph 编排** | **95%** | ✅ | 8 节点辩论子图 + 6 节点完整 pipeline 图 + Supervisor + 循环边 + HITL + 错误降级 |
-| **FastAPI 后端** | **100%** | ✅ | Celery + Redis + SQLite + Beat + 30 REST + 3 WS + JWT 认证，全端点保护 |
-| **观察池** | **100%** | ✅ | 文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit |
-| **WebSocket 推送** | **100%** | ✅ | Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询 |
-| **JWT 认证授权** | **100%** | ✅ | bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录 |
-| 网页搜索服务 | 0% | ❌ | 未开始 |
-| 系统设置页面 | 0% | ❌ | 未开始 |
-| Qlib 框架 | 0% | ❌ | 未开始 |
-| 报告模板 | 30% | ⚠️ | Markdown+CSS，缺 Jinja2 模板 |
-| 文档 | 0% | ❌ | 仅 README / CLAUDE.md / Scheme.md |
+## 7.1 最高优先级：建立验证基线
 
-**总体完成度：约 98%**
+已新增 `docs/verification.md` 作为初始验证基线。后续应持续追加以下命令的实际输出：
 
----
-
-## 七、关键结论
-
-### 7.1 已完成的核心功能 ✅
-
-1. **完整的单票研究闭环**
-   - 数据获取（QMT 主数据源 + AKShare fallback）
-   - 因子计算和评分
-   - DeepSeek 辩论（LangGraph 编排 4 Agent）
-   - 投委会结论
-   - 报告生成（JSON/Markdown/HTML/PDF）
-
-2. **专业的投委会报告**
-   - 完整的投委会纪要格式
-   - 量化因子打分卡
-   - 多头/空头/风险官辩论
-   - 决策保护器
-
-3. **完善的决策保护机制**
-   - 评分限制（5 级阈值）
-   - 风险等级限制（high/medium/low）
-   - 数据质量限制（placeholder/blocking/critical/missing）
-   - 降级机制（138 个测试覆盖所有边界）
-
-4. **灵活的数据源**
-   - QMT 作为主数据源
-   - AKShare 作为 fallback
-   - Mock 用于离线测试
-   - 数据质量检测
-
-5. **LangGraph 编排（新增）**
-   - 5 节点 StateGraph 辩论工作流
-   - Human-in-the-loop 中断/恢复
-   - 独立 Agent 类（BullAnalyst/BearAnalyst/RiskOfficer/CommitteeSecretary）
-   - 每个 Agent 可独立调用、独立测试
-
-### 7.2 未完成的高级功能 ❌
-
-1. **网页搜索服务**
-   - 需要获取实时新闻
-   - 需要获取社交媒体观点
-   - 需要获取政策动态
-
-2. **系统设置页面**
-   - 需要通过 UI 管理配置
-
-3. **Qlib 框架接入**
-   - 需要更复杂的因子挖掘和组合优化
-
-### 7.3 Tushare 替代方案 ✅
-
-1. **基本面数据**
-   - QMT 财务表（优先）
-   - AKShare 基本面数据（fallback）
-
-2. **估值数据**
-   - QMT 派生估值（优先）
-   - AKShare 估值数据（fallback）
-
-3. **事件/公告数据**
-   - 巨潮资讯（优先）
-   - AKShare 东方财富公告（fallback）
-
-**评价：** Tushare token 缺失，使用 QMT + AKShare 替代是合理的。QMT 数据更实时，AKShare 数据更全面。
-
-### 7.4 实现方式差异
-
-1. **LangGraph 编排（多轮辩论版）**
-   - 设计方案：使用 LangGraph 编织多头/空头/风险官的多次辩论，含 Supervisor 调度
-   - 当前实现：LangGraph StateGraph 8 节点工作流，LLM 驱动的 Supervisor 动态调度多轮质询辩论，三收敛标准终止
-   - 影响：辩论过程从单轮独立分析升级为真正的多轮质询辩论，输出质量显著提升
-   - 建议：可将数据收集和报告生成节点纳入图，形成完整 pipeline
-
-2. **报告模板 vs Markdown + CSS**
-   - 设计方案：使用 Jinja2 HTML 模板
-   - 当前实现：使用 Markdown + CSS 生成 HTML
-   - 影响：模板维护不够灵活，难以实现复杂的 PDF 布局
-   - 建议：当前 Markdown + CSS 方案已足够 MVP 使用，按需迁移到 Jinja2
-
-### 7.5 第一版目标达成情况
-
-**设计方案的第一版目标：**
-```
-输入：单只沪深京 A 股个股或 ETF
-输出：
-1. Streamlit 投研看板 ✅
-2. 结构化个股/ETF 打分卡 ✅
-3. 多头/空头/风险官三方辩论过程 ✅
-4. 收敛后的买卖建议，但不下单 ✅
-5. Markdown 报告 ✅
-6. PDF 报告 ✅
-```
-
-**达成情况：** ✅ 100%
-
-**评价：** 第一版目标已经完全达成，核心功能已经可用。
-
----
-
-## 八、后续开发建议
-
-### 8.1 短期（1-2 周）
-
-1. **LangGraph 多轮辩论** ✅ **已完成（2026-05-05）**
-   - ✅ 在 bull/bear/risk 节点间增加质询边（Supervisor → Agent → Supervisor 循环）
-   - ✅ 添加 Supervisor 节点做辩论调度（LLM 驱动，三收敛标准）
-   - ✅ **将数据收集和报告生成节点纳入图**：新建 `build_full_research_graph()` 实现 6 节点完整 pipeline 图（数据加载→评分→辩论子图→HITL 审核→决策保护器→协议验证），支持检查点和错误降级
-
-2. **Streamlit HITL 集成** ✅ **已完成（2026-05-05）**
-   - ✅ 在 Streamlit 侧边栏增加「启用人工审核模式」开关
-   - ✅ 辩论完成后自动暂停，展示审核面板（三方 Agent 最终输出 + 辩论历程）
-   - ✅ 用户可覆盖最终操作建议并附审核备注
-   - ✅ 利用 `start_hitl_debate()` / `resume_hitl_debate()` API 完成中断/恢复
-   - ✅ HITL 启动失败自动回退到非 HITL 模式
-
-3. **补充集成测试**
-   - AKShare 真实网络集成测试
-   - QMT 端到端集成测试
-   - 补充 ETF 评分路径测试
-
-### 8.2 中期（1-2 月）
-
-1. **FastAPI 后端** ✅ **已完成（2026-05-06）**
-   - ✅ Celery + Redis 异步任务队列
-   - ✅ 30 个 REST API 端点（含 17 个观察池端点）+ 3 个 WebSocket 端点
-   - ✅ SQLite 任务持久化 + Celery Beat 定时调度
-   - ✅ WebSocket 实时进度推送 + JWT 用户认证/授权
-   - ✅ 全部 REST + WebSocket 端点受保护，Streamlit 登录集成
-
-2. **观察池** ✅ **已完成（2026-05-06）**
-   - ✅ 批量研究 + 定期扫描 + 条件筛选
-   - ✅ 文件夹 + 标签两级分组
-   - ✅ 逐票自定义 cron 调度 + Celery Beat 双调度
-   - ✅ Streamlit `3_观察池.py` 管理页面
-
-3. **WebSocket 实时进度推送** ✅ **已完成（2026-05-06）**
-   - ✅ Redis Pub/Sub 跨进程消息传递（独立 DB#2）
-   - ✅ 3 个 WebSocket 端点（task/batch/events）
-   - ✅ Celery 全生命周期进度发布（8 个发布点）
-   - ✅ Streamlit 异步模式 + 短间隔轮询进度条
-
-4. **JWT 用户认证/授权** ✅ **已完成（2026-05-06）**
-   - ✅ bcrypt 密码哈希 + JWT 签发/验证/刷新
-   - ✅ 全部 REST + WebSocket 端点保护（OAuth2PasswordBearer）
-   - ✅ `users` 表 + UserStore + 种子管理员
-   - ✅ Streamlit 登录表单 + token 自动刷新
-
-5. **补充文档**
-   - 添加架构文档
-   - 添加 API 文档
-   - 添加使用教程
-
-### 8.3 长期（3-6 月）
-
-1. **接入 Qlib**
-   - 接入因子挖掘功能
-   - 接入组合优化功能
-   - 实现更复杂的研究
-
-2. **实现网页搜索服务**
-   - 获取实时新闻
-   - 获取社交媒体观点
-   - 获取政策动态
-
-3. **实现系统设置页面**
-   - 管理配置
-   - 管理数据源
-   - 管理 API Key
-
----
-
-## 七、手动公告测试验证
-
-> **注：** 自动化测试套件已扩充至 138 用例（详见 1.8 节）。本节记录的是 `scripts/manual_tests/test_announcement.py` 对公告数据源的手动验证结果。
-
-### 7.1 测试方法
-
-项目创建了独立的测试脚本 `scripts/manual_tests/test_announcement.py`，用于验证公告获取功能：
-
-**测试内容：**
-1. 巨潮资讯数据源测试
-2. AKShare 数据源测试
-3. 事件分类和情感分析测试
-4. 事件摘要生成测试
-5. 多个股票代码测试
-
-**测试工具：**
-- Python 独立测试脚本
-- 命令行工具 `main.py`
-- 完整流程端到端测试
-
----
-
-### 7.2 测试结果
-
-#### 1. 巨潮资讯数据源测试 ✅
-
-**测试结果：**
-- ✓ 数据获取成功
-- 供应商：`cninfo`
-- 数据集：`stock_zh_a_disclosure_report_cninfo`
-- 代码：`600519.SH`
-- 成功状态：`True`
-- 延迟：`890ms`
-- 记录数：**34 条公告**
-
-**前 3 条公告示例：**
-1. 贵州茅台关于召开2025年度及2026年第一季度业绩说明会的公告
-2. 贵州茅台2026年第一季度主要经营数据公告
-3. 贵州茅台2026年第一季度报告
-
----
-
-#### 2. AKShare 数据源测试 ✅
-
-**测试结果：**
-- ✓ 数据获取成功
-- 供应商：`akshare`
-- 数据集：`stock_individual_notice_report`
-- 代码：`600519.SH`
-- 成功状态：`True`
-- 延迟：`1023ms`
-- 记录数：**34 条公告**
-
-**前 3 条公告示例：**
-1. 贵州茅台关于召开2025年度及2026年第一季度业绩说明会的公告
-2. 贵州茅台2026年第一季度主要经营数据公告
-3. 贵州茅台2026年第一季度报告
-
----
-
-#### 3. 事件分类和情感分析测试 ✅ 全部通过
-
-**测试用例 1：监管问询**
-- 分类：`regulatory_inquiry` ✓
-- 严重性：`medium` ✓
-- 情感：`neutral_negative` ✓
-
-**测试用例 2：分红公告**
-- 分类：`dividend` ✓
-- 情感：`neutral_positive` ✓
-
-**测试用例 3：业绩预告**
-- 分类：`earnings_forecast` ✓
-- 情感：`unknown` ✓
-
-**测试用例 4：媒体负面传闻**
-- 分类：`other` ✓
-- 严重性：`low` ✓
-- 情感：`unknown` ✓
-
----
-
-#### 4. 事件摘要生成测试 ✅
-
-**测试结果：**
-- 情感分析：`neutral_positive` ✓
-- 政策风险：`low` ✓
-- 主要事件：近90日共发现 3 条公告，未发现 critical 事件 ✓
-
-**事件统计：**
-- 总数：3 条
-- 积极：1 条
-- 消极：1 条
-- 中性：1 条
-- 高严重性：0 条
-- Critical：0 条
-
----
-
-#### 5. 多个股票代码测试 ✅
-
-**测试代码：**
-- `600519`（贵州茅台）：✓ 获取成功，28 条公告
-- `000001`（平安银行）：✓ 获取成功，7 条公告
-- `600036`（招商银行）：✓ 获取成功，13 条公告
-- `000858`（五粮液）：✓ 获取成功，37 条公告
-
-**修复记录：**
-- 修复前：ETF 代码（`510300`、`158001`）测试失败
-- 修复原因：巨潮资讯 API 只支持 A 股股票，不支持 ETF
-- 修复方案：移除 ETF 代码测试，只测试 A 股股票
-- 修复后：所有 A 股股票代码测试通过
-
----
-
-### 7.3 完整流程测试 ✅
-
-**测试命令：**
 ```bash
-python main.py --symbol 600519.SH --data-source akshare --no-llm --no-pdf
+python -m pytest --collect-only -q
+python -m pytest -q -p no:cacheprovider
+python main.py --help
+python main.py --symbol 600519.SH --data-source mock --no-llm
+python main.py --symbol 600519.SH --data-source mock --no-llm --use-graph
 ```
 
-**测试结果：**
-- ✓ 成功获取 34 条公告
-- ✓ 正确分类事件类型（监管问询、分红、业绩预告等）
-- ✓ 正确标注情感和严重性（positive/neutral/negative）
-- ✓ 生成事件摘要和统计信息
-- ✓ 事件数据置信度：92%
-- ✓ 事件数据来源：`cninfo`
+如果本地 Playwright 可用，再追加：
 
-**关键发现：**
-1. **检测到高风险事件：**
-   - "贵州茅台关于高级管理人员被实施留置的公告"
-   - 严重性：`high`
-   - 情感：`neutral_negative`
-   - 这是重大风险事件，应该被决策保护器捕获
+```bash
+python main.py --symbol 600519.SH --data-source mock --no-llm --pdf
+```
 
-2. **事件统计：**
-   - 积极：4 条（回购、分红等）
-   - 消极：1 条（留置事件）
-   - 中性：29 条
+## 7.2 第二优先级：补运行态集成测试
 
----
+建议增加以下测试分层：
 
-### 7.4 测试覆盖率
+- `tests/integration/test_fastapi_research.py`
+- `tests/integration/test_celery_redis.py`
+- `tests/integration/test_websocket_progress.py`
+- `tests/integration/test_streamlit_manual_checklist.md`
+- `tests/integration/test_qmt_local.py`，默认 skip，只有本地 QMT 环境启用。
+- `tests/integration/test_akshare_network.py`，默认 skip，只有网络环境启用。
 
-**已覆盖功能：**
-- ✅ 数据源获取（巨潮资讯、AKShare）
-- ✅ 事件分类（15 种事件类型）
-- ✅ 情感分析（positive/neutral/negative/unknown）
-- ✅ 风险标注（low/medium/high/critical）
-- ✅ 事件摘要生成
-- ✅ 多资产类型支持（股票）
+## 7.3 第三优先级：开发网页搜索服务
 
-**未覆盖功能：**
-- ⚠️ 集成测试
-- ⚠️ 端到端测试
-- ⚠️ 并发测试
+在当前版本基础上，下一步最适合做的是网页搜索/新闻政策舆情补充源，而不是立刻接 Qlib。建议设计为：
 
----
+```text
+WebSearchProvider
+  -> News/Event Normalizer
+  -> EvidenceBuilder
+  -> EventEngine
+  -> RiskOfficer
+  -> DecisionGuard
+  -> Report
+```
 
-## 九、当前状态总结
+第一版只做：
 
-**完成度：约 98%**
+- 输入 symbol / company name / industry keywords；
+- 输出新闻标题、来源、发布时间、摘要、链接、情绪、风险等级；
+- 写入 `evidence_bundle` 和 `provider_run_log`；
+- 风险官和报告引用该证据；
+- 所有搜索结果必须带来源和时间戳；
+- 搜索失败不能阻断主流程。
 
-**近期完成的升级：**
+## 7.4 第四优先级：修正文档和 README
 
-| # | 内容 | 状态 |
-|---|------|------|
-| 1 | Agent 拆分：单体 Debate Agent → 4 个独立 Agent 类 | ✅ |
-| 2 | 测试补充：11 用例 → 194 用例（9 文件） | ✅ |
-| 3 | LangGraph 编排：8 节点 StateGraph + HITL | ✅ |
-| 4 | 多轮辩论 + Supervisor：LLM 驱动辩论主持人 + 质询循环 | ✅ |
-| 5 | Streamlit HITL 人工审核界面 | ✅ |
-| 6 | LangGraph 完整端到端 pipeline 图（数据→评分→辩论→决策保护） | ✅ |
-| 7 | FastAPI 后端：Celery + Redis + SQLite + 30 REST + 3 WS + JWT 认证 | ✅ |
-| 8 | 观察池：文件夹+标签两级分组 + 逐票自定义 cron + Celery Beat 双调度 + 17 API + Streamlit | ✅ |
-| 9 | WebSocket 实时进度推送：Redis Pub/Sub + 3 WS 端点 + Celery 全生命周期发布 + Streamlit 异步轮询 | ✅ |
-| 10 | JWT 用户认证/授权：bcrypt + JWT + OAuth2PasswordBearer + 全部端点保护 + Streamlit 登录 | ✅ |
+建议把 README、QMT_SETUP、report.md、未来 docs/ 中的状态统一，尤其避免以下说法：
 
-**核心功能：** ✅ 已完成
-- 完整的单票研究闭环（LangGraph 多轮辩论编排）
-- 独立的 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 类
-- LLM 驱动的 Supervisor 动态调度 Agent 间质询（三收敛标准）
-- Human-in-the-loop 辩论中断/恢复（含完整 debate_history）
-- 专业的投委会报告（JSON/MD/HTML/PDF）
-- 完善的决策保护机制（194 测试覆盖所有边界）
-- 灵活的三源数据层（QMT/AKShare/Mock）
-- FastAPI REST + WebSocket + JWT 认证（异步任务 + 实时进度 + 报告下载 + 端点保护）
-- 观察池批量研究系统（文件夹+标签分组 + 逐票调度 + 批量扫描 + 实时进度）
-
-**仍需推进：**
-- 网页搜索、系统设置页面
-- Qlib 框架、Jinja2 报告模板、项目文档
-
-**Tushare 替代方案：** ✅ 已完成
-- QMT 财务表 + AKShare 基本面数据
-- QMT 派生估值 + AKShare 估值数据
-- 巨潮资讯 + AKShare 公告数据
-
-**第一版目标：** ✅ 已达成 100%（且已超出）
+- 不再写“无 FastAPI”。
+- 不再写 `--no-pdf`。
+- 不再写未经验证的测试总数。
+- 不再写“未使用 LangGraph 编织”。
+- 不再写“总体完成度 98%”。
 
 ---
 
-## 十一、总结
+# 八、当前版本最终判断
 
-Dandelions 投研智能体已完成第一版 MVP 目标并超额推进。截至 2026 年 5 月 7 日：
+`v0.2.21` 是一个功能较丰富的本地投研智能体版本，已经具备 MVP 主链路和较完整的工程化外壳。最核心的已完成部分是：
 
-- **核心链路健全**：QMT/AKShare/Mock 三源数据 → 6 维度评分 → 5 Agent 多轮 LangGraph 辩论 → 决策保护 → JSON/MD/HTML/PDF 报告
-- **Agent 架构升级**：从单体大 prompt 演进为 BullAnalyst / BearAnalyst / RiskOfficer / CommitteeSecretary / Supervisor 五个独立类 + LangGraph 双层图架构（辩论子图 + 完整 pipeline 图）
-- **多轮辩论就绪**：LLM 驱动的 Supervisor 动态调度 Agent 间质询，三轮收敛标准确保辩论质量，debate_history 完整记录辩论历程
-- **LangGraph 完整 pipeline 就绪**：`build_full_research_graph()` 实现从 symbol 输入到 final_result 输出的端到端图，含数据加载、评分、辩论子图、HITL 审核、决策保护、协议验证六个节点，以及数据/辩论两条错误降级路径
-- **测试覆盖扎实**：194 个测试用例覆盖决策保护器边界、评分引擎边缘值、报告生成降级、LangGraph 多轮辩论/Supervisor 收敛逻辑/HITL 中断恢复、观察池 CRUD/调度/批量扫描、WebSocket 消息格式/降级/连接管理、JWT 认证/密码哈希/用户 CRUD
-- **HITL 就绪**：`start_hitl_debate()` / `resume_hitl_debate()` API + Streamlit 审核界面均已就绪，完整图支持 `run_full_research_graph_hitl()` / `resume_full_research_graph()` 全链路 HITL
-- **FastAPI 后端就绪**：`apps/api/` 提供 30 个 REST + 3 个 WS + 4 个 Auth 端点，Celery + Redis 异步队列，Redis Pub/Sub 实时推送，SQLite 持久化，Celery Beat 定时调度，JWT 认证保护全部端点
-- **观察池就绪**：文件夹 + 标签两级分组 + 逐票自定义 cron 调度 + Celery Beat 双调度 + 17 API 端点 + 批量扫描实时进度 + Streamlit `3_观察池.py`
-- **WebSocket 就绪**：Redis Pub/Sub 跨进程消息通道 + 3 WS 端点（task/batch/events）+ Celery 全生命周期发布 + Streamlit 异步轮询模式
-- **JWT 认证就绪**：bcrypt + JWT + OAuth2PasswordBearer + 全部 REST/WS 端点保护 + Streamlit 登录表单 + token 自动刷新
-- **下一步方向**：网页搜索服务、系统设置页面、项目文档
+- 单票研究闭环；
+- 评分与决策保护；
+- Agent 多轮辩论；
+- JSON/Markdown/HTML/PDF 报告；
+- QMT/AKShare/mock 数据源框架；
+- QMT 行业横截面估值分位；
+- FastAPI + Celery + Redis + JWT + 观察池 + 进度推送的工程框架。
 
-**环境部署验证（2026-05-07）：**
+但当前版本仍应谨慎标注为：
 
-| # | 内容 | 状态 |
-|---|------|------|
-| 11 | WSL2 Redis 环境部署验证 + `scripts/start_redis.ps1` 一键启动脚本 | ✅ |
-| 12 | FastAPI 健康检查 503 故障排查（Redis 未启动 → WSL2 自动关闭根因） | ✅ |
-| 13 | Docker Hub 国内网络不可用问题确认 + WSL2 替代方案文档化 | ✅ |
-| 14 | `scripts/API_Test.ps1` 测试脚本修复（硬编码 task_id → 动态获取 + HTTP 503 异常处理说明） | ✅ |
-| 15 | `scripts/start_redis.ps1` 编码兼容性修复（中文乱码 → ASCII） | ✅ |
+> **核心功能已基本实现，工程化框架已搭建，真实数据源和运行态集成验证仍需补齐。**
 
-**已确认的环境约束：**
-- Windows 环境下 Redis 必须通过 WSL2 运行，Docker Desktop 因国内网络限制（Docker Hub 不可达）无法直接拉取镜像
-- WSL2 退出的 shell 会导致虚拟机自动关闭，Redis 随之停止；项目提供 `scripts/start_redis.ps1` 一键启动
-- FastAPI 的 `--reload` 不会感知外部服务状态变化，Redis 启停后需手动重启 uvicorn
-- 健康检查端点 `/api/v1/health` 在 Redis 不可用时返回 503，`scripts/API_Test.ps1` 中 `Invoke-RestMethod` 对非 2xx 抛异常会导致"无法连接"的误导提示
+下一步最适合推进的不是继续堆大型功能，而是：
+
+1. 持续维护 `docs/verification.md`；
+2. 补 FastAPI/Celery/Redis/WebSocket/QMT/AKShare 集成测试；
+3. 将新增关键测试纳入 CI 定向测试或全量测试策略；
+4. 然后开发网页搜索/新闻政策舆情服务。

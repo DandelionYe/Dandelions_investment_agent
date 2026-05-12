@@ -70,19 +70,19 @@ if platform.system() == "Windows":
 
 celery_app.conf.beat_schedule = {
     "daily-health-check": {
-        "task": "apps.api.task_manager.celery_tasks.health_check_beat",
+        "task": "beat.daily_health_check",
         "schedule": crontab(hour=3, minute=17),
         "options": {"queue": "beat"},
     },
     # 观察池调度检查：每 5 分钟检查逐票自定义 cron
     "watchlist-scheduler-check": {
-        "task": "apps.api.task_manager.celery_tasks.watchlist_scheduler_check",
+        "task": "beat.watchlist_scheduler_check",
         "schedule": crontab(minute="*/5"),
         "options": {"queue": "beat"},
     },
     # 观察池收盘扫描：工作日 15:07
     "watchlist-scan-weekday-close": {
-        "task": "apps.api.task_manager.celery_tasks.scan_watchlist",
+        "task": "beat.watchlist_scan",
         "schedule": crontab(hour=15, minute=7, day_of_week="1-5"),
         "options": {"queue": "beat"},
     },
