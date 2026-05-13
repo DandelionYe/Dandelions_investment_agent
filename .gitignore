@@ -11,6 +11,7 @@ storage/runtime/
 storage/*.db
 *.pyc
 .pytest_cache/
+.pytest_cache_ci/
 pytest-cache-files-*/
 .coverage
 htmlcov/
@@ -28,6 +29,10 @@ Scheme.md
 .claude/
 /claude-no-proxy.cmd
 local_tools/
+tools/
+.local/
+output_*/
+.tmp_test/
 /test_etf_code_format.py
 /test_announcement.py
 /celerybeat-schedule*

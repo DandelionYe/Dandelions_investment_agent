@@ -243,6 +243,30 @@ Result:
 All checks passed!
 ```
 
+Related provider/pipeline tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_provider_errors.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+28 passed
+```
+
+Full default local test suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+272 passed, 16 skipped
+```
+
 Updated CI-targeted local test run:
 
 ```powershell
@@ -265,4 +289,139 @@ Result:
 
 ```text
 267 passed, 15 skipped
+```
+
+## 2026-05-13 Web News Network Fallback Verification
+
+Scope:
+
+- Extended `WebNewsProvider` to use Eastmoney stock news as the preferred
+  domestic news source, with Sina Finance rolling news, Xinhua Net finance
+  latest news, hot-rank public-opinion sources, and Baidu News RSS retained as
+  fallbacks.
+- Reused the existing AKShare Eastmoney interface and guarded it with
+  `pandas.option_context("future.infer_string", False)` to avoid pyarrow-backed
+  string replacement failures in the current pandas runtime.
+- Reviewed the local `tools/` reference repositories and converted the useful
+  ideas into project-local implementation:
+  - Sina Finance rolling news URL/content shape as a fallback source.
+  - Xinhua Net finance `nodeart/list` endpoint shape from the local
+    `tools/NewsCrawler` reference, parsed with safe JSONP handling instead of
+    `eval`.
+  - Wallstreetcn, Yicai, 36Kr, Tencent News, Sina News, Sina Hot Topics, The
+    Paper, Bilibili, Douyin, CSDN, GitHub Trending, Google Trends, and WeRead
+    endpoint shapes from the local `tools/hotToday` reference, filtered
+    strictly by stock/company relevance before entering the event pipeline.
+  - Optional `curl_cffi` browser impersonation for hot-rank endpoints such as
+    Bilibili that reject generic HTTP clients.
+  - Low-quality title filtering for obvious ads/promotions.
+  Sohu was left as a later candidate because it adds broader portal-news noise
+  without improving the first stock-specific fallback path.
+- Kept the direct-connect requirement for news fetching: proxy environment
+  variables are removed and `NO_PROXY=*` is set before network access.
+- Added `tests/integration/test_web_news_network_live.py` as an opt-in live
+  smoke test controlled by `RUN_WEB_NEWS_NETWORK=1`.
+
+Default integration behavior:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/integration -q -p no:cacheprovider
+```
+
+Result without live flags:
+
+```text
+9 skipped
+```
+
+Unit tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_web_news_provider.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+11 passed
+```
+
+Live web news smoke:
+
+```powershell
+$env:RUN_WEB_NEWS_NETWORK='1'
+.\.venv\Scripts\python.exe -m pytest tests/integration/test_web_news_network_live.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+1 passed
+```
+
+Hot-rank source probes:
+
+```powershell
+.\.venv\Scripts\python.exe -c "from services.data.providers.web_news_provider import WebNewsProvider; p=WebNewsProvider(enabled=True, force_no_proxy=True, limit=3, timeout_seconds=12); si={'normalized_symbol':'','plain_code':'','name':'','asset_type':'stock'}; methods={'wallstreetcn':p._fetch_wallstreetcn_hotrank,'yicai':p._fetch_yicai_hotrank,'36kr':p._fetch_36kr_hotrank,'tencent':p._fetch_tencent_hotrank,'sina_news':p._fetch_sina_news_hotrank,'sina_hot':p._fetch_sina_hotrank,'pengpai':p._fetch_pengpai_hotrank,'bilibili':p._fetch_bilibili_hotrank,'douyin':p._fetch_douyin_hotrank,'csdn':p._fetch_csdn_hotrank,'github':p._fetch_github_hotrank,'google':p._fetch_google_hotrank,'weread':p._fetch_weread_hotrank}; [print(name, len(fn(si))) for name, fn in methods.items()]"
+```
+
+Result:
+
+```text
+wallstreetcn: 70 parsed
+yicai: 20 parsed
+36kr: 0 parsed
+tencent: 51 parsed
+sina_news: 60 parsed
+sina_hot: 38 parsed
+pengpai: 35 parsed
+bilibili: 87 parsed
+douyin: 46 parsed
+csdn: 25 parsed
+github: 11 parsed
+google: ConnectTimeout in this environment
+weread: 14 parsed
+```
+
+Stock-filtered hot-rank probe for `贵州茅台` returned no current hot-rank
+records during this run, which is acceptable because hot-rank sources are
+strict relevance fallbacks rather than guaranteed company-news feeds.
+36Kr returned an anti-bot/challenge page in this run and parsed no records;
+Google Trends timed out from this network. Both are isolated optional
+sub-sources and do not block the provider fallback chain.
+
+Static checks:
+
+```powershell
+.\.venv\Scripts\python.exe -m ruff check services/data/providers/web_news_provider.py tests/test_web_news_provider.py tests/integration/test_web_news_network_live.py
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+Related provider/pipeline tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_provider_errors.py -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+30 passed
+```
+
+Full default local test suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+Result:
+
+```text
+274 passed, 16 skipped
 ```

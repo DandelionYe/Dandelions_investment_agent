@@ -39,6 +39,12 @@ def require_akshare_network() -> None:
 
 
 @pytest.fixture
+def require_web_news_network() -> None:
+    if not _env_enabled("RUN_WEB_NEWS_NETWORK"):
+        pytest.skip("set RUN_WEB_NEWS_NETWORK=1 to run web news network tests")
+
+
+@pytest.fixture
 def api_base_url() -> str:
     return os.getenv("DANDELIONS_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 

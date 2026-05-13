@@ -7,6 +7,7 @@
 - 主数据源：QMT/xtquant，本地 Windows 环境优先。
 - fallback 数据源：AKShare，只在 QMT 不可用或调试时使用。
 - 离线测试数据源：mock。
+- 新闻/政策/舆情增强：默认关闭；启用后以东方财富、巨潮/公告源为主，叠加新浪财经、新华网、百度新闻，以及华尔街见闻、第一财经、腾讯新闻、新浪热门、澎湃、B站、抖音、CSDN、GitHub Trending、Google 热搜、微信读书等热榜舆情 fallback。
 - LLM：DeepSeek OpenAI-compatible API（deepseek-v4-flash / deepseek-v4-pro）。
 - 编排：LangGraph 双层图 —— 辩论子图（8 节点多轮辩论 + Supervisor + HITL）+ 完整 pipeline 图（6 节点端到端：数据→评分→辩论→HITL→决策保护→验证）。
 - 看板：Streamlit。
@@ -25,7 +26,7 @@ services/
     supervisor.py            Supervisor 类 — LLM 辩论主持人
     debate_agent.py          编排入口（委托 LangGraph）
     langgraph_orchestrator.py 双层图（辩论子图 + 完整 pipeline 图）+ HITL API
-  data/                      数据层（3 源 + 聚合器 + 标准化 + 缓存）
+  data/                      数据层（QMT/AKShare/mock + 新闻舆情 provider + 聚合器 + 标准化 + 缓存）
   research/                  研究引擎（评分 / 决策保护 / 基本面 / 估值 / 事件）
   llm/                       DeepSeek 客户端
   orchestrator/              单票研究主流程（含 HITL 启动/恢复）
@@ -61,7 +62,7 @@ apps/
       manager.py             TaskManager + WatchlistManager
       celery_tasks.py        研究任务 + 观察池扫描 + 8 进度发布点
       store.py               TaskStore + WatchlistStore + UserStore
-tests/                       223 测试用例（10 文件）
+tests/                       单元测试 + 默认跳过的 opt-in live 集成测试
 protocols/                   6 JSON Schemas
 ```
 
@@ -119,6 +120,25 @@ QMT_INDUSTRY_MAX_PS=100
 ```powershell
 Copy-Item .env.example .env
 ```
+
+### 网页新闻 / 热榜舆情增强
+
+网页新闻和热榜舆情 provider 默认关闭，适合作为官方公告之外的事件补充源。启用后，事件引擎会把命中的新闻/热榜记录写入 `event_data`、`provider_run_log` 和 `evidence_bundle`；抓取失败或当前热榜不含公司相关内容时，不会阻断主研究流程。
+
+```text
+WEB_NEWS_ENABLED=true
+WEB_NEWS_FORCE_NO_PROXY=true
+WEB_NEWS_SOURCES=eastmoney,sina,xinhuanet,hotrank,baidu
+WEB_NEWS_HOTRANK_SOURCES=wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai,bilibili,douyin,csdn,github,google,weread
+```
+
+当前新闻/热榜源分层：
+
+- `eastmoney`：东方财富个股新闻，优先使用，股票相关性最高。
+- `sina`、`xinhuanet`、`baidu`：新浪财经滚动新闻、新华网财经、百度新闻 RSS fallback。
+- `hotrank`：华尔街见闻、第一财经、36氪、腾讯新闻、新浪热门、新浪新闻热门、澎湃、B站、抖音、CSDN、GitHub Trending、Google 热搜、微信读书等热榜补充源。
+
+`hotrank` 源会严格按公司名/股票代码过滤；如果当前热榜没有命中标的，会返回 0 条并继续 fallback，这是预期行为。新闻抓取代码会强制直连：清理代理环境变量、设置 `NO_PROXY=*`、并让 HTTP session 忽略系统代理，避免用户开启 VPN 时影响国内新闻接口。GitHub/Google 等非国内热榜源也遵循同一策略，失败时只作为可隔离子源记录。
 
 
 ## 命令行运行
@@ -414,8 +434,8 @@ celery -A apps.api.celery_app worker --beat --loglevel=info --concurrency=2 --sc
 ## 测试
 
 ```powershell
-# 全部 223 个测试用例
-python -m pytest
+# 全量默认测试；live 集成测试默认 skip
+python -m pytest -q -p no:cacheprovider
 
 # 按模块运行
 python -m pytest tests/test_decision_guard.py -v      # 决策保护器边界（25 用例）
@@ -429,6 +449,14 @@ python -m pytest tests/test_websocket.py -v           # WebSocket 推送（8 用
 python -m pytest tests/test_auth.py -v                # JWT 认证（16 用例）
 python -m pytest tests/test_valuation_percentile.py -v  # 估值分位（13 用例）
 python -m pytest tests/test_condition_triggers.py -v  # 条件触发器（16 用例）
+python -m pytest tests/test_web_news_provider.py -v   # 网页新闻/热榜舆情 provider
+```
+
+Live 集成测试默认跳过，需要按需开启环境变量。网页新闻/热榜真实网络 smoke：
+
+```powershell
+$env:RUN_WEB_NEWS_NETWORK='1'
+python -m pytest tests/integration/test_web_news_network_live.py -q -p no:cacheprovider
 ```
 
 手动数据源验证脚本位于 `scripts/manual_tests/`：
@@ -565,7 +593,7 @@ QMT_FINANCIAL_AUTO_DOWNLOAD=true
 
 股票行业横截面估值已接入 QMT：行业/板块来自 `xtdata.get_sector_list()` 和 `xtdata.get_stock_list_in_sector()`，同行成分股估值输入来自 QMT 最新价格、`get_instrument_detail()` 和 `get_financial_data()`。报告会在“估值概览”后展示“行业横截面估值”，EvidenceBundle 也会记录行业样本数、有效样本数和 PE/PB/PS 行业分位。行业估值与历史估值分位是两个不同概念，当前不会把行业分位写回 `pe_percentile/pb_percentile`。
 
-事件/公告数据目前没有在 `xtdata` 中发现稳定的公告查询接口，因此第一版使用 AKShare/东方财富公告接口作为真实事件源；如果该接口失败，会降级为 `mock_placeholder`，并通过 `data_quality` 和 `decision_guard` 限制建议强度。
+事件/公告数据目前没有在 `xtdata` 中发现稳定的公告查询接口，因此官方事件仍以 AKShare/东方财富/巨潮公告链路为主；网页新闻与热榜舆情只作为补充证据源。若新闻/热榜接口失败、反爬或当前热榜不含标的关键词，会记录 provider 状态并继续 fallback，不会阻断主研究流程。
 
 当前已验证 QMT 日 K 接入链路：
 
