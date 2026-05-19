@@ -29,8 +29,17 @@ class QMTIndustryProvider:
         xtdata = _import_xtdata()
         try:
             connect_qmt()
-            if _env_bool("QMT_INDUSTRY_AUTO_DOWNLOAD", True):
+            if _env_bool("QMT_INDUSTRY_AUTO_DOWNLOAD", False):
+                print(
+                    "[QMTIndustryProvider] WARNING: QMT_INDUSTRY_AUTO_DOWNLOAD=true, "
+                    "calling xtdata.download_sector_data() — this may block."
+                )
                 self.download_sector_data()
+            else:
+                print(
+                    "[QMTIndustryProvider] INFO: skipping download_sector_data "
+                    "(set QMT_INDUSTRY_AUTO_DOWNLOAD=true to enable)."
+                )
             sectors = xtdata.get_sector_list()
         except ProviderUnavailableError:
             raise
