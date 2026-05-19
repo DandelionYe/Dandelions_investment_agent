@@ -651,3 +651,77 @@ def test_event_service_merges_official_announcement_and_web_news():
     assert event_data["event_summary"]["high_severity_count"] == 1
     assert any(item["source"] == "web_news" for item in evidence["items"])
     assert any(log["provider"] == "web_news" for log in result["provider_run_log"])
+
+
+def test_default_hotrank_sources_exclude_github_google(monkeypatch):
+    """默认 hotrank 源不应包含 github 或 google。"""
+    monkeypatch.delenv("WEB_NEWS_HOTRANK_SOURCES", raising=False)
+    provider = WebNewsProvider(enabled=True)
+
+    assert "github" not in provider.hotrank_sources
+    assert "google" not in provider.hotrank_sources
+    assert "wallstreetcn" in provider.hotrank_sources
+    assert "tencent" in provider.hotrank_sources
+    assert "sina_news" in provider.hotrank_sources
+    assert "pengpai" in provider.hotrank_sources
+
+
+def test_explicit_hotrank_sources_can_still_include_github_google():
+    """显式配置时仍可启用 github/google（向后兼容）。"""
+    provider = WebNewsProvider(
+        enabled=True,
+        hotrank_sources=["github", "google", "tencent"],
+    )
+
+    assert "github" in provider.hotrank_sources
+    assert "google" in provider.hotrank_sources
+    assert "tencent" in provider.hotrank_sources
+
+
+def test_fetch_events_respects_total_timeout(monkeypatch, capsys):
+    """总超时预算到达后应停止继续请求。"""
+    call_count = {"n": 0}
+
+    def slow_source(symbol_info):
+        call_count["n"] += 1
+        import time
+        time.sleep(0.05)
+        return []
+
+    session = _FakeSession()
+    provider = WebNewsProvider(
+        enabled=True,
+        source_order=["eastmoney", "sina", "xinhuanet", "baidu"],
+        hotrank_sources=[],
+        session_factory=lambda: session,
+        max_seconds=0,  # 立即超时
+    )
+    # Patch eastmoney to track calls
+    provider._fetch_eastmoney_news = slow_source
+
+    result = provider.fetch_events(
+        {
+            "normalized_symbol": "600519.SH",
+            "plain_code": "600519",
+            "name": "贵州茅台",
+            "asset_type": "stock",
+        }
+    )
+
+    # With max_seconds=0, should stop before trying any source
+    assert call_count["n"] <= 1
+    captured = capsys.readouterr()
+    assert "timeout" in captured.out.lower()
+
+
+def test_fetch_events_disabled_does_not_make_requests(monkeypatch):
+    """WEB_NEWS_ENABLED=false 时不应发起任何请求。"""
+    provider = WebNewsProvider(enabled=False)
+
+    result = provider.fetch_events(
+        {"normalized_symbol": "600519.SH", "plain_code": "600519"}
+    )
+
+    assert result.metadata.success is False
+    assert result.data == []
+    assert result.metadata.error_type == "provider_unavailable"

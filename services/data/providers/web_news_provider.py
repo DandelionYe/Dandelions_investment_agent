@@ -170,6 +170,8 @@ class WebNewsProvider:
         source_order: str | list[str] | None = None,
         limit: int | None = None,
         timeout_seconds: int | None = None,
+        max_seconds: int | None = None,
+        hotrank_max_seconds: int | None = None,
         force_no_proxy: bool | None = None,
         session_factory: Any | None = None,
         eastmoney_fetcher: Any | None = None,
@@ -248,6 +250,8 @@ class WebNewsProvider:
         self.source_order = self._source_order(source_order)
         self.limit = limit or _env_int("WEB_NEWS_LIMIT", 10)
         self.timeout_seconds = timeout_seconds or _env_int("WEB_NEWS_TIMEOUT_SECONDS", 8)
+        self.max_seconds = max_seconds if max_seconds is not None else _env_int("WEB_NEWS_MAX_SECONDS", 12)
+        self.hotrank_max_seconds = hotrank_max_seconds if hotrank_max_seconds is not None else _env_int("WEB_NEWS_HOTRANK_MAX_SECONDS", 8)
         self.force_no_proxy = (
             _env_bool("WEB_NEWS_FORCE_NO_PROXY", True)
             if force_no_proxy is None
@@ -320,7 +324,7 @@ class WebNewsProvider:
                 "WEB_NEWS_HOTRANK_SOURCES",
                 (
                     "wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,"
-                    "pengpai,bilibili,douyin,csdn,github,google,weread"
+                    "pengpai,bilibili,douyin,csdn,weread"
                 ),
             )
         if isinstance(value, str):
@@ -365,7 +369,11 @@ class WebNewsProvider:
 
     def _fetch_by_source_order(self, symbol_info: dict, query: str) -> tuple[list[dict], str, str]:
         errors = []
+        deadline = perf_counter() + self.max_seconds
         for source in self.source_order:
+            if perf_counter() >= deadline:
+                print(f"[WebNewsProvider] INFO: total timeout {self.max_seconds}s reached, stopping.")
+                break
             try:
                 if source == "eastmoney":
                     records = self._fetch_eastmoney_news(symbol_info)
@@ -546,7 +554,11 @@ class WebNewsProvider:
 
     def _fetch_hotrank_public_opinion(self, symbol_info: dict) -> list[dict]:
         records = []
+        deadline = perf_counter() + self.hotrank_max_seconds
         for source in self.hotrank_sources:
+            if perf_counter() >= deadline:
+                print(f"[WebNewsProvider] INFO: hotrank total timeout {self.hotrank_max_seconds}s reached, stopping.")
+                break
             try:
                 if source == "pengpai":
                     records.extend(self._fetch_pengpai_hotrank(symbol_info))

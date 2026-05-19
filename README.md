@@ -7,7 +7,7 @@
 - 主数据源：QMT/xtquant，本地 Windows 环境优先。
 - fallback 数据源：AKShare，只在 QMT 不可用或调试时使用。
 - 离线测试数据源：mock。
-- 新闻/政策/舆情增强：默认关闭；启用后以东方财富、巨潮/公告源为主，叠加新浪财经、新华网、百度新闻，以及华尔街见闻、第一财经、腾讯新闻、新浪热门、澎湃、B站、抖音、CSDN、GitHub Trending、Google 热搜、微信读书等热榜舆情 fallback。
+- 新闻/政策/舆情增强：默认关闭；启用后以东方财富、巨潮/公告源为主，叠加新浪财经、新华网、百度新闻，以及华尔街见闻、第一财经、腾讯新闻、新浪热门、澎湃、B站、抖音、CSDN、微信读书等国内热榜舆情 fallback。GitHub/Google 等非国内源默认不启用，不建议在中国大陆环境开启。
 - LLM：DeepSeek OpenAI-compatible API（deepseek-v4-flash / deepseek-v4-pro）。
 - 编排：LangGraph 双层图 —— 辩论子图（8 节点多轮辩论 + Supervisor + HITL）+ 完整 pipeline 图（6 节点端到端：数据→评分→辩论→HITL→决策保护→验证）。
 - 看板：Streamlit。
@@ -129,16 +129,16 @@ Copy-Item .env.example .env
 WEB_NEWS_ENABLED=true
 WEB_NEWS_FORCE_NO_PROXY=true
 WEB_NEWS_SOURCES=eastmoney,sina,xinhuanet,hotrank,baidu
-WEB_NEWS_HOTRANK_SOURCES=wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai,bilibili,douyin,csdn,github,google,weread
+WEB_NEWS_HOTRANK_SOURCES=wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai,bilibili,douyin,csdn,weread
 ```
 
 当前新闻/热榜源分层：
 
 - `eastmoney`：东方财富个股新闻，优先使用，股票相关性最高。
 - `sina`、`xinhuanet`、`baidu`：新浪财经滚动新闻、新华网财经、百度新闻 RSS fallback。
-- `hotrank`：华尔街见闻、第一财经、36氪、腾讯新闻、新浪热门、新浪新闻热门、澎湃、B站、抖音、CSDN、GitHub Trending、Google 热搜、微信读书等热榜补充源。
+- `hotrank`：华尔街见闻、第一财经、36氪、腾讯新闻、新浪热门、新浪新闻热门、澎湃、B站、抖音、CSDN、微信读书等国内热榜补充源。
 
-`hotrank` 源会严格按公司名/股票代码过滤；如果当前热榜没有命中标的，会返回 0 条并继续 fallback，这是预期行为。新闻抓取代码会强制直连：清理代理环境变量、设置 `NO_PROXY=*`、并让 HTTP session 忽略系统代理，避免用户开启 VPN 时影响国内新闻接口。GitHub/Google 等非国内热榜源也遵循同一策略，失败时只作为可隔离子源记录。
+`hotrank` 源会严格按公司名/股票代码过滤；如果当前热榜没有命中标的，会返回 0 条并继续 fallback，这是预期行为。新闻抓取代码会强制直连：清理代理环境变量、设置 `NO_PROXY=*`、并让 HTTP session 忽略系统代理，避免用户开启 VPN 时影响国内新闻接口。所有请求均有总超时预算（`WEB_NEWS_MAX_SECONDS`/`WEB_NEWS_HOTRANK_MAX_SECONDS`），超时后自动跳过，不阻塞主研究流程。GitHub/Google 等非国内源默认不启用，不建议在中国大陆环境开启；如需启用可通过环境变量显式配置。
 
 
 ## 命令行运行
