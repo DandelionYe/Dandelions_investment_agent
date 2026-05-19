@@ -129,14 +129,14 @@ Copy-Item .env.example .env
 WEB_NEWS_ENABLED=true
 WEB_NEWS_FORCE_NO_PROXY=true
 WEB_NEWS_SOURCES=eastmoney,sina,xinhuanet,hotrank,baidu
-WEB_NEWS_HOTRANK_SOURCES=wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai,bilibili,douyin,csdn,weread
+WEB_NEWS_HOTRANK_SOURCES=wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai
 ```
 
 当前新闻/热榜源分层：
 
 - `eastmoney`：东方财富个股新闻，优先使用，股票相关性最高。
 - `sina`、`xinhuanet`、`baidu`：新浪财经滚动新闻、新华网财经、百度新闻 RSS fallback。
-- `hotrank`：华尔街见闻、第一财经、36氪、腾讯新闻、新浪热门、新浪新闻热门、澎湃、B站、抖音、CSDN、微信读书等国内热榜补充源。
+- `hotrank`：华尔街见闻、第一财经、36氪、腾讯新闻、新浪热门、新浪新闻热门、澎湃等国内财经热榜补充源。B站、抖音、CSDN、微信读书等源与股票基本面/政策舆情相关性较弱，默认不启用，可通过 `WEB_NEWS_HOTRANK_SOURCES` 显式配置。
 
 `hotrank` 源会严格按公司名/股票代码过滤；如果当前热榜没有命中标的，会返回 0 条并继续 fallback，这是预期行为。新闻抓取代码会强制直连：清理代理环境变量、设置 `NO_PROXY=*`、并让 HTTP session 忽略系统代理，避免用户开启 VPN 时影响国内新闻接口。所有请求均有总超时预算（`WEB_NEWS_MAX_SECONDS`/`WEB_NEWS_HOTRANK_MAX_SECONDS`），超时后自动跳过，不阻塞主研究流程。GitHub/Google 等非国内源默认不启用，不建议在中国大陆环境开启；如需启用可通过环境变量显式配置。
 

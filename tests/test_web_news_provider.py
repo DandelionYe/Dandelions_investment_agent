@@ -653,17 +653,20 @@ def test_event_service_merges_official_announcement_and_web_news():
     assert any(log["provider"] == "web_news" for log in result["provider_run_log"])
 
 
-def test_default_hotrank_sources_exclude_github_google(monkeypatch):
-    """默认 hotrank 源不应包含 github 或 google。"""
+def test_default_hotrank_sources_exclude_github_google_and_weak_relevance(monkeypatch):
+    """默认 hotrank 源只保留国内财经强相关源。"""
     monkeypatch.delenv("WEB_NEWS_HOTRANK_SOURCES", raising=False)
     provider = WebNewsProvider(enabled=True)
 
+    assert provider.hotrank_sources == [
+        "wallstreetcn", "yicai", "36kr", "tencent", "sina_news", "sina_hot", "pengpai",
+    ]
     assert "github" not in provider.hotrank_sources
     assert "google" not in provider.hotrank_sources
-    assert "wallstreetcn" in provider.hotrank_sources
-    assert "tencent" in provider.hotrank_sources
-    assert "sina_news" in provider.hotrank_sources
-    assert "pengpai" in provider.hotrank_sources
+    assert "bilibili" not in provider.hotrank_sources
+    assert "douyin" not in provider.hotrank_sources
+    assert "csdn" not in provider.hotrank_sources
+    assert "weread" not in provider.hotrank_sources
 
 
 def test_explicit_hotrank_sources_can_still_include_github_google():

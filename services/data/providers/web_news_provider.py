@@ -322,10 +322,7 @@ class WebNewsProvider:
         if value is None:
             value = os.getenv(
                 "WEB_NEWS_HOTRANK_SOURCES",
-                (
-                    "wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,"
-                    "pengpai,bilibili,douyin,csdn,weread"
-                ),
+                "wallstreetcn,yicai,36kr,tencent,sina_news,sina_hot,pengpai",
             )
         if isinstance(value, str):
             sources = [item.strip().lower() for item in value.split(",")]
