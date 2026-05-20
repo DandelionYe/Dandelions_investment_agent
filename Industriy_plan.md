@@ -1,7 +1,7 @@
 # Dandelions_investment_agent 行业功能改造计划 v2
 
 > 适用仓库：`DandelionYe/Dandelions_investment_agent`  
-> 参考版本：`ad7e376`  
+> 参考版本：本地commit 哈希值 '59b5070'（2026-05-19）  
 > 计划目标：将“行业分类与同行池”从 QMT sector 接口迁移到本地国泰安清洗库；价格、股本、财务、同行估值输入继续优先使用 QMT。
 
 ---
