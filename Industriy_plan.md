@@ -1,8 +1,8 @@
-# Dandelions_investment_agent 行业功能改造计划 v2
+# Dandelions_investment_agent 行业功能改造计划 v3
 
 > 适用仓库：`DandelionYe/Dandelions_investment_agent`  
-> 参考版本：本地commit 哈希值 '59b5070'（2026-05-19）  
-> 计划目标：将“行业分类与同行池”从 QMT sector 接口迁移到本地国泰安清洗库；价格、股本、财务、同行估值输入继续优先使用 QMT。
+> 参考版本：本地commit 哈希值 '59b5070'（2026-05-19），并结合 2026-05-20 本机 QMT 财务缓存排查结果更新  
+> 计划目标：将“行业分类与同行池”从 QMT sector 接口迁移到本地国泰安 `TRD_Co.csv` 清洗库；价格、股本、财务、同行估值输入继续优先使用 QMT，但必须先解决 MiniQMT 可读财务缓存不足的问题。
 
 ---
 
@@ -12,7 +12,7 @@
 
 ```text
 行业分类 / 同行池来源：local_csmar，也就是国泰安 TRD_Co 清洗后的本地库
-同行价格 / 股本 / 财务 / 估值输入来源：qmt，也就是继续使用现有 QMT 数据能力
+同行价格 / 股本 / 财务 / 估值输入来源：qmt，但仅在 MiniQMT 可读缓存满足预检时启用
 行业估值计算逻辑：继续沿用现有 IndustryValuationService
 LLM 上下文输出：只输出行业摘要、样本数量、估值分位和 warning，不输出完整同行列表
 ```
@@ -20,10 +20,28 @@ LLM 上下文输出：只输出行业摘要、样本数量、估值分位和 war
 这样做的好处是：
 
 1. 避免继续依赖 QMT 的 sector 行业接口。
-2. 保留 QMT 在行情、股本、财务数据方面的优势。
-3. 不需要一次性重建完整行情财务数据库。
+2. 保留 QMT 在行情、股本、财务数据方面的优势，但不再假设完整版 QMT 下载数据会自动被 MiniQMT 接口读取。
+3. 不需要一次性重建完整行情财务数据库，只需要让 QMT peer loader 能稳定读到 MiniQMT 的本地财务缓存。
 4. 降低 LLM token 占用，避免把大表或完整同行列表塞进 prompt。
 5. 行业增强失败时仍然保持主研究流程可用。
+
+2026-05-20 本机验证结论必须纳入方案边界：
+
+```text
+xtdata.connect() 当前连接：127.0.0.1:58610
+MiniQMT 服务返回数据目录：
+D:\迅投QMT极速交易系统交易终端 万联证券版\userdata_mini\datadir
+
+完整版 QMT 全量财务下载目录：
+D:\迅投QMT极速交易系统交易终端 万联证券版\datadir\Finance
+
+实测结果：
+1. 完整版 datadir\Finance 中存在全量财务 .DAT 文件。
+2. MiniQMT userdata_mini\datadir\Finance 中仅有少量财务 .DAT 文件。
+3. xtdata.get_financial_data() 只返回 MiniQMT 可读缓存中的数据。
+4. 设置 xtdata.data_dir 指向完整版 datadir 后，财务接口返回结果不变。
+5. 因此，行业同行估值在第一阶段必须增加 QMT 财务缓存预检；缓存不足时只能输出 warning 或降级，不能静默给出行业分位。
+```
 
 ---
 
@@ -124,6 +142,17 @@ QMT：继续负责价格、股本、财务、估值输入
 
 本项目仍然可以、也应该继续优先使用 QMT 获取以下字段。
 
+但这里的“QMT”必须更精确地定义为：`xtquant.xtdata` 当前连接的 MiniQMT 服务及其返回的 `userdata_mini\datadir`。完整版 QMT 界面中通过“数据管理/补充数据”下载到根目录 `datadir\Finance` 的文件，实测不会被 `xtdata.get_financial_data()` 自动读取。
+
+因此，后续实现中必须把 QMT 数据能力拆成两个状态：
+
+```text
+qmt_connected              MiniQMT 本地服务可连接
+qmt_finance_cache_ready    MiniQMT 可读财务缓存覆盖目标股票池或目标同行池
+```
+
+`qmt_connected=true` 只能说明接口连通；不能说明同行财务数据可用于 PE/PB/PS 行业分位。
+
 ### 5.1 行情价格类
 
 ```text
@@ -198,6 +227,16 @@ ps_ttm     = market_cap / revenue_ttm
 
 因此，方案中必须明确：**本地行业库不负责提供这些估值输入字段，同行估值输入仍由 QMT 读取。**
 
+同时必须明确：**同行估值输入只在 MiniQMT 可读财务缓存足够时才视为可用。** 若缓存不足，应返回：
+
+```text
+industry_valuation_warnings += [
+  "qmt_finance_cache_insufficient_for_peer_valuation"
+]
+```
+
+并保留 `industry_valid_peer_count_pe/pb/ps`，样本不足时不输出强结论。
+
 ---
 
 ## 6. 国泰安 TRD_Co 数据清理方案
@@ -205,8 +244,26 @@ ps_ttm     = market_cap / revenue_ttm
 ### 6.1 输入文件
 
 ```text
+TRD_Co.csv
+```
+
+当前文件已经位于仓库根目录，编码为 `utf-8-sig`，字段包含：
+
+```text
+Stkcd, Stknme, Listdt, Conme, Indcd, Indnme,
+Nindcd, Nindnme, Nnindcd, Nnindnme,
+IndcdZX, IndnmeZX,
+PROVINCE, CITY, OWNERSHIPTYPE,
+Curtrd, Sctcd, Statco, Statdt, Markettype, FormerCode
+```
+
+正式构建时建议仍迁移或复制到：
+
+```text
 data/raw/csmar/TRD_Co.csv
 ```
+
+构建脚本应支持 `--input TRD_Co.csv` 和 `--input data/raw/csmar/TRD_Co.csv` 两种路径，避免开发阶段因为文件位置阻塞。
 
 ### 6.2 输出文件
 
@@ -230,10 +287,35 @@ storage/reference/csmar_industry_build_report.md
 默认保留当前人民币交易 A 股：
 
 ```text
-Statco == A
 Curtrd == CNY
 Markettype in 1, 4, 16, 32, 64
+Statco != D
 ```
+
+当前 `TRD_Co.csv` 中，`Statco` 的实测分布为：
+
+```text
+A    5578
+D     365
+N      20
+```
+
+不能简单使用 `Statco == A`，因为样例中仍在交易的特殊状态股票可能标记为 `N`。第一阶段推荐规则是：
+
+```text
+is_active = Statco in {"A", "N"}
+is_delisted = Statco == "D"
+```
+
+构建报告必须记录 `A/N/D` 各自数量。按当前文件过滤：
+
+```text
+Curtrd == CNY
+Markettype in {1, 4, 16, 32, 64}
+Statco != D
+```
+
+得到约 `5519` 条当前 A 股记录，其中 `A=5500`、`N=19`。若后续发现 `N` 不是可交易状态，再通过配置收紧过滤，不应在第一版硬编码剔除。
 
 其中：
 
@@ -354,6 +436,7 @@ K70 → K
 
 ```text
 symbol                       标准证券代码，例如 000858.SZ
+symbol_qmt                   QMT 可识别代码，第一阶段与 symbol 相同
 stkcd                        6 位股票代码
 exchange                     SH / SZ / BJ
 market_type                  原始 Markettype
@@ -364,6 +447,7 @@ list_date                    上市日期
 status_code                  状态代码
 status_date                  状态日期
 is_active                    是否当前正常上市
+is_delisted                  是否退市
 is_a_share                   是否 A 股
 is_st_name                   简称是否包含 ST
 primary_industry_code        主行业代码
@@ -377,6 +461,7 @@ city                         城市
 ownership_type               所有制类型
 source_file                  来源文件名
 source_hash                  来源文件 hash
+source_row_hash              单行 hash，用于后续增量比对
 snapshot_date                构建日期
 ```
 
@@ -429,10 +514,10 @@ scripts/build_csmar_industry_reference.py
 职责：
 
 ```text
-1. 读取 data/raw/csmar/TRD_Co.csv
+1. 读取 TRD_Co.csv 或 data/raw/csmar/TRD_Co.csv
 2. 检查必要字段是否存在
 3. 标准化股票代码
-4. 过滤当前 A 股股票池
+4. 过滤当前 A 股股票池，默认保留 Statco in {"A", "N"}
 5. 生成 SQLite 行业参考库
 6. 生成构建报告
 7. 输出行业样本统计
@@ -509,6 +594,67 @@ qmt         → QMTIndustryProvider
 disabled    → 不做行业估值增强
 ```
 
+### 9.4 新增 QMT 财务缓存预检脚本
+
+新增：
+
+```text
+scripts/check_qmt_finance_cache.py
+```
+
+职责：
+
+```text
+1. 连接 xtquant.xtdata。
+2. 打印 xtdata.get_data_dir() 返回的 MiniQMT 数据目录。
+3. 对目标股票池或目标同行池调用 get_financial_data。
+4. 统计 Balance / Income / CashFlow / PershareIndex 的覆盖率、最新报告期、最新公告日。
+5. 输出 machine-readable JSON 和人类可读 Markdown。
+6. 当覆盖率低于阈值时返回非 0 exit code，供集成测试或手工验收使用。
+```
+
+命令示例：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/check_qmt_finance_cache.py ^
+  --symbols 600410.SH,002624.SZ,000419.SZ ^
+  --tables Balance,Income,CashFlow,PershareIndex ^
+  --start 20100101 ^
+  --end 20260520 ^
+  --min-coverage 0.8
+```
+
+### 9.5 可选新增 QMT 财务缓存同步脚本
+
+新增：
+
+```text
+scripts/sync_qmt_finance_cache.ps1
+```
+
+职责：
+
+```text
+1. 校验完整版 QMT Finance 源目录存在。
+2. 校验 MiniQMT Finance 目标目录存在或可创建。
+3. 提醒用户关闭 XtMiniQmt / miniquote / XtItClient / QMT 主程序。
+4. 备份目标 Finance 目录。
+5. 使用 robocopy 将完整版 datadir\Finance 同步到 userdata_mini\datadir\Finance。
+6. 同步后提示重启 MiniQMT，并调用 check_qmt_finance_cache.py 复验。
+```
+
+脚本默认应采用“增量复制”而不是强制镜像删除：
+
+```powershell
+robocopy "$FullFinanceDir" "$MiniFinanceDir" /E /XO /R:2 /W:1
+```
+
+只有在用户显式传入 `-Mirror` 且已经完成备份时，才允许使用：
+
+```powershell
+robocopy "$FullFinanceDir" "$MiniFinanceDir" /MIR /R:2 /W:1
+```
+
 ---
 
 ## 10. 配置项设计
@@ -534,6 +680,19 @@ QMT_INDUSTRY_AUTO_DOWNLOAD=false
 
 # QMT 同行财务自动下载默认关闭，优先读取本地 QMT 已有财务数据
 QMT_INDUSTRY_FINANCIAL_AUTO_DOWNLOAD=false
+
+# MiniQMT 当前服务返回的数据目录，通常由 xtdata.get_data_dir() 自动发现
+QMT_MINI_DATADIR=
+
+# 完整版 QMT 下载目录，仅用于手工/脚本同步，不直接传给 get_financial_data
+QMT_FULL_DATADIR=
+
+# 是否在行业估值前检查 MiniQMT 财务缓存覆盖率
+QMT_FINANCE_CACHE_PREFLIGHT=true
+QMT_FINANCE_CACHE_MIN_COVERAGE=0.8
+
+# 财务缓存同步策略：none / manual_copy / robocopy
+QMT_FINANCE_CACHE_SYNC_MODE=none
 ```
 
 兼容性处理：
@@ -557,6 +716,16 @@ INDUSTRY_CLASSIFICATION_FALLBACK_PROVIDER=disabled
 ```
 
 这样可以避免又悄悄回到不稳定的 QMT sector。
+
+QMT 财务缓存相关配置的处理原则：
+
+```text
+1. QMT_MINI_DATADIR 为空时，运行时以 xtdata.get_data_dir() 为准。
+2. QMT_FULL_DATADIR 只用于同步工具，不能误以为 get_financial_data 会读取它。
+3. QMT_FINANCE_CACHE_PREFLIGHT=true 时，行业估值前先检查目标同行池财务覆盖率。
+4. 覆盖率不足时，行业估值降级为 warning，不触发同步下载，不阻断主流程。
+5. 不在主研究流程中同步调用 xtdata.download_financial_data 批量下载同行财务数据；该接口可能耗时较长或卡住。
+```
 
 ---
 
@@ -583,6 +752,69 @@ create_peer_valuation_loader()   → QMTPeerValuationLoader
 ```
 
 这一步的重点是解耦，而不是重写估值算法。
+
+新增 QMT 财务缓存预检逻辑：
+
+```text
+1. LocalCSMARIndustryProvider 先返回完整同行池。
+2. IndustryValuationService 对同行池做数量截断/批量分片，避免一次性请求过大。
+3. 若 QMT_FINANCE_CACHE_PREFLIGHT=true，先用 check_qmt_finance_cache 同等逻辑抽样或全量检查同行财务覆盖率。
+4. 覆盖率达到阈值，才调用 QMTPeerValuationLoader 计算 PE/PB/PS 分位。
+5. 覆盖率不足，跳过分位计算，返回行业信息、peer_count、valid_peer_count=0 和 warning。
+```
+
+示例 warning：
+
+```json
+{
+  "industry_source": "local_csmar_trd_co",
+  "industry_peer_count": 38,
+  "industry_valid_peer_count_pe": 0,
+  "industry_valid_peer_count_pb": 0,
+  "industry_valid_peer_count_ps": 0,
+  "industry_valuation_warnings": [
+    "qmt_finance_cache_insufficient_for_peer_valuation",
+    "mini_qmt_finance_dir_missing_peer_files"
+  ]
+}
+```
+
+### 11.1 QMT 财务缓存同步与 MiniQMT 补充入口判断
+
+本机排查结论：
+
+```text
+完整版 QMT 可通过“操作 - 数据管理 - 补充数据”或“智能下载/批量下载”补充财务数据。
+MiniQMT 功能说明文档没有发现等价的“数据管理/补充数据”界面入口。
+xtquant 提供 download_financial_data 接口，但实测单票 4 表下载 180 秒未返回，不适合放进主研究流程。
+```
+
+因此第一阶段按以下策略处理：
+
+```text
+1. 把“完整版 QMT 下载财务数据”视为可用的源数据。
+2. 把“MiniQMT userdata_mini\datadir\Finance”视为 xtdata.get_financial_data 的唯一可靠读取目标。
+3. 通过停机后的文件同步，把完整版 datadir\Finance 补到 MiniQMT userdata_mini\datadir\Finance。
+4. 同步完成后重启 MiniQMT，再用 check_qmt_finance_cache.py 验证接口是否能读到。
+```
+
+推荐同步命令模板：
+
+```powershell
+$full = 'D:\迅投QMT极速交易系统交易终端 万联证券版\datadir\Finance'
+$mini = 'D:\迅投QMT极速交易系统交易终端 万联证券版\userdata_mini\datadir\Finance'
+
+# 先关闭 QMT / XtMiniQmt / miniquote / XtItClient，再执行。
+robocopy $full $mini /E /XO /R:2 /W:1
+```
+
+如果需要完全镜像，必须先备份目标目录，再使用 `/MIR`：
+
+```powershell
+robocopy $full $mini /MIR /R:2 /W:1
+```
+
+`/MIR` 会删除目标中源目录不存在的文件，只能在确认两个目录属于同一 QMT 版本、同一券商安装包且已备份后使用。
 
 ---
 
@@ -639,6 +871,8 @@ create_peer_valuation_loader()   → QMTPeerValuationLoader
 1. README 中如仍有 QMT_INDUSTRY_AUTO_DOWNLOAD=true 示例，改为 false。
 2. 明确说明 QMT 行业自动下载默认关闭。
 3. 增加“行业分类来源”和“同行估值数据来源”两层概念说明。
+4. 增加 QMT 财务缓存目录说明：完整版 datadir\Finance 需要同步到 MiniQMT userdata_mini\datadir\Finance 后，get_financial_data 才可能读到。
+5. 增加 MiniQMT 财务缓存预检命令，避免行业估值样本不足时静默输出错误分位。
 ```
 
 ### 阶段 1：构建本地行业参考库
@@ -651,6 +885,7 @@ create_peer_valuation_loader()   → QMTPeerValuationLoader
 scripts/build_csmar_industry_reference.py
 storage/reference/csmar_industry.sqlite
 storage/reference/csmar_industry_build_report.md
+scripts/check_qmt_finance_cache.py
 ```
 
 验收标准：
@@ -660,6 +895,7 @@ storage/reference/csmar_industry_build_report.md
 2. 可返回该行业全部成员。
 3. 可统计行业样本数量。
 4. 构建报告记录原始行数、保留行数、行业数量、缺失值数量。
+5. 当前 TRD_Co.csv 过滤后约保留 5519 条当前 A 股记录，实际数量写入构建报告。
 ```
 
 ### 阶段 2：新增 LocalCSMARIndustryProvider
@@ -697,8 +933,9 @@ IndustryValuationService 支持 LocalCSMARIndustryProvider + QMTPeerValuationLoa
 ```text
 1. 行业分类来源显示为 local_csmar_trd_co。
 2. 同行价格、股本、财务数据仍由 QMT 读取。
-3. 能计算 PE / PB / PS 行业分位。
+3. MiniQMT 财务缓存覆盖率达标时，能计算 PE / PB / PS 行业分位。
 4. 行业增强失败不阻断主研究流程。
+5. MiniQMT 财务缓存不足时，只输出 warning 和有效样本数，不输出强分位结论。
 ```
 
 ### 阶段 4：LLM 输出瘦身
@@ -744,11 +981,12 @@ LocalCSMARPeerValuationLoader
 ```text
 1. Stkcd 能补齐 6 位。
 2. Sctcd 能正确映射 SH / SZ / BJ。
-3. Statco != A 的股票被剔除。
+3. Statco == D 的股票被剔除，Statco == A/N 的股票默认保留。
 4. Curtrd != CNY 的证券被剔除。
 5. Markettype 过滤正确。
 6. 缺失行业字段时有 warning。
 7. 输出 SQLite 表结构正确。
+8. 构建报告记录 Statco、Markettype、行业字段缺失数量。
 ```
 
 ### 14.2 LocalCSMARIndustryProvider 测试
@@ -769,6 +1007,8 @@ LocalCSMARPeerValuationLoader
 3. 行业库不存在时，主流程不崩。
 4. use_llm=False 快速管道可越过 30%。
 5. 正常 LLM 分析可生成报告。
+6. QMT_FINANCE_CACHE_PREFLIGHT=true 且缓存不足时，不调用行业分位强计算，返回 qmt_finance_cache_insufficient warning。
+7. 完整版 datadir\Finance 同步到 MiniQMT userdata_mini\datadir\Finance 后，check_qmt_finance_cache.py 能读到测试股票财务表。
 ```
 
 ### 14.4 LLM 上下文测试
@@ -829,6 +1069,29 @@ LOCAL_CSMAR_INDUSTRY_FALLBACK_TO_SECTION=true
 ```text
 行业估值结果中保留 valid_peer_count_pe / pb / ps。
 样本不足时只输出 warning，不强行给分位结论。
+新增 QMT 财务缓存预检，不把 qmt_connected 误判为 qmt_finance_cache_ready。
+```
+
+### 风险 6：完整版 QMT 财务数据与 MiniQMT 财务接口目录分离
+
+处理：
+
+```text
+文档明确记录：
+完整版 QMT 下载目录是 datadir\Finance。
+MiniQMT 接口读取目录是 userdata_mini\datadir\Finance。
+第一阶段通过停机文件同步解决，不依赖 xtdata.data_dir 切换财务读取目录。
+同步后必须用 get_financial_data 复验。
+```
+
+### 风险 7：MiniQMT 无可见财务补充入口
+
+处理：
+
+```text
+不把 MiniQMT 界面补充数据作为方案依赖。
+完整版 QMT 的“操作 - 数据管理 - 补充数据”和“智能下载/批量下载”是目前文档可确认的补充入口。
+xtdata.download_financial_data 作为手工诊断工具保留，不进入主研究流程。
 ```
 
 ---
@@ -841,15 +1104,16 @@ LOCAL_CSMAR_INDUSTRY_FALLBACK_TO_SECTION=true
 1. 本地国泰安 TRD_Co → 清洗成 SQLite 行业参考库。
 2. 新增 LocalCSMARIndustryProvider。
 3. 行业分类与同行池改用 local_csmar。
-4. 同行估值输入继续用 QMT。
-5. 行业估值计算沿用现有 IndustryValuationService。
-6. LLM 只读取行业摘要，不读取完整行业成员表。
+4. 同步或预检 MiniQMT 可读 QMT 财务缓存。
+5. 同行估值输入继续用 QMT，但只在财务缓存覆盖率达标时输出行业分位。
+6. 行业估值计算沿用现有 IndustryValuationService。
+7. LLM 只读取行业摘要，不读取完整行业成员表。
 ```
 
 一句话概括：
 
 ```text
-用本地国泰安库替代 QMT 的行业分类，不替代 QMT 的行情、股本、财务和估值输入。
+用本地国泰安库替代 QMT 的行业分类；QMT 继续提供行情、股本、财务和估值输入，但必须把 MiniQMT 财务缓存覆盖率作为行业估值的前置条件。
 ```
 
 这就是当前最稳、风险最低、收益最高的改造方案。
