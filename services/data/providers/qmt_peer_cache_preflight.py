@@ -32,6 +32,7 @@ class QMTPeerCachePreflight:
         symbols: Sequence[str],
         as_of: str | None = None,
         threshold: float | None = None,
+        include_missing_symbols: bool = False,
     ) -> dict:
         effective_threshold = threshold if threshold is not None else float(
             os.getenv("QMT_PEER_CACHE_MIN_COVERAGE", str(_DEFAULT_THRESHOLD))
@@ -39,7 +40,10 @@ class QMTPeerCachePreflight:
 
         cleaned = QMTPeerValuationLoader._clean_symbols(symbols)
         if not cleaned:
-            return self._empty_result(effective_threshold, "No symbols provided.")
+            result = self._empty_result(effective_threshold, "No symbols provided.")
+            if include_missing_symbols:
+                result["missing_symbols"] = {field: [] for field in _REQUIRED_ALL_FIELDS}
+            return result
 
         try:
             xtdata = _import_xtdata()
@@ -121,7 +125,7 @@ class QMTPeerCachePreflight:
             field: missing[field][:_SAMPLE_LIMIT] for field in _REQUIRED_ALL_FIELDS
         }
 
-        return {
+        result: dict = {
             "checked_count": total,
             "finance_ready": finance_ready,
             "price_ready": price_ready,
@@ -133,6 +137,9 @@ class QMTPeerCachePreflight:
             "warnings": warnings,
             "sample_missing": sample_missing,
         }
+        if include_missing_symbols:
+            result["missing_symbols"] = {field: list(missing[field]) for field in _REQUIRED_ALL_FIELDS}
+        return result
 
     @staticmethod
     def _empty_result(threshold: float, warning: str) -> dict:

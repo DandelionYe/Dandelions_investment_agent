@@ -199,3 +199,35 @@ def test_peer_valuation_complete_counts(monkeypatch):
     # A is complete, B missing close, C missing bps -> 1/3 complete
     assert result["counts"]["peer_valuation_complete"] == 1
     assert result["coverage"]["peer_valuation_complete"] == pytest.approx(1 / 3)
+
+
+def test_default_check_no_missing_symbols(monkeypatch):
+    symbols = [f"600{i:03d}.SH" for i in range(10)]
+    missing_close = {f"600{i:03d}.SH" for i in range(5)}
+    fake = _FakeXtData(missing_close=missing_close)
+    loader = _make_loader(fake, monkeypatch)
+    preflight = QMTPeerCachePreflight(loader=loader)
+
+    result = preflight.check(symbols=symbols, threshold=0.5)
+    assert "missing_symbols" not in result
+
+
+def test_include_missing_symbols_returns_full_list(monkeypatch):
+    symbols = [f"600{i:03d}.SH" for i in range(12)]
+    missing_close = {f"600{i:03d}.SH" for i in range(11)}  # 11 > SAMPLE_LIMIT
+    fake = _FakeXtData(missing_close=missing_close)
+    loader = _make_loader(fake, monkeypatch)
+    preflight = QMTPeerCachePreflight(loader=loader)
+
+    result = preflight.check(symbols=symbols, threshold=0.5, include_missing_symbols=True)
+    assert "missing_symbols" in result
+    assert len(result["missing_symbols"]["close"]) == 11
+    # sample_missing still capped at 10
+    assert len(result["sample_missing"]["close"]) == 10
+
+
+def test_include_missing_symbols_empty_symbols():
+    preflight = QMTPeerCachePreflight()
+    result = preflight.check(symbols=[], threshold=0.8, include_missing_symbols=True)
+    assert "missing_symbols" in result
+    assert result["missing_symbols"]["close"] == []
