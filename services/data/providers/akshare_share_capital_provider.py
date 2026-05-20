@@ -14,7 +14,7 @@ import math
 import os
 from datetime import date
 from time import perf_counter
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from services.data.provider_contracts import (
     ProviderMetadata,
@@ -95,6 +95,16 @@ def _extract_field(df: Any, field_name: str) -> float | None:
 def _symbol_to_eastmoney_code(symbol: str) -> str:
     """Convert 600519.SH -> 600519 (6-digit code for AKShare)."""
     return symbol.split(".")[0]
+
+
+def _positive_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(number) or number <= 0:
+        return None
+    return number
 
 
 class AKShareShareCapitalProvider:
@@ -198,3 +208,70 @@ def is_share_capital_fallback_enabled() -> bool:
 
 def get_share_capital_fallback_max_symbols() -> int:
     return int(os.getenv("QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS", "50"))
+
+
+def resolve_share_capital_fallback(
+    symbols: Sequence[str],
+    *,
+    close_map: Mapping[str, float | None] | None = None,
+    provider: AKShareShareCapitalProvider | None = None,
+    max_symbols: int | None = None,
+) -> dict:
+    """Resolve share-capital fallback data for a bounded symbol list.
+
+    The returned payload is intentionally structured so callers can surface
+    skipped symbols and provider failures instead of silently truncating work.
+    """
+    ordered_symbols = [str(symbol).strip() for symbol in symbols if str(symbol).strip()]
+    if not is_share_capital_fallback_enabled():
+        return {
+            "enabled": False,
+            "max_symbols": 0,
+            "attempted_symbols": [],
+            "skipped_symbols": [],
+            "skipped_count": 0,
+            "values": {},
+            "errors": [],
+        }
+
+    limit = max(0, max_symbols if max_symbols is not None else get_share_capital_fallback_max_symbols())
+    attempted_symbols = ordered_symbols[:limit]
+    skipped_symbols = ordered_symbols[limit:]
+    effective_provider = provider or AKShareShareCapitalProvider()
+    values: dict[str, dict] = {}
+    errors: list[dict[str, str | None]] = []
+    closes = close_map or {}
+
+    for symbol in attempted_symbols:
+        result = effective_provider.fetch_share_capital(symbol)
+        if not result.metadata.success:
+            errors.append({
+                "symbol": symbol,
+                "error": result.metadata.error,
+                "error_type": result.metadata.error_type,
+            })
+            continue
+
+        data = dict(result.data) if isinstance(result.data, dict) else {}
+        total_volume = _positive_float(data.get("total_volume"))
+        market_cap = _positive_float(data.get("market_cap"))
+        close = _positive_float(closes.get(symbol))
+
+        if total_volume is None and market_cap is not None and close is not None:
+            total_volume = market_cap / close
+            data["total_volume"] = total_volume
+            data["total_volume_inferred_from_market_cap"] = True
+
+        if total_volume is not None:
+            data["total_volume"] = total_volume
+            values[symbol] = data
+
+    return {
+        "enabled": True,
+        "max_symbols": limit,
+        "attempted_symbols": attempted_symbols,
+        "skipped_symbols": skipped_symbols,
+        "skipped_count": len(skipped_symbols),
+        "values": values,
+        "errors": errors,
+    }

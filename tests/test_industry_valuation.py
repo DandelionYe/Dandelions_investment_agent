@@ -504,6 +504,25 @@ class _PreflightPass:
         }
 
 
+class _PreflightPassWithWarning(_PreflightPass):
+    """Ready preflight that still carries operational warnings."""
+
+    def check(self, symbols, as_of=None, threshold=None):
+        result = super().check(symbols, as_of=as_of, threshold=threshold)
+        result["warnings"] = [
+            "qmt_peer_share_capital_fallback_skipped_by_limit: skipped 3 symbols over limit 2"
+        ]
+        result["share_capital_fallback"] = {
+            "enabled": True,
+            "max_symbols": 2,
+            "attempted_count": 2,
+            "filled_count": 2,
+            "skipped_count": 3,
+            "errors_count": 0,
+        }
+        return result
+
+
 def test_preflight_not_ready_skips_peer_loading(monkeypatch):
     monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "true")
     members = [f"600{i:03d}.SH" for i in range(25)]
@@ -552,6 +571,31 @@ def test_preflight_pass_proceeds_normally(monkeypatch):
     assert peer_loader.calls != [], "load_peer_inputs should be called when preflight passes"
     assert fields["industry_valuation_label"] != "industry_peer_cache_insufficient"
     assert fields["industry_pe_percentile"] is not None
+
+
+def test_preflight_ready_warnings_are_exposed(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "true")
+    members = [f"600{i:03d}.SH" for i in range(25)]
+    peer_loader = _PeerValuationLoaderWithMembers()
+    service = IndustryValuationService(
+        industry_provider=_IndustryProviderWithMembers(members),
+        peer_valuation_loader=peer_loader,
+        cache_preflight=_PreflightPassWithWarning(),
+    )
+
+    result = service.build(
+        asset_data={"symbol": "600010.SH", "asset_type": "stock", "as_of": "2026-05-12"},
+        valuation_data={},
+    )
+
+    fields = result["fields"]
+    assert fields["industry_pe_percentile"] is not None
+    assert (
+        "qmt_peer_share_capital_fallback_skipped_by_limit: skipped 3 symbols over limit 2"
+        in fields["industry_valuation_warnings"]
+    )
+    assert fields["industry_cache_preflight"]["share_capital_fallback"]["skipped_count"] == 3
+    assert result["provider_run_log"][0]["status"] == "partial_success"
 
 
 def test_preflight_disabled_skips_check(monkeypatch):

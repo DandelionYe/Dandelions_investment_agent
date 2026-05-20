@@ -161,7 +161,11 @@ class ValuationService:
         if sc_total_volume and sc_total_volume > 0:
             basic_info["total_volume"] = sc_total_volume
             if sc_float_volume and sc_float_volume > 0:
-                basic_info.setdefault("float_volume", sc_float_volume)
+                existing_float_volume = _to_float(
+                    basic_info.get("float_volume") or basic_info.get("FloatVolume")
+                )
+                if not existing_float_volume or existing_float_volume <= 0:
+                    basic_info["float_volume"] = sc_float_volume
             derived = True
         elif sc_market_cap and sc_market_cap > 0:
             inferred_tv = sc_market_cap / close
@@ -175,9 +179,11 @@ class ValuationService:
             metadata["confidence"] = 0.70
             calc = valuation_data.get("calculation_method", "")
             if "share_capital_from_akshare" not in str(calc):
-                valuation_data["calculation_method"] = (
+                calculation_method = (
                     str(calc) + " + share_capital_from_akshare"
                 ).strip()
+                valuation_data["calculation_method"] = calculation_method
+                metadata["calculation_method"] = calculation_method
 
     def _placeholder_result(self, symbol: str, error: str | None, provider_run_log: list[dict]) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)

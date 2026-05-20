@@ -17,22 +17,12 @@ from services.data.provider_contracts import (
     ProviderSchemaError,
     ProviderUnavailableError,
 )
+from services.data.providers.akshare_share_capital_provider import (
+    _positive_float,
+    resolve_share_capital_fallback,
+)
 from services.data.providers.qmt_financial_provider import QMT_FINANCIAL_TABLES
 from services.data.qmt_provider import _env_bool, _import_xtdata, connect_qmt
-from services.network.proxy_policy import disable_proxy_for_current_process
-
-# Lazy import to avoid circular dependency; used only in _apply_share_capital_fallback
-_SC_PROVIDER_CLS = None
-
-
-def _get_sc_provider():
-    global _SC_PROVIDER_CLS
-    if _SC_PROVIDER_CLS is None:
-        from services.data.providers.akshare_share_capital_provider import (
-            AKShareShareCapitalProvider,
-        )
-        _SC_PROVIDER_CLS = AKShareShareCapitalProvider()
-    return _SC_PROVIDER_CLS
 
 TOTAL_VOLUME_FIELDS = [
     "TotalVolume",
@@ -78,6 +68,7 @@ class QMTPeerValuationLoader:
             os.getenv("QMT_INDUSTRY_PEER_CHUNK_SIZE", "80")
         )
         self.chunk_size = max(1, configured_chunk_size)
+        self.last_share_capital_fallback: dict | None = None
 
     def load_peer_inputs(
         self,
@@ -210,73 +201,52 @@ class QMTPeerValuationLoader:
         Respects QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS limit and
         QMT_SHARE_CAPITAL_FALLBACK_PROVIDER=disabled to skip entirely.
         """
-        from services.data.providers.akshare_share_capital_provider import (
-            _symbol_to_eastmoney_code,
-            get_share_capital_fallback_max_symbols,
-            is_share_capital_fallback_enabled,
-        )
-
-        if not is_share_capital_fallback_enabled():
-            return
-
-        max_symbols = get_share_capital_fallback_max_symbols()
-
         missing_peers = [
             p for p in peers
             if not p.get("total_volume") or p["total_volume"] <= 0
         ]
 
         if not missing_peers:
+            self.last_share_capital_fallback = None
             return
 
-        skipped_count = 0
-        if len(missing_peers) > max_symbols:
-            skipped_count = len(missing_peers) - max_symbols
-            missing_peers = missing_peers[:max_symbols]
-
-        try:
-            disable_proxy_for_current_process()
-            import akshare as ak
-        except Exception:
-            # If akshare is not available, skip silently
-            return
+        close_map = {peer["symbol"]: peer.get("close") for peer in missing_peers}
+        fallback = resolve_share_capital_fallback(
+            [peer["symbol"] for peer in missing_peers],
+            close_map=close_map,
+        )
+        self.last_share_capital_fallback = self._summarize_share_capital_fallback(fallback)
+        values = fallback.get("values", {})
 
         for peer in missing_peers:
-            symbol = peer["symbol"]
-            code = _symbol_to_eastmoney_code(symbol)
-            try:
-                df = ak.stock_individual_info_em(symbol=code)
-                if df is None or df.empty:
-                    continue
-
-                # Extract total_volume and market_cap using the same parser
-                from services.data.providers.akshare_share_capital_provider import _extract_field
-                tv = _extract_field(df, "总股本")
-                fv = _extract_field(df, "流通股")
-                mc = _extract_field(df, "总市值")
-
-                if tv and tv > 0:
-                    peer["total_volume"] = tv
-                    if fv and fv > 0:
-                        peer.setdefault("float_volume", fv)
-                elif mc and mc > 0:
-                    close = peer.get("close")
-                    if close and close > 0:
-                        peer["total_volume"] = mc / close
-
-                # If we got total_volume, mark as no longer suspended
-                if peer.get("total_volume") and peer["total_volume"] > 0:
-                    if peer.get("is_suspended"):
-                        peer["is_suspended"] = False
-
-            except Exception:
-                # Per-symbol failure is non-fatal
+            data = values.get(peer["symbol"])
+            if not data:
                 continue
 
-        if skipped_count > 0:
-            # Record skip info on the last peer as a marker (non-standard but visible)
-            if peers:
-                peers[-1]["_share_capital_fallback_skipped"] = skipped_count
+            total_volume = _positive_float(data.get("total_volume"))
+            float_volume = _positive_float(data.get("float_volume"))
+            if total_volume is not None:
+                peer["total_volume"] = total_volume
+                peer["share_capital_fallback_used"] = True
+            existing_float_volume = _positive_float(peer.get("float_volume"))
+            if float_volume is not None and existing_float_volume is None:
+                peer["float_volume"] = float_volume
+
+        skipped = set(fallback.get("skipped_symbols", []))
+        for peer in peers:
+            if peer["symbol"] in skipped:
+                peer["share_capital_fallback_status"] = "skipped_by_limit"
+
+    @staticmethod
+    def _summarize_share_capital_fallback(fallback: dict) -> dict:
+        return {
+            "enabled": fallback.get("enabled", False),
+            "max_symbols": fallback.get("max_symbols", 0),
+            "attempted_count": len(fallback.get("attempted_symbols", [])),
+            "filled_count": len(fallback.get("values", {})),
+            "skipped_count": fallback.get("skipped_count", 0),
+            "errors_count": len(fallback.get("errors", [])),
+        }
 
     def _extract_financial_metrics(self, tables: dict) -> dict:
         pershare = _latest_record(self._frame_to_records(tables.get("PershareIndex")))

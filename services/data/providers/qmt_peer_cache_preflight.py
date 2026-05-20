@@ -9,12 +9,15 @@ from datetime import date, timedelta
 from typing import Sequence
 
 from services.data.provider_contracts import ProviderUnavailableError
+from services.data.providers.akshare_share_capital_provider import (
+    _positive_float,
+    resolve_share_capital_fallback,
+)
 from services.data.providers.qmt_peer_valuation_loader import (
     TOTAL_VOLUME_FIELDS,
     QMTPeerValuationLoader,
 )
 from services.data.qmt_provider import _import_xtdata, connect_qmt
-from services.network.proxy_policy import disable_proxy_for_current_process
 
 _DEFAULT_THRESHOLD = 0.8
 _REQUIRED_FINANCE_FIELDS = ("net_profit_ttm", "revenue_ttm", "bps")
@@ -64,10 +67,11 @@ class QMTPeerCachePreflight:
         detail_map = self.loader._load_instrument_details(xtdata, cleaned)
         financial_map = self.loader._load_financial_metrics(xtdata, cleaned, start, end)
 
-        # Build share capital fallback map for symbols with missing/zero total_volume
-        sc_fallback_map = self._build_share_capital_fallback_map(
+        # Build share capital fallback data for symbols with missing/zero total_volume
+        sc_fallback = self._build_share_capital_fallback_result(
             cleaned, detail_map, price_map,
         )
+        sc_fallback_map = sc_fallback.get("values", {})
 
         counts: dict[str, int] = {field: 0 for field in _REQUIRED_ALL_FIELDS}
         missing: dict[str, list[str]] = {field: [] for field in _REQUIRED_ALL_FIELDS}
@@ -83,7 +87,8 @@ class QMTPeerCachePreflight:
             total_volume = self.loader._first_float(detail, TOTAL_VOLUME_FIELDS)
             # Apply fallback if QMT native total_volume is missing/zero
             if not total_volume or total_volume <= 0:
-                total_volume = sc_fallback_map.get(symbol)
+                fallback_data = sc_fallback_map.get(symbol, {})
+                total_volume = _positive_float(fallback_data.get("total_volume"))
             if total_volume is not None and total_volume > 0:
                 counts["total_volume"] += 1
             else:
@@ -106,7 +111,8 @@ class QMTPeerCachePreflight:
             detail = detail_map.get(symbol, {})
             total_volume = self.loader._first_float(detail, TOTAL_VOLUME_FIELDS)
             if not total_volume or total_volume <= 0:
-                total_volume = sc_fallback_map.get(symbol)
+                fallback_data = sc_fallback_map.get(symbol, {})
+                total_volume = _positive_float(fallback_data.get("total_volume"))
             financial = financial_map.get(symbol, {})
             if (
                 close is not None and close > 0
@@ -131,6 +137,12 @@ class QMTPeerCachePreflight:
             warnings.append("qmt_finance_cache_insufficient_for_peer_valuation")
         if not share_capital_ready:
             warnings.append("qmt_peer_share_capital_insufficient")
+        if sc_fallback.get("skipped_count", 0) > 0:
+            warnings.append(
+                "qmt_peer_share_capital_fallback_skipped_by_limit: "
+                f"skipped {sc_fallback['skipped_count']} symbols over limit "
+                f"{sc_fallback['max_symbols']}"
+            )
 
         sample_missing = {
             field: missing[field][:_SAMPLE_LIMIT] for field in _REQUIRED_ALL_FIELDS
@@ -147,6 +159,7 @@ class QMTPeerCachePreflight:
             "counts": counts,
             "warnings": warnings,
             "sample_missing": sample_missing,
+            "share_capital_fallback": self._summarize_share_capital_fallback(sc_fallback),
         }
         if include_missing_symbols:
             result["missing_symbols"] = {field: list(missing[field]) for field in _REQUIRED_ALL_FIELDS}
@@ -172,30 +185,17 @@ class QMTPeerCachePreflight:
             "sample_missing": empty_missing,
         }
 
-    def _build_share_capital_fallback_map(
+    def _build_share_capital_fallback_result(
         self,
         symbols: list[str],
         detail_map: dict,
         price_map: dict,
-    ) -> dict[str, float | None]:
-        """Build total_volume fallback map for symbols with missing/zero QMT total_volume.
+    ) -> dict:
+        """Build fallback data for symbols with missing/zero QMT total_volume.
 
-        Uses the same AKShare share capital provider and MAX_SYMBOLS limit
-        as qmt_peer_valuation_loader, ensuring preflight and loader are consistent.
+        Uses the same AKShare share capital provider and MAX_SYMBOLS limit as
+        qmt_peer_valuation_loader, keeping preflight and loader consistent.
         """
-        from services.data.providers.akshare_share_capital_provider import (
-            _extract_field,
-            _symbol_to_eastmoney_code,
-            get_share_capital_fallback_max_symbols,
-            is_share_capital_fallback_enabled,
-        )
-
-        if not is_share_capital_fallback_enabled():
-            return {}
-
-        max_symbols = get_share_capital_fallback_max_symbols()
-
-        # Find symbols where QMT total_volume is missing/zero
         needs_fallback = []
         for symbol in symbols:
             detail = detail_map.get(symbol, {})
@@ -204,35 +204,26 @@ class QMTPeerCachePreflight:
                 needs_fallback.append(symbol)
 
         if not needs_fallback:
-            return {}
+            return {
+                "enabled": True,
+                "max_symbols": 0,
+                "attempted_symbols": [],
+                "skipped_symbols": [],
+                "skipped_count": 0,
+                "values": {},
+                "errors": [],
+            }
 
-        if len(needs_fallback) > max_symbols:
-            needs_fallback = needs_fallback[:max_symbols]
+        close_map = {symbol: price_map.get(symbol) for symbol in needs_fallback}
+        return resolve_share_capital_fallback(needs_fallback, close_map=close_map)
 
-        result: dict[str, float | None] = {}
-        try:
-            disable_proxy_for_current_process()
-            import akshare as ak
-        except Exception:
-            return {}
-
-        for symbol in needs_fallback:
-            code = _symbol_to_eastmoney_code(symbol)
-            try:
-                df = ak.stock_individual_info_em(symbol=code)
-                if df is None or df.empty:
-                    continue
-
-                tv = _extract_field(df, "总股本")
-                mc = _extract_field(df, "总市值")
-
-                if tv and tv > 0:
-                    result[symbol] = tv
-                elif mc and mc > 0:
-                    close = price_map.get(symbol)
-                    if close and close > 0:
-                        result[symbol] = mc / close
-            except Exception:
-                continue
-
-        return result
+    @staticmethod
+    def _summarize_share_capital_fallback(fallback: dict) -> dict:
+        return {
+            "enabled": fallback.get("enabled", False),
+            "max_symbols": fallback.get("max_symbols", 0),
+            "attempted_count": len(fallback.get("attempted_symbols", [])),
+            "filled_count": len(fallback.get("values", {})),
+            "skipped_count": fallback.get("skipped_count", 0),
+            "errors_count": len(fallback.get("errors", [])),
+        }

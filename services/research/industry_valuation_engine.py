@@ -124,6 +124,23 @@ class IndustryValuationService:
 
         fields = result.to_dict()
         warnings = fields.pop("warnings")
+        if preflight_result is not None:
+            for warning in preflight_result.get("warnings", []):
+                if warning not in warnings:
+                    warnings.append(warning)
+            if preflight_result.get("warnings"):
+                fields["industry_cache_preflight"] = {
+                    "checked_count": preflight_result["checked_count"],
+                    "ready": preflight_result["ready"],
+                    "threshold": preflight_result["threshold"],
+                    "finance_ready": preflight_result["finance_ready"],
+                    "price_ready": preflight_result["price_ready"],
+                    "share_capital_ready": preflight_result["share_capital_ready"],
+                    "coverage": preflight_result["coverage"],
+                    "share_capital_fallback": preflight_result.get(
+                        "share_capital_fallback"
+                    ),
+                }
         fields["industry_valuation_warnings"] = warnings
         fields["industry_valuation_source"] = self._industry_valuation_source(
             industry_result.provider,
@@ -201,6 +218,7 @@ class IndustryValuationService:
                 "price_ready": preflight["price_ready"],
                 "share_capital_ready": preflight["share_capital_ready"],
                 "coverage": preflight["coverage"],
+                "share_capital_fallback": preflight.get("share_capital_fallback"),
             },
         }
         return {

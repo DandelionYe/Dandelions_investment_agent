@@ -10,6 +10,7 @@ from services.data.providers.akshare_share_capital_provider import (
     _symbol_to_eastmoney_code,
     get_share_capital_fallback_max_symbols,
     is_share_capital_fallback_enabled,
+    resolve_share_capital_fallback,
 )
 
 # ---------------------------------------------------------------------------
@@ -205,6 +206,43 @@ def test_get_share_capital_fallback_max_symbols_custom(monkeypatch):
     assert get_share_capital_fallback_max_symbols() == 100
 
 
+def test_resolve_share_capital_fallback_reports_skipped_symbols(monkeypatch):
+    monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+
+    class FakeProvider:
+        def fetch_share_capital(self, symbol):
+            return type("R", (), {
+                "data": {"total_volume": 100},
+                "metadata": type("M", (), {
+                    "success": True,
+                    "error": None,
+                    "error_type": None,
+                })(),
+            })()
+
+    result = resolve_share_capital_fallback(
+        ["A.SH", "B.SH", "C.SH"],
+        provider=FakeProvider(),
+        max_symbols=2,
+    )
+
+    assert result["attempted_symbols"] == ["A.SH", "B.SH"]
+    assert result["skipped_symbols"] == ["C.SH"]
+    assert result["skipped_count"] == 1
+    assert set(result["values"]) == {"A.SH", "B.SH"}
+
+
+def test_resolve_share_capital_fallback_disabled_has_no_limit_skip(monkeypatch):
+    monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "disabled")
+
+    result = resolve_share_capital_fallback(["A.SH", "B.SH"], max_symbols=1)
+
+    assert result["enabled"] is False
+    assert result["attempted_symbols"] == []
+    assert result["skipped_symbols"] == []
+    assert result["skipped_count"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Valuation engine integration
 # ---------------------------------------------------------------------------
@@ -220,7 +258,11 @@ class TestValuationEngineShareCapitalFallback:
         fake_sc_result = type("R", (), {
             "provider": "akshare",
             "dataset": "stock_individual_info_em",
-            "data": {"total_volume": 1e10, "market_cap": 6.67e10},
+            "data": {
+                "total_volume": 1e10,
+                "float_volume": 8e9,
+                "market_cap": 6.67e10,
+            },
             "metadata": type("M", (), {
                 "success": True, "error": None, "error_type": None,
             })(),
@@ -249,10 +291,16 @@ class TestValuationEngineShareCapitalFallback:
         valuation = result["data"]["valuation_data"]
 
         assert valuation["market_cap"] is not None
+        assert valuation["float_market_cap"] is not None
         assert valuation["market_cap"] > 0
         assert valuation["pe_ttm"] is not None
         assert valuation["ps_ttm"] is not None
+        assert asset_data["basic_info"]["float_volume"] == pytest.approx(8e9)
         assert result["source_metadata"]["valuation_data"]["source"] == "qmt_derived+share_capital_fallback"
+        assert (
+            result["source_metadata"]["valuation_data"]["calculation_method"]
+            == valuation["calculation_method"]
+        )
         assert any(
             "share_capital_from_akshare" in str(r.get("calculation_method", ""))
             for r in [valuation]
@@ -469,10 +517,9 @@ class TestPeerLoaderShareCapitalFallback:
 
         import sys
         monkeypatch.setitem(sys.modules, "akshare", FakeAk())
-        monkeypatch.setattr(
-            "services.data.providers.qmt_peer_valuation_loader.disable_proxy_for_current_process",
-            lambda: None,
-        )
+
+        import services.data.providers.akshare_share_capital_provider as sc_mod
+        monkeypatch.setattr(sc_mod, "disable_proxy_for_current_process", lambda: None)
 
         loader = QMTPeerValuationLoader()
         peers = loader.load_peer_inputs(["600001.SH", "600002.SH"], as_of="2026-05-20")
@@ -481,6 +528,67 @@ class TestPeerLoaderShareCapitalFallback:
         # After fallback, total_volume should be filled
         assert peers[0]["total_volume"] == pytest.approx(1e10)
         assert peers[1]["total_volume"] == pytest.approx(1e10)
+        assert peers[0]["float_volume"] == pytest.approx(8e9)
+        assert peers[1]["float_volume"] == pytest.approx(8e9)
+        assert loader.last_share_capital_fallback["filled_count"] == 2
+
+    def test_peer_fallback_does_not_clear_suspended_state(self, monkeypatch):
+        """Share-capital fallback must not turn price-missing peers into tradable peers."""
+        import pandas as pd
+
+        from services.data.providers import qmt_peer_valuation_loader as mod
+        from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
+
+        monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS", "10")
+
+        class FakeXtData:
+            enable_hello = True
+
+            def connect(self):
+                return None
+
+            def get_data_dir(self):
+                return "fake"
+
+            def get_market_data_ex(self, **kw):
+                return {s: pd.DataFrame() for s in kw["stock_list"]}
+
+            def get_instrument_detail(self, symbol):
+                return {"InstrumentName": "Test", "TotalVolume": 0, "FloatVolume": 0}
+
+            def get_financial_data(self, symbols, tables, start, end, report_type):
+                return {s: {
+                    "Income": pd.DataFrame([{"m_timetag": "20251231", "revenue": 500, "net_profit": 100}]),
+                    "PershareIndex": pd.DataFrame([{"m_timetag": "20251231", "bps": 5}]),
+                } for s in symbols}
+
+        fake_xtdata = FakeXtData()
+        monkeypatch.setattr(mod, "_import_xtdata", lambda: fake_xtdata)
+        monkeypatch.setattr(mod, "connect_qmt", lambda settings=None: None)
+
+        fake_df = pd.DataFrame({
+            "item": ["总股本"],
+            "value": ["100亿股"],
+        })
+
+        class FakeAk:
+            @staticmethod
+            def stock_individual_info_em(symbol):
+                return fake_df
+
+        import sys
+        monkeypatch.setitem(sys.modules, "akshare", FakeAk())
+
+        import services.data.providers.akshare_share_capital_provider as sc_mod
+        monkeypatch.setattr(sc_mod, "disable_proxy_for_current_process", lambda: None)
+
+        loader = QMTPeerValuationLoader()
+        peers = loader.load_peer_inputs(["600001.SH"], as_of="2026-05-20")
+
+        assert peers[0]["total_volume"] == pytest.approx(1e10)
+        assert peers[0]["close"] is None
+        assert peers[0]["is_suspended"] is True
 
     def test_peer_total_volume_positive_skips_fallback(self, monkeypatch):
         """When QMT total_volume > 0, fallback is NOT called."""
@@ -567,10 +675,9 @@ class TestPeerLoaderShareCapitalFallback:
 
         import sys
         monkeypatch.setitem(sys.modules, "akshare", FakeAk())
-        monkeypatch.setattr(
-            "services.data.providers.qmt_peer_valuation_loader.disable_proxy_for_current_process",
-            lambda: None,
-        )
+
+        import services.data.providers.akshare_share_capital_provider as sc_mod
+        monkeypatch.setattr(sc_mod, "disable_proxy_for_current_process", lambda: None)
 
         loader = QMTPeerValuationLoader()
         peers = loader.load_peer_inputs(symbols, as_of="2026-05-20")
@@ -584,6 +691,8 @@ class TestPeerLoaderShareCapitalFallback:
         assert peers[2]["total_volume"] == 0
         assert peers[3]["total_volume"] == 0
         assert peers[4]["total_volume"] == 0
+        assert loader.last_share_capital_fallback["skipped_count"] == 3
+        assert peers[2]["share_capital_fallback_status"] == "skipped_by_limit"
 
     def test_fallback_disabled_skips_entirely(self, monkeypatch):
         import pandas as pd
@@ -673,7 +782,9 @@ class TestPreflightShareCapitalFallback:
 
         import sys
         monkeypatch.setitem(sys.modules, "akshare", FakeAk())
-        monkeypatch.setattr(mod, "disable_proxy_for_current_process", lambda: None)
+
+        import services.data.providers.akshare_share_capital_provider as sc_mod
+        monkeypatch.setattr(sc_mod, "disable_proxy_for_current_process", lambda: None)
 
         loader = QMTPeerValuationLoader()
         preflight = QMTPeerCachePreflight(loader=loader)
@@ -684,3 +795,65 @@ class TestPreflightShareCapitalFallback:
         # With fallback, it should be True (all filled)
         assert result["share_capital_ready"] is True
         assert result["coverage"]["total_volume"] == 1.0
+
+    def test_preflight_reports_share_capital_fallback_skipped_by_limit(self, monkeypatch):
+        import pandas as pd
+
+        from services.data.providers import qmt_peer_cache_preflight as mod
+        from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
+        from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
+
+        monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS", "2")
+
+        symbols = [f"60000{i}.SH" for i in range(5)]
+
+        class FakeXtData:
+            enable_hello = True
+
+            def connect(self):
+                return None
+
+            def get_market_data_ex(self, **kw):
+                return {s: pd.DataFrame([{"time": "20260520", "close": 10.0}]) for s in kw["stock_list"]}
+
+            def get_instrument_detail(self, symbol):
+                return {"InstrumentName": "Test", "TotalVolume": 0, "FloatVolume": 0}
+
+            def get_financial_data(self, symbols, tables, start, end, report_type):
+                return {s: {
+                    "Income": pd.DataFrame([{"m_timetag": "20251231", "revenue": 500, "net_profit": 100}]),
+                    "PershareIndex": pd.DataFrame([{"m_timetag": "20251231", "bps": 5}]),
+                } for s in symbols}
+
+        fake_xtdata = FakeXtData()
+        monkeypatch.setattr(mod, "_import_xtdata", lambda: fake_xtdata)
+        monkeypatch.setattr(mod, "connect_qmt", lambda: None)
+
+        fake_df = pd.DataFrame({
+            "item": ["总股本"],
+            "value": ["100亿股"],
+        })
+
+        class FakeAk:
+            @staticmethod
+            def stock_individual_info_em(symbol):
+                return fake_df
+
+        import sys
+        monkeypatch.setitem(sys.modules, "akshare", FakeAk())
+
+        import services.data.providers.akshare_share_capital_provider as sc_mod
+        monkeypatch.setattr(sc_mod, "disable_proxy_for_current_process", lambda: None)
+
+        loader = QMTPeerValuationLoader()
+        preflight = QMTPeerCachePreflight(loader=loader)
+
+        result = preflight.check(symbols=symbols, threshold=0.8)
+
+        assert result["share_capital_fallback"]["skipped_count"] == 3
+        assert result["coverage"]["total_volume"] == pytest.approx(0.4)
+        assert any(
+            warning.startswith("qmt_peer_share_capital_fallback_skipped_by_limit")
+            for warning in result["warnings"]
+        )
