@@ -2,6 +2,15 @@
 
 本备注基于 2026-05-20 在本机已启动 PowerShell 开发服务、已手动启动 XtMiniQMT 后的只读核实结果。它不是完成声明，而是后续继续推进时优先阅读的状态记录。
 
+## 2026-05-20 完成状态更新
+
+```text
+已完成：QMT 同行缓存预检，覆盖 finance + price + share_capital，并已接入行业估值运行前检查。
+已完成：QMT 同行 K 线 / 最新价缓存补齐维护工具，支持 dry-run 检查、显式 --download --yes 下载、JSON / Markdown 输出。
+已完成：本地 CSMAR 行业库、LocalCSMARIndustryProvider、industry_provider_factory、IndustryValuationService 的本地行业分类接入。
+仍待推进：total_volume 备用来源、股息率补充、fallback 配置清理/实现、报告层“暂无”原因披露、LLM 输出瘦身专项验收。
+```
+
 ## A. 已实际落地的范围
 
 ```text
@@ -14,24 +23,26 @@
 7. IndustryValuationService 默认行业分类来源已从 QMT sector 改为 create_industry_provider()。
 8. 行业分类当前默认可使用 local_csmar，同行估值输入仍使用 QMT。
 9. 600410.SH、002624.SZ、000419.SZ、600519.SH 等样例能解析出本地 CSMAR 行业和同行池。
+10. 已新增 QMT 同行缓存预检，覆盖收盘价、股本、净利润 TTM、营收 TTM、BPS 和同行估值完整性。
+11. 已新增 QMT 同行 K 线 / 最新价缓存补齐维护工具，用于补齐行业横截面估值所需的同行 close 缓存。
 ```
 
 ## B. 尚未落地或尚未完成验收的设计项
 
-以下内容在本文档后续方案中有设计，但截至本次核实时尚未完整实现：
+以下内容保留原推进记录；标注“已完成”的条目已经在后续开发中落地，未标注的条目仍待推进或验收：
 
 ```text
-1. scripts/check_qmt_finance_cache.py 尚不存在。
-   影响：无法用独立脚本检查 MiniQMT 可读 Finance 缓存覆盖率，也无法输出 JSON / Markdown 预检报告。
+1. [已完成] scripts/check_qmt_finance_cache.py 已实现。
+   当前作用：可用独立脚本检查 MiniQMT 可读缓存覆盖率，并输出 JSON / Markdown 预检报告。
 
 2. scripts/sync_qmt_finance_cache.ps1 尚不存在。
    影响：完整版 datadir\Finance 到 userdata_mini\datadir\Finance 的同步仍依赖手工命令，缺少可复用脚本和复验闭环。
 
-3. QMT_FINANCE_CACHE_PREFLIGHT 运行时预检尚未接入。
-   影响：IndustryValuationService 当前会直接请求同行估值输入；不会先判断 MiniQMT 财务缓存覆盖率是否达到阈值。
+3. [已完成] 行业估值运行时预检已接入。
+   当前作用：IndustryValuationService 会先判断 MiniQMT 同行估值输入缓存覆盖率是否达到阈值。
 
-4. qmt_finance_cache_insufficient_for_peer_valuation 这类明确 warning 尚未实现。
-   当前只会出现类似 “Industry PE valid peer count X is below 20.” 的样本不足提示。
+4. [已完成] 缓存不足时的结构化 warning / 早退分支已实现。
+   当前作用：缓存不足时不强行计算行业分位，而是返回结构化 warning 和有效样本数。
 
 5. INDUSTRY_CLASSIFICATION_FALLBACK_PROVIDER 尚未实现。
    影响：local_csmar SQLite 不可用时，没有按配置回退到 qmt 或 disabled 的完整策略。
@@ -189,9 +200,9 @@ industry_pe_percentile / industry_pb_percentile / industry_ps_percentile
 ## E. 后续优先级建议
 
 ```text
-P0. 补充 check_qmt_finance_cache.py，并扩展为 finance + price + share_capital 三类缓存预检。
-P0. 行业估值运行前接入预检；缓存不足时返回结构化 warning，不强行计算分位。
-P0. 查清 MiniQMT 批量补齐同行 K 线缓存的入口或可行 API，必要时新增独立维护脚本。
+P0. [已完成] 补充 check_qmt_finance_cache.py，并扩展为 finance + price + share_capital 三类缓存预检。
+P0. [已完成] 行业估值运行前接入预检；缓存不足时返回结构化 warning，不强行计算分位。
+P0. [已完成] 查清 MiniQMT 批量补齐同行 K 线缓存的入口或可行 API，必要时新增独立维护脚本。
 P1. 为 total_volume 增加备用来源，解决 601728.SH 这类 TotalVolume=0 导致 PE/PS 为空的问题。
 P1. 实现股息率补充源，并修正 None 字段不能被补充来源覆盖的问题。
 P1. 实现或删除未接入的 fallback 配置，避免配置项误导。
@@ -799,6 +810,8 @@ disabled    → 不做行业估值增强
 
 ### 9.4 新增 QMT 财务缓存预检脚本
 
+状态：已完成。当前实现已覆盖 finance + price + share_capital 三类同行估值输入预检。
+
 新增：
 
 ```text
@@ -1078,7 +1091,7 @@ robocopy $full $mini /MIR /R:2 /W:1
 5. 增加 MiniQMT 财务缓存预检命令，避免行业估值样本不足时静默输出错误分位。
 ```
 
-### 阶段 1：构建本地行业参考库
+### 阶段 1：构建本地行业参考库（已完成）
 
 目标：把 TRD_Co.csv 转成稳定、窄字段、可快速查询的 SQLite。
 
@@ -1101,7 +1114,7 @@ scripts/check_qmt_finance_cache.py
 5. 当前 TRD_Co.csv 过滤后约保留 5519 条当前 A 股记录，实际数量写入构建报告。
 ```
 
-### 阶段 2：新增 LocalCSMARIndustryProvider
+### 阶段 2：新增 LocalCSMARIndustryProvider（已完成）
 
 目标：用本地库替代 QMT sector 做行业分类。
 
@@ -1121,7 +1134,7 @@ services/data/providers/industry_provider_factory.py
 4. 行业成员 symbol 可直接传给 QMT peer loader。
 ```
 
-### 阶段 3：接入现有行业估值流程
+### 阶段 3：接入现有行业估值流程（已完成）
 
 目标：使用本地行业池 + QMT 估值输入。
 
