@@ -17,8 +17,6 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
-
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -129,6 +127,8 @@ def _write_markdown(path: str, result: dict) -> None:
 
 
 def main() -> None:
+    from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
+
     args = _parse_args()
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
 

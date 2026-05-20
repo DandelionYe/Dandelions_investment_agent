@@ -101,7 +101,12 @@ class IndustryValuationService:
         preflight_result = self._maybe_run_preflight(asset_data, members)
         if preflight_result is not None and not preflight_result["ready"]:
             return self._build_preflight_insufficient_result(
-                symbol, industry_payload, level, preflight_result,
+                symbol=symbol,
+                provider=industry_result.provider,
+                industry_payload=industry_payload,
+                level=level,
+                preflight=preflight_result,
+                as_of=asset_data.get("as_of"),
             )
 
         peers = self._load_peer_inputs(asset_data, valuation_data, industry_payload)
@@ -164,9 +169,11 @@ class IndustryValuationService:
     @staticmethod
     def _build_preflight_insufficient_result(
         symbol: str,
+        provider: str,
         industry_payload: dict,
         level: str,
         preflight: dict,
+        as_of: str | None,
     ) -> dict:
         warnings = ["qmt_peer_cache_insufficient_for_peer_valuation"] + preflight["warnings"]
         fields = {
@@ -181,7 +188,10 @@ class IndustryValuationService:
             "industry_pb_percentile": None,
             "industry_ps_percentile": None,
             "industry_valuation_label": "industry_peer_cache_insufficient",
-            "industry_valuation_source": "local_csmar_trd_co+qmt_financial+qmt_price",
+            "industry_valuation_source": IndustryValuationService._industry_valuation_source(
+                provider,
+                industry_payload,
+            ),
             "industry_valuation_warnings": warnings,
             "industry_cache_preflight": {
                 "checked_count": preflight["checked_count"],
@@ -201,10 +211,10 @@ class IndustryValuationService:
                     "dataset": "industry_valuation",
                     "symbol": symbol,
                     "status": "partial_success",
-                    "rows": 0,
+                    "rows": preflight["checked_count"],
                     "error": "; ".join(warnings),
                     "error_type": ProviderDataQualityError.error_type,
-                    "as_of": None,
+                    "as_of": as_of,
                 }
             ],
         }

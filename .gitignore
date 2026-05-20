@@ -13,6 +13,7 @@ storage/*.db
 .pytest_cache/
 .pytest_cache_ci/
 pytest-cache-files-*/
+/.tmp_pytest*/
 .coverage
 htmlcov/
 .mypy_cache/

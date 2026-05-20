@@ -4,7 +4,6 @@ from scripts.build_csmar_industry_reference import load_and_clean, write_sqlite
 from services.data.providers.local_csmar_industry_provider import LocalCSMARIndustryProvider
 from services.research.industry_valuation_engine import IndustryValuationService
 
-
 REQUIRED_ROW_DEFAULTS = {
     "Listdt": "2020/1/1",
     "Cuntrycd": "10",

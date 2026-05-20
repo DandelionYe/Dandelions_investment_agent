@@ -8,7 +8,6 @@ from services.data.provider_contracts import (
     ProviderResult,
 )
 from services.data.providers import qmt_peer_valuation_loader as peer_loader_module
-from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
 from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
 from services.research.industry_valuation_engine import (
     IndustryValuationService,

@@ -6,24 +6,14 @@ for a given set of peer symbols before attempting industry valuation.
 
 import os
 from datetime import date, timedelta
-from typing import Any, Sequence
+from typing import Sequence
 
-from services.data.normalizers.common import _first_present, _to_float
-from services.data.normalizers.fundamental_normalizer import (
-    NET_PROFIT_FIELDS,
-    REPORT_PERIOD_FIELDS,
-    REVENUE_FIELDS,
-    _annualize_statement_amount,
-    _latest_record,
-)
 from services.data.provider_contracts import ProviderUnavailableError
-from services.data.providers.qmt_financial_provider import QMT_FINANCIAL_TABLES
 from services.data.providers.qmt_peer_valuation_loader import (
-    BPS_FIELDS,
     TOTAL_VOLUME_FIELDS,
     QMTPeerValuationLoader,
 )
-from services.data.qmt_provider import _env_bool, _import_xtdata, connect_qmt
+from services.data.qmt_provider import _import_xtdata, connect_qmt
 
 _DEFAULT_THRESHOLD = 0.8
 _REQUIRED_FINANCE_FIELDS = ("net_profit_ttm", "revenue_ttm", "bps")
