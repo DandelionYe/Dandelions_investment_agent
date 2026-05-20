@@ -1,3 +1,6 @@
+import json
+import sys
+
 import pytest
 
 from services.data.provider_contracts import ProviderMetadata, ProviderResult
@@ -108,6 +111,127 @@ class _FakeXtData:
 
     def download_history_data(self, symbol, period, start, end, incrementally=True):
         self.download_calls.append((symbol, period, start, end))
+
+
+class _FakeCliMaintenance:
+    """Small fake for exercising the CLI without touching QMT."""
+
+    def __init__(
+        self,
+        first_missing_close: list[str] | None = None,
+        after_missing_close: list[str] | None = None,
+    ) -> None:
+        self.first_missing_close = first_missing_close or []
+        self.after_missing_close = after_missing_close or []
+        self.check_calls: list[dict] = []
+        self.warm_calls: list[list[str]] = []
+
+    def build_peer_universe(
+        self,
+        target_symbols=None,
+        peer_symbols=None,
+        level=None,
+        as_of=None,
+    ) -> dict:
+        peers = list(peer_symbols or ["A.SH", "B.SH"])
+        return {
+            "target_symbols": list(target_symbols or []),
+            "peer_symbols": sorted(set(peers)),
+            "industries": [],
+        }
+
+    def check_price_cache(self, peer_symbols, as_of=None, threshold=None) -> dict:
+        self.check_calls.append({
+            "peer_symbols": list(peer_symbols),
+            "as_of": as_of,
+            "threshold": threshold,
+        })
+        missing = self.first_missing_close if len(self.check_calls) == 1 else self.after_missing_close
+        return _price_preflight_result(peer_symbols, missing, threshold)
+
+    def warm_missing_price_cache(
+        self,
+        missing_symbols,
+        *,
+        as_of=None,
+        history_days=30,
+        period="1d",
+        max_downloads=100,
+        allow_large=False,
+    ) -> dict:
+        del as_of, history_days, max_downloads, allow_large
+        symbols = list(missing_symbols)
+        self.warm_calls.append(symbols)
+        return {
+            "attempted": len(symbols),
+            "succeeded": len(symbols),
+            "failed": 0,
+            "errors": [],
+            "start": "20260420" if symbols else "",
+            "end": "20260520" if symbols else "",
+            "period": period,
+        }
+
+
+def _price_preflight_result(
+    symbols,
+    missing_close: list[str] | None = None,
+    threshold: float | None = None,
+) -> dict:
+    symbol_list = list(symbols)
+    missing_set = set(missing_close or [])
+    close_missing = [symbol for symbol in symbol_list if symbol in missing_set]
+    total = len(symbol_list)
+    close_count = total - len(close_missing)
+    close_coverage = close_count / total if total else 0.0
+    return {
+        "checked_count": total,
+        "finance_ready": True,
+        "price_ready": not close_missing,
+        "share_capital_ready": True,
+        "ready": not close_missing,
+        "threshold": threshold or 0.8,
+        "coverage": {
+            "close": close_coverage,
+            "total_volume": 1.0,
+            "net_profit_ttm": 1.0,
+            "revenue_ttm": 1.0,
+            "bps": 1.0,
+            "peer_valuation_complete": close_coverage,
+        },
+        "counts": {
+            "close": close_count,
+            "total_volume": total,
+            "net_profit_ttm": total,
+            "revenue_ttm": total,
+            "bps": total,
+            "peer_valuation_complete": close_count,
+        },
+        "warnings": ["qmt_peer_price_cache_insufficient"] if close_missing else [],
+        "sample_missing": {
+            "close": close_missing[:10],
+            "total_volume": [],
+            "net_profit_ttm": [],
+            "revenue_ttm": [],
+            "bps": [],
+        },
+        "missing_symbols": {
+            "close": close_missing,
+            "total_volume": [],
+            "net_profit_ttm": [],
+            "revenue_ttm": [],
+            "bps": [],
+        },
+    }
+
+
+def _run_cli(monkeypatch, fake: _FakeCliMaintenance, args: list[str]) -> None:
+    import scripts.warm_qmt_peer_price_cache as cli
+    import services.data.providers.qmt_peer_price_cache_maintenance as mod
+
+    monkeypatch.setattr(mod, "QMTPeerPriceCacheMaintenance", lambda: fake)
+    monkeypatch.setattr(sys, "argv", ["warm_qmt_peer_price_cache.py", *args])
+    cli.main()
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +374,33 @@ def test_warm_calls_download_history_data(monkeypatch):
     assert fake_xtdata.download_calls[0] == ("A.SH", "1d", "20260420", "20260520")
 
 
+def test_warm_download_history_data_without_incrementally_fallback(monkeypatch):
+    class _FakeXtDataNoIncrement:
+        def __init__(self) -> None:
+            self.download_calls: list[tuple] = []
+
+        def download_history_data(self, symbol, period, start, end):
+            self.download_calls.append((symbol, period, start, end))
+
+    fake_xtdata = _FakeXtDataNoIncrement()
+    import services.data.providers.qmt_peer_price_cache_maintenance as mod
+    monkeypatch.setattr(mod, "_import_xtdata", lambda: fake_xtdata)
+    monkeypatch.setattr(mod, "connect_qmt", lambda: None)
+
+    maintenance = QMTPeerPriceCacheMaintenance(
+        industry_provider=_FakeIndustryProvider({}),
+    )
+    result = maintenance.warm_missing_price_cache(
+        missing_symbols=["A.SH"],
+        as_of="2026-05-20",
+    )
+
+    assert result["attempted"] == 1
+    assert result["succeeded"] == 1
+    assert result["failed"] == 0
+    assert fake_xtdata.download_calls == [("A.SH", "1d", "20260420", "20260520")]
+
+
 def test_warm_only_targets_missing_close(monkeypatch):
     """warm_missing_price_cache only receives missing close symbols,
     not total_volume or finance missing ones."""
@@ -319,3 +470,76 @@ def test_preflight_include_missing_symbols(monkeypatch):
 
     result_no_flag = preflight.check(symbols=symbols, threshold=0.5, include_missing_symbols=False)
     assert "missing_symbols" not in result_no_flag
+
+
+# ---------------------------------------------------------------------------
+# Tests: CLI
+# ---------------------------------------------------------------------------
+
+def test_cli_dry_run_writes_outputs_and_does_not_download(monkeypatch, tmp_path):
+    fake = _FakeCliMaintenance(first_missing_close=["A.SH"])
+    json_path = tmp_path / "price_cache.json"
+    markdown_path = tmp_path / "price_cache.md"
+
+    _run_cli(
+        monkeypatch,
+        fake,
+        [
+            "--peer-symbols",
+            "A.SH,B.SH",
+            "--json-output",
+            str(json_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+    )
+
+    output = json.loads(json_path.read_text(encoding="utf-8"))
+    assert output["download"] is None
+    assert output["after"] is None
+    assert output["before"]["missing_symbols"]["close"] == ["A.SH"]
+    assert fake.warm_calls == []
+    assert len(fake.check_calls) == 1
+    assert "Before Download" in markdown_path.read_text(encoding="utf-8")
+
+
+def test_cli_download_requires_yes(monkeypatch):
+    fake = _FakeCliMaintenance(first_missing_close=["A.SH"])
+
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, fake, ["--peer-symbols", "A.SH,B.SH", "--download"])
+
+    assert exc.value.code == 1
+    assert fake.warm_calls == []
+    assert len(fake.check_calls) == 1
+
+
+def test_cli_download_yes_without_missing_still_outputs_after(monkeypatch, tmp_path):
+    fake = _FakeCliMaintenance(first_missing_close=[])
+    json_path = tmp_path / "price_cache.json"
+    markdown_path = tmp_path / "price_cache.md"
+
+    _run_cli(
+        monkeypatch,
+        fake,
+        [
+            "--peer-symbols",
+            "A.SH,B.SH",
+            "--download",
+            "--yes",
+            "--json-output",
+            str(json_path),
+            "--markdown-output",
+            str(markdown_path),
+        ],
+    )
+
+    output = json.loads(json_path.read_text(encoding="utf-8"))
+    assert output["download"]["attempted"] == 0
+    assert output["after"] is not None
+    assert output["after"]["price_ready"] is True
+    assert fake.warm_calls == [[]]
+    assert len(fake.check_calls) == 2
+    markdown = markdown_path.read_text(encoding="utf-8")
+    assert "Download" in markdown
+    assert "After Download" in markdown

@@ -169,7 +169,23 @@ def main() -> None:
             sys.exit(1)
 
         if not missing_close:
-            print("\nNo missing close symbols — nothing to download.")
+            print("\nNo missing close symbols; nothing to download.")
+            download_result = maintenance.warm_missing_price_cache(
+                missing_symbols=[],
+                as_of=args.as_of,
+                history_days=args.history_days,
+                period=args.period,
+                max_downloads=args.max_downloads,
+                allow_large=args.allow_large,
+            )
+            after = maintenance.check_price_cache(
+                peer_symbols=all_peers,
+                as_of=args.as_of,
+                threshold=args.threshold,
+            )
+            print(f"\nAfter: close coverage = {after['coverage']['close']:.1%} "
+                  f"({after['counts']['close']}/{after['checked_count']})")
+            print(f"  price_ready: {after['price_ready']}")
         else:
             print(f"\nDownloading {len(missing_close)} symbols "
                   f"(period={args.period}, days={args.history_days})...")

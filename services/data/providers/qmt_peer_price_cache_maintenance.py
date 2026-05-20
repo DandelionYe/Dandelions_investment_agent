@@ -1,7 +1,7 @@
 """Maintenance tool for QMT peer price cache.
 
 Provides utilities to check and warm missing peer price data for industry
-valuation.  This is a manual/maintenance tool — it is NOT called by the
+valuation. This is a manual maintenance tool; it is not called by the
 main research pipeline.
 """
 
@@ -153,7 +153,16 @@ class QMTPeerPriceCacheMaintenance:
         succeeded = 0
         for symbol in symbols:
             try:
-                xtdata.download_history_data(symbol, period, start, end, incrementally=True)
+                try:
+                    xtdata.download_history_data(
+                        symbol,
+                        period,
+                        start,
+                        end,
+                        incrementally=True,
+                    )
+                except TypeError:
+                    xtdata.download_history_data(symbol, period, start, end)
                 succeeded += 1
             except Exception as exc:
                 errors.append({"symbol": symbol, "error": str(exc)})
