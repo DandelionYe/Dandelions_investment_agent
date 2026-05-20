@@ -8,6 +8,7 @@ from services.data.provider_contracts import (
     ProviderResult,
 )
 from services.data.providers import qmt_peer_valuation_loader as peer_loader_module
+from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
 from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
 from services.research.industry_valuation_engine import (
     IndustryValuationService,
@@ -253,7 +254,8 @@ class _PeerValuationLoaderWithMembers:
         return peers
 
 
-def test_industry_valuation_service_loads_qmt_peer_inputs_by_default():
+def test_industry_valuation_service_loads_qmt_peer_inputs_by_default(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "false")
     members = [f"600{i:03d}.SH" for i in range(25)]
     peer_loader = _PeerValuationLoaderWithMembers()
     service = IndustryValuationService(
@@ -421,3 +423,191 @@ def test_valuation_service_records_industry_failure_without_blocking_base_valuat
         and item["error_type"] == "provider_data_quality"
         for item in result["provider_run_log"]
     )
+
+
+class _PreflightFail:
+    """Preflight that always returns not-ready."""
+
+    def check(self, symbols, as_of=None, threshold=None):
+        return {
+            "checked_count": len(symbols),
+            "finance_ready": False,
+            "price_ready": False,
+            "share_capital_ready": False,
+            "ready": False,
+            "threshold": 0.8,
+            "coverage": {
+                "close": 0.0,
+                "total_volume": 0.0,
+                "net_profit_ttm": 0.0,
+                "revenue_ttm": 0.0,
+                "bps": 0.0,
+                "peer_valuation_complete": 0.0,
+            },
+            "counts": {
+                "close": 0,
+                "total_volume": 0,
+                "net_profit_ttm": 0,
+                "revenue_ttm": 0,
+                "bps": 0,
+                "peer_valuation_complete": 0,
+            },
+            "warnings": [
+                "qmt_peer_price_cache_insufficient",
+                "qmt_finance_cache_insufficient_for_peer_valuation",
+                "qmt_peer_share_capital_insufficient",
+            ],
+            "sample_missing": {
+                "close": list(symbols[:10]),
+                "total_volume": list(symbols[:10]),
+                "net_profit_ttm": list(symbols[:10]),
+                "revenue_ttm": list(symbols[:10]),
+                "bps": list(symbols[:10]),
+            },
+        }
+
+
+class _PreflightPass:
+    """Preflight that always returns ready."""
+
+    def check(self, symbols, as_of=None, threshold=None):
+        return {
+            "checked_count": len(symbols),
+            "finance_ready": True,
+            "price_ready": True,
+            "share_capital_ready": True,
+            "ready": True,
+            "threshold": 0.8,
+            "coverage": {
+                "close": 1.0,
+                "total_volume": 1.0,
+                "net_profit_ttm": 1.0,
+                "revenue_ttm": 1.0,
+                "bps": 1.0,
+                "peer_valuation_complete": 1.0,
+            },
+            "counts": {
+                "close": len(symbols),
+                "total_volume": len(symbols),
+                "net_profit_ttm": len(symbols),
+                "revenue_ttm": len(symbols),
+                "bps": len(symbols),
+                "peer_valuation_complete": len(symbols),
+            },
+            "warnings": [],
+            "sample_missing": {
+                "close": [],
+                "total_volume": [],
+                "net_profit_ttm": [],
+                "revenue_ttm": [],
+                "bps": [],
+            },
+        }
+
+
+def test_preflight_not_ready_skips_peer_loading(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "true")
+    members = [f"600{i:03d}.SH" for i in range(25)]
+    peer_loader = _PeerValuationLoaderWithMembers()
+    service = IndustryValuationService(
+        industry_provider=_IndustryProviderWithMembers(members),
+        peer_valuation_loader=peer_loader,
+        cache_preflight=_PreflightFail(),
+    )
+
+    result = service.build(
+        asset_data={"symbol": "600010.SH", "asset_type": "stock", "as_of": "2026-05-12"},
+        valuation_data={},
+    )
+
+    fields = result["fields"]
+    assert peer_loader.calls == [], "load_peer_inputs should not be called when preflight fails"
+    assert fields["industry_valuation_label"] == "industry_peer_cache_insufficient"
+    assert fields["industry_valid_peer_count_pe"] == 0
+    assert fields["industry_pe_percentile"] is None
+    assert fields["industry_pb_percentile"] is None
+    assert fields["industry_ps_percentile"] is None
+    assert "qmt_peer_cache_insufficient_for_peer_valuation" in fields["industry_valuation_warnings"]
+    assert "qmt_peer_price_cache_insufficient" in fields["industry_valuation_warnings"]
+    assert "qmt_finance_cache_insufficient_for_peer_valuation" in fields["industry_valuation_warnings"]
+    assert "qmt_peer_share_capital_insufficient" in fields["industry_valuation_warnings"]
+    assert result["provider_run_log"][0]["status"] == "partial_success"
+
+
+def test_preflight_pass_proceeds_normally(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "true")
+    members = [f"600{i:03d}.SH" for i in range(25)]
+    peer_loader = _PeerValuationLoaderWithMembers()
+    service = IndustryValuationService(
+        industry_provider=_IndustryProviderWithMembers(members),
+        peer_valuation_loader=peer_loader,
+        cache_preflight=_PreflightPass(),
+    )
+
+    result = service.build(
+        asset_data={"symbol": "600010.SH", "asset_type": "stock", "as_of": "2026-05-12"},
+        valuation_data={},
+    )
+
+    fields = result["fields"]
+    assert peer_loader.calls != [], "load_peer_inputs should be called when preflight passes"
+    assert fields["industry_valuation_label"] != "industry_peer_cache_insufficient"
+    assert fields["industry_pe_percentile"] is not None
+
+
+def test_preflight_disabled_skips_check(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "false")
+    members = [f"600{i:03d}.SH" for i in range(25)]
+    peer_loader = _PeerValuationLoaderWithMembers()
+    service = IndustryValuationService(
+        industry_provider=_IndustryProviderWithMembers(members),
+        peer_valuation_loader=peer_loader,
+        cache_preflight=_PreflightFail(),  # would fail if called
+    )
+
+    result = service.build(
+        asset_data={"symbol": "600010.SH", "asset_type": "stock", "as_of": "2026-05-12"},
+        valuation_data={},
+    )
+
+    fields = result["fields"]
+    assert peer_loader.calls != [], "load_peer_inputs should be called when preflight is disabled"
+    assert fields["industry_valuation_label"] != "industry_peer_cache_insufficient"
+
+
+def test_preflight_skipped_when_peer_inputs_pre_supplied(monkeypatch):
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "true")
+    members = [f"600{i:03d}.SH" for i in range(25)]
+    pre_supplied = [
+        {
+            "symbol": symbol,
+            "name": symbol,
+            "asset_type": "stock",
+            "close": 10,
+            "total_volume": 100,
+            "float_volume": 80,
+            "net_profit_ttm": 1000 / (index + 1),
+            "revenue_ttm": 500,
+            "bps": 10 / (index + 1),
+        }
+        for index, symbol in enumerate(members)
+    ]
+    service = IndustryValuationService(
+        industry_provider=_IndustryProviderWithMembers(members),
+        peer_valuation_loader=None,
+        cache_preflight=_PreflightFail(),  # would fail if called
+    )
+
+    result = service.build(
+        asset_data={
+            "symbol": "600010.SH",
+            "asset_type": "stock",
+            "as_of": "2026-05-12",
+            "industry_peer_inputs": pre_supplied,
+        },
+        valuation_data={},
+    )
+
+    fields = result["fields"]
+    assert fields["industry_valuation_label"] != "industry_peer_cache_insufficient"
+    assert fields["industry_pe_percentile"] is not None

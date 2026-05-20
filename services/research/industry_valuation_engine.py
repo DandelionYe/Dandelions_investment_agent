@@ -4,7 +4,9 @@ from typing import Sequence
 
 from services.data.provider_contracts import ProviderDataQualityError
 from services.data.providers.industry_provider_factory import create_industry_provider
+from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
 from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
+from services.data.qmt_provider import _env_bool
 
 
 @dataclass(frozen=True)
@@ -47,10 +49,12 @@ class IndustryValuationService:
         industry_provider=None,
         peer_valuation_loader: QMTPeerValuationLoader | None = None,
         peer_loader=None,
+        cache_preflight: QMTPeerCachePreflight | None = None,
     ) -> None:
         self.industry_provider = industry_provider or create_industry_provider()
         self.peer_valuation_loader = peer_valuation_loader or QMTPeerValuationLoader()
         self.peer_loader = peer_loader
+        self.cache_preflight = cache_preflight or QMTPeerCachePreflight(self.peer_valuation_loader)
 
     def build(self, asset_data: dict, valuation_data: dict) -> dict:
         if asset_data.get("asset_type") != "stock":
@@ -92,6 +96,12 @@ class IndustryValuationService:
         if not members:
             raise ProviderDataQualityError(
                 f"QMT industry sector has no members for {symbol}"
+            )
+
+        preflight_result = self._maybe_run_preflight(asset_data, members)
+        if preflight_result is not None and not preflight_result["ready"]:
+            return self._build_preflight_insufficient_result(
+                symbol, industry_payload, level, preflight_result,
             )
 
         peers = self._load_peer_inputs(asset_data, valuation_data, industry_payload)
@@ -138,6 +148,66 @@ class IndustryValuationService:
         if not classification_source:
             classification_source = "qmt_sector" if provider == "qmt" else provider
         return f"{classification_source}+qmt_financial+qmt_price"
+
+    def _maybe_run_preflight(
+        self, asset_data: dict, members: list[str],
+    ) -> dict | None:
+        if asset_data.get("industry_peer_inputs"):
+            return None
+        if not _env_bool("QMT_PEER_CACHE_PREFLIGHT", True):
+            return None
+        return self.cache_preflight.check(
+            symbols=members,
+            as_of=asset_data.get("as_of"),
+        )
+
+    @staticmethod
+    def _build_preflight_insufficient_result(
+        symbol: str,
+        industry_payload: dict,
+        level: str,
+        preflight: dict,
+    ) -> dict:
+        warnings = ["qmt_peer_cache_insufficient_for_peer_valuation"] + preflight["warnings"]
+        fields = {
+            "industry_level": industry_payload.get("industry_level", level),
+            "industry_name": industry_payload.get("industry_name", ""),
+            "industry_peer_count": len(industry_payload.get("industry_members") or []),
+            "industry_valid_peer_count": 0,
+            "industry_valid_peer_count_pe": 0,
+            "industry_valid_peer_count_pb": 0,
+            "industry_valid_peer_count_ps": 0,
+            "industry_pe_percentile": None,
+            "industry_pb_percentile": None,
+            "industry_ps_percentile": None,
+            "industry_valuation_label": "industry_peer_cache_insufficient",
+            "industry_valuation_source": "local_csmar_trd_co+qmt_financial+qmt_price",
+            "industry_valuation_warnings": warnings,
+            "industry_cache_preflight": {
+                "checked_count": preflight["checked_count"],
+                "ready": preflight["ready"],
+                "threshold": preflight["threshold"],
+                "finance_ready": preflight["finance_ready"],
+                "price_ready": preflight["price_ready"],
+                "share_capital_ready": preflight["share_capital_ready"],
+                "coverage": preflight["coverage"],
+            },
+        }
+        return {
+            "fields": fields,
+            "provider_run_log": [
+                {
+                    "provider": "qmt",
+                    "dataset": "industry_valuation",
+                    "symbol": symbol,
+                    "status": "partial_success",
+                    "rows": 0,
+                    "error": "; ".join(warnings),
+                    "error_type": ProviderDataQualityError.error_type,
+                    "as_of": None,
+                }
+            ],
+        }
 
     def _load_peer_inputs(
         self,

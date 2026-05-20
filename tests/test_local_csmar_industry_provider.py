@@ -124,6 +124,7 @@ def test_industry_service_uses_local_provider_factory(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_DB", str(db_path))
     monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_MIN_PEERS", "1")
     monkeypatch.setenv("INDUSTRY_MIN_VALID_PEERS", "1")
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "false")
 
     service = IndustryValuationService(peer_valuation_loader=_PeerLoader())
     result = service.build(
