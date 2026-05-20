@@ -14,6 +14,7 @@ from services.data.providers.qmt_peer_valuation_loader import (
     QMTPeerValuationLoader,
 )
 from services.data.qmt_provider import _import_xtdata, connect_qmt
+from services.network.proxy_policy import disable_proxy_for_current_process
 
 _DEFAULT_THRESHOLD = 0.8
 _REQUIRED_FINANCE_FIELDS = ("net_profit_ttm", "revenue_ttm", "bps")
@@ -63,6 +64,11 @@ class QMTPeerCachePreflight:
         detail_map = self.loader._load_instrument_details(xtdata, cleaned)
         financial_map = self.loader._load_financial_metrics(xtdata, cleaned, start, end)
 
+        # Build share capital fallback map for symbols with missing/zero total_volume
+        sc_fallback_map = self._build_share_capital_fallback_map(
+            cleaned, detail_map, price_map,
+        )
+
         counts: dict[str, int] = {field: 0 for field in _REQUIRED_ALL_FIELDS}
         missing: dict[str, list[str]] = {field: [] for field in _REQUIRED_ALL_FIELDS}
 
@@ -75,6 +81,9 @@ class QMTPeerCachePreflight:
 
             detail = detail_map.get(symbol, {})
             total_volume = self.loader._first_float(detail, TOTAL_VOLUME_FIELDS)
+            # Apply fallback if QMT native total_volume is missing/zero
+            if not total_volume or total_volume <= 0:
+                total_volume = sc_fallback_map.get(symbol)
             if total_volume is not None and total_volume > 0:
                 counts["total_volume"] += 1
             else:
@@ -96,6 +105,8 @@ class QMTPeerCachePreflight:
             close = price_map.get(symbol)
             detail = detail_map.get(symbol, {})
             total_volume = self.loader._first_float(detail, TOTAL_VOLUME_FIELDS)
+            if not total_volume or total_volume <= 0:
+                total_volume = sc_fallback_map.get(symbol)
             financial = financial_map.get(symbol, {})
             if (
                 close is not None and close > 0
@@ -160,3 +171,68 @@ class QMTPeerCachePreflight:
             "warnings": [warning],
             "sample_missing": empty_missing,
         }
+
+    def _build_share_capital_fallback_map(
+        self,
+        symbols: list[str],
+        detail_map: dict,
+        price_map: dict,
+    ) -> dict[str, float | None]:
+        """Build total_volume fallback map for symbols with missing/zero QMT total_volume.
+
+        Uses the same AKShare share capital provider and MAX_SYMBOLS limit
+        as qmt_peer_valuation_loader, ensuring preflight and loader are consistent.
+        """
+        from services.data.providers.akshare_share_capital_provider import (
+            _extract_field,
+            _symbol_to_eastmoney_code,
+            get_share_capital_fallback_max_symbols,
+            is_share_capital_fallback_enabled,
+        )
+
+        if not is_share_capital_fallback_enabled():
+            return {}
+
+        max_symbols = get_share_capital_fallback_max_symbols()
+
+        # Find symbols where QMT total_volume is missing/zero
+        needs_fallback = []
+        for symbol in symbols:
+            detail = detail_map.get(symbol, {})
+            tv = self.loader._first_float(detail, TOTAL_VOLUME_FIELDS)
+            if not tv or tv <= 0:
+                needs_fallback.append(symbol)
+
+        if not needs_fallback:
+            return {}
+
+        if len(needs_fallback) > max_symbols:
+            needs_fallback = needs_fallback[:max_symbols]
+
+        result: dict[str, float | None] = {}
+        try:
+            disable_proxy_for_current_process()
+            import akshare as ak
+        except Exception:
+            return {}
+
+        for symbol in needs_fallback:
+            code = _symbol_to_eastmoney_code(symbol)
+            try:
+                df = ak.stock_individual_info_em(symbol=code)
+                if df is None or df.empty:
+                    continue
+
+                tv = _extract_field(df, "总股本")
+                mc = _extract_field(df, "总市值")
+
+                if tv and tv > 0:
+                    result[symbol] = tv
+                elif mc and mc > 0:
+                    close = price_map.get(symbol)
+                    if close and close > 0:
+                        result[symbol] = mc / close
+            except Exception:
+                continue
+
+        return result
