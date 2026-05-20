@@ -247,7 +247,7 @@ industry_valuation_warnings += [
 TRD_Co.csv
 ```
 
-当前文件已经位于仓库根目录，编码为 `utf-8-sig`，字段包含：
+当前文件已移入 `data/raw/csmar/TRD_Co.csv`，编码为 `utf-8-sig`，字段包含：
 
 ```text
 Stkcd, Stknme, Listdt, Conme, Indcd, Indnme,
@@ -257,13 +257,13 @@ PROVINCE, CITY, OWNERSHIPTYPE,
 Curtrd, Sctcd, Statco, Statdt, Markettype, FormerCode
 ```
 
-正式构建时建议仍迁移或复制到：
+正式构建使用：
 
 ```text
 data/raw/csmar/TRD_Co.csv
 ```
 
-构建脚本应支持 `--input TRD_Co.csv` 和 `--input data/raw/csmar/TRD_Co.csv` 两种路径，避免开发阶段因为文件位置阻塞。
+构建脚本仍可通过 `--input` 显式指定其他路径，但仓库约定的本地原始数据目录是 `data/raw/csmar/`。该目录被 `.gitignore` 忽略，避免把 CSMAR 原始数据误提交。
 
 ### 6.2 输出文件
 

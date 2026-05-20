@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 from typing import Sequence
 
 from services.data.provider_contracts import ProviderDataQualityError
-from services.data.providers.qmt_industry_provider import QMTIndustryProvider
+from services.data.providers.industry_provider_factory import create_industry_provider
 from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
 
 
@@ -44,11 +44,11 @@ class IndustryValuationResult:
 class IndustryValuationService:
     def __init__(
         self,
-        industry_provider: QMTIndustryProvider | None = None,
+        industry_provider=None,
         peer_valuation_loader: QMTPeerValuationLoader | None = None,
         peer_loader=None,
     ) -> None:
-        self.industry_provider = industry_provider or QMTIndustryProvider()
+        self.industry_provider = industry_provider or create_industry_provider()
         self.peer_valuation_loader = peer_valuation_loader or QMTPeerValuationLoader()
         self.peer_loader = peer_loader
 
@@ -57,8 +57,16 @@ class IndustryValuationService:
             return {"fields": {}, "provider_run_log": []}
 
         symbol = asset_data["symbol"]
-        level = os.getenv("QMT_INDUSTRY_LEVEL", "SW1")
-        min_valid_peers = int(os.getenv("QMT_INDUSTRY_MIN_VALID_PEERS", "20"))
+        level = _industry_level()
+        min_valid_peers = int(
+            os.getenv(
+                "INDUSTRY_MIN_VALID_PEERS",
+                os.getenv(
+                    "LOCAL_CSMAR_INDUSTRY_MIN_PEERS",
+                    os.getenv("QMT_INDUSTRY_MIN_VALID_PEERS", "20"),
+                ),
+            )
+        )
         max_pe = float(os.getenv("QMT_INDUSTRY_MAX_PE", "300"))
         max_pb = float(os.getenv("QMT_INDUSTRY_MAX_PB", "50"))
         max_ps = float(os.getenv("QMT_INDUSTRY_MAX_PS", "100"))
@@ -102,7 +110,10 @@ class IndustryValuationService:
         fields = result.to_dict()
         warnings = fields.pop("warnings")
         fields["industry_valuation_warnings"] = warnings
-        fields["industry_valuation_source"] = "qmt_sector+qmt_financial+qmt_price"
+        fields["industry_valuation_source"] = self._industry_valuation_source(
+            industry_result.provider,
+            industry_payload,
+        )
 
         status = "success" if not warnings else "partial_success"
         return {
@@ -120,6 +131,13 @@ class IndustryValuationService:
                 }
             ],
         }
+
+    @staticmethod
+    def _industry_valuation_source(provider: str, industry_payload: dict) -> str:
+        classification_source = industry_payload.get("source")
+        if not classification_source:
+            classification_source = "qmt_sector" if provider == "qmt" else provider
+        return f"{classification_source}+qmt_financial+qmt_price"
 
     def _load_peer_inputs(
         self,
@@ -214,6 +232,13 @@ def _positive_float(value: float | None) -> float | None:
     if number <= 0:
         return None
     return number
+
+
+def _industry_level() -> str:
+    provider = os.getenv("INDUSTRY_CLASSIFICATION_PROVIDER", "local_csmar").strip().lower()
+    if provider == "qmt":
+        return os.getenv("QMT_INDUSTRY_LEVEL", "SW1")
+    return os.getenv("LOCAL_CSMAR_INDUSTRY_LEVEL", "CSMAR_ZX")
 
 
 def calculate_peer_multiples(peer: PeerValuationInput) -> dict:

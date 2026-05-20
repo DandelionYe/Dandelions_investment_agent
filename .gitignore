@@ -37,3 +37,6 @@ output_*/
 /test_announcement.py
 /celerybeat-schedule*
 local_review_archive/
+data/raw/
+storage/reference/*.sqlite
+storage/reference/*.md
