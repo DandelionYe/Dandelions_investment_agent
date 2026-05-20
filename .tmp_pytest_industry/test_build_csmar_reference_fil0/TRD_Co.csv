@@ -1,0 +1,6 @@
+﻿Listdt,Cuntrycd,Conme,Conme_en,Indcd,Indnme,Nindcd,Nindnme,Nnindcd,Nnindnme,IndcdZX,IndnmeZX,Estbdt,PROVINCE,PROVINCECODE,CITY,CITYCODE,OWNERSHIPTYPE,OWNERSHIPTYPECODE,Favaldt,Curtrd,Ipoprm,Ipoprc,Ipocur,Nshripo,Parvcur,Ipodt,Parval,Crcd,Statdt,Commnt,FormerCode,Stkcd,Stknme,Sctcd,Statco,Markettype
+2020/1/1,10,Company,Company,1,Old,C,Manufacturing,C15,Beverage,C15,Beverage,2020/1/1,Test,000000,Test City,000000,Private,P,2020/1/1,CNY,0,1,CNY,1,CNY,2020/1/1,1,,2026/1/1,,,600519,Moutai,1,A,1
+2020/1/1,10,Company,Company,1,Old,C,Manufacturing,C15,Beverage,C15,Beverage,2020/1/1,Test,000000,Test City,000000,Private,P,2020/1/1,CNY,0,1,CNY,1,CNY,2020/1/1,1,,2026/1/1,,,858,Wuliangye,2,A,4
+2020/1/1,10,Company,Company,1,Old,C,Manufacturing,I65,Software,I65,Software,2020/1/1,Test,000000,Test City,000000,Private,P,2020/1/1,CNY,0,1,CNY,1,CNY,2020/1/1,1,,2026/1/1,,,4,Special,2,N,4
+2020/1/1,10,Company,Company,1,Old,C,Manufacturing,C15,Beverage,C15,Beverage,2020/1/1,Test,000000,Test City,000000,Private,P,2020/1/1,CNY,0,1,CNY,1,CNY,2020/1/1,1,,2026/1/1,,,3,Delisted,2,D,4
+2020/1/1,10,Company,Company,1,Old,C,Manufacturing,C15,Beverage,C15,Beverage,2020/1/1,Test,000000,Test City,000000,Private,P,2020/1/1,CNY,0,1,CNY,1,CNY,2020/1/1,1,,2026/1/1,,,900001,B Share,1,A,2

@@ -1,3 +1,206 @@
+# 2026-05-20 推进备注：当前实现核实与未落地项
+
+本备注基于 2026-05-20 在本机已启动 PowerShell 开发服务、已手动启动 XtMiniQMT 后的只读核实结果。它不是完成声明，而是后续继续推进时优先阅读的状态记录。
+
+## A. 已实际落地的范围
+
+```text
+1. TRD_Co.csv 已从仓库根目录迁移到 data/raw/csmar/TRD_Co.csv。
+2. data/raw/ 已加入 .gitignore，避免误提交 CSMAR 原始数据。
+3. 已新增 scripts/build_csmar_industry_reference.py。
+4. 已生成 storage/reference/csmar_industry.sqlite 和 build report。
+5. 已新增 LocalCSMARIndustryProvider。
+6. 已新增 industry_provider_factory。
+7. IndustryValuationService 默认行业分类来源已从 QMT sector 改为 create_industry_provider()。
+8. 行业分类当前默认可使用 local_csmar，同行估值输入仍使用 QMT。
+9. 600410.SH、002624.SZ、000419.SZ、600519.SH 等样例能解析出本地 CSMAR 行业和同行池。
+```
+
+## B. 尚未落地或尚未完成验收的设计项
+
+以下内容在本文档后续方案中有设计，但截至本次核实时尚未完整实现：
+
+```text
+1. scripts/check_qmt_finance_cache.py 尚不存在。
+   影响：无法用独立脚本检查 MiniQMT 可读 Finance 缓存覆盖率，也无法输出 JSON / Markdown 预检报告。
+
+2. scripts/sync_qmt_finance_cache.ps1 尚不存在。
+   影响：完整版 datadir\Finance 到 userdata_mini\datadir\Finance 的同步仍依赖手工命令，缺少可复用脚本和复验闭环。
+
+3. QMT_FINANCE_CACHE_PREFLIGHT 运行时预检尚未接入。
+   影响：IndustryValuationService 当前会直接请求同行估值输入；不会先判断 MiniQMT 财务缓存覆盖率是否达到阈值。
+
+4. qmt_finance_cache_insufficient_for_peer_valuation 这类明确 warning 尚未实现。
+   当前只会出现类似 “Industry PE valid peer count X is below 20.” 的样本不足提示。
+
+5. INDUSTRY_CLASSIFICATION_FALLBACK_PROVIDER 尚未实现。
+   影响：local_csmar SQLite 不可用时，没有按配置回退到 qmt 或 disabled 的完整策略。
+
+6. create_peer_valuation_loader() 尚未实现。
+   当前 IndustryValuationService 仍直接实例化 QMTPeerValuationLoader。
+
+7. README / 用户文档中的配置说明尚未系统同步核对。
+   特别是 QMT_INDUSTRY_AUTO_DOWNLOAD、QMT_FINANCE_CACHE_PREFLIGHT、Finance 目录同步边界等说明，需要后续统一。
+
+8. “LLM 输出瘦身”尚未专项验收。
+   当前未发现完整 industry_members 被直接塞入报告，但仍需专门检查 prompt / audit metadata / evidence bundle 是否只保留摘要和少量代表性同行。
+
+9. 报告中 industry_source_snapshot_date / fallback_used 等字段尚未完整展示。
+   LocalCSMARIndustryProvider 已能返回 snapshot_date 和 fallback 标记，但报告层是否完整披露仍需后续验收。
+```
+
+## C. 本次发现的新问题：行业分位为空不只是 Finance 缓存问题
+
+同步完整版 `datadir\Finance` 到 MiniQMT `userdata_mini\datadir\Finance` 后，目标股票和多数同行的财务表已经能通过 `xtdata.get_financial_data()` 读到。但行业 PE / PB / PS 分位仍可能显示“暂无”，本次核实发现主要瓶颈是 **同行 K 线 / 最新价格缓存不足**。
+
+抽样结果：
+
+```text
+600410.SH 所属 CSMAR_ZX I65 软件和信息技术服务业：
+  行业成员数：360
+  财务非空：360
+  net_profit_ttm / revenue_ttm / bps 可用：约 336
+  最新价格 close 可用：2
+  最终有效 PE / PB / PS 样本：1 / 2 / 2
+
+002624.SZ 所属 CSMAR_ZX I64 互联网和相关服务：
+  行业成员数：60
+  财务可用：60
+  最新价格 close 可用：0
+  最终有效 PE / PB / PS 样本：0 / 0 / 0
+
+000419.SZ 所属 CSMAR_ZX F52 零售业：
+  行业成员数：93
+  财务可用：约 92
+  最新价格 close 可用：0
+  最终有效 PE / PB / PS 样本：0 / 0 / 0
+
+601728.SH 所属 CSMAR_ZX I63 电信、广播电视和卫星传输服务：
+  行业成员数：22
+  财务可用：约 21
+  最新价格 close 可用：1
+  最终有效 PE / PB / PS 样本：0 / 1 / 0
+```
+
+结论：
+
+```text
+Finance 同步只解决财务表。
+行业横截面估值还需要同行最新价格和股本。
+当前 QMTPeerValuationLoader._load_latest_prices() 使用 get_market_data_ex(count=1) 读取同行最新 K 线。
+如果 MiniQMT 本地没有这些同行的 K 线缓存，close 会返回 None。
+close 不足时，即使财务字段齐全，也无法计算 PE / PB / PS 行业分位。
+```
+
+因此，后续预检不能只检查 `Finance`，还必须增加同行价格缓存预检：
+
+```text
+qmt_connected
+qmt_finance_cache_ready
+qmt_peer_price_cache_ready
+qmt_peer_share_capital_ready
+```
+
+只有 `qmt_finance_cache_ready=true` 且 `qmt_peer_price_cache_ready=true` 时，才应输出行业 PE / PB / PS 分位。否则应输出行业名称、同行池数量、有效样本数和明确 warning。
+
+## D. 本次发现的新问题：个股估值字段“暂无”的具体原因
+
+### D.1 PE TTM / PS TTM 为空
+
+个股 PE TTM / PS TTM 由当前逻辑派生：
+
+```text
+market_cap = close * total_volume
+pe_ttm     = market_cap / net_profit_ttm
+ps_ttm     = market_cap / revenue_ttm
+```
+
+若 `get_instrument_detail()` 返回的 `TotalVolume` 为 0 或缺失，则 `market_cap` 为空，PE TTM / PS TTM 会显示“暂无”。
+
+本次样例：
+
+```text
+601728.SH 中国电信：
+  close = 6.67
+  net_profit_ttm / revenue_ttm / bps 均可用
+  但 get_instrument_detail() 返回 TotalVolume=0.0、FloatVolume=0.0
+  因此 market_cap、PE TTM、PS TTM 均为空
+  PB MRQ 可用，因为 PB 只需要 close / bps
+```
+
+后续需要为 `total_volume` 增加备用来源，例如：
+
+```text
+1. QMT 其他基础资料字段或板块成分资料。
+2. AKShare / Tushare / 本地基础资料表中的总股本。
+3. 若可获得总市值，则反推 total_volume = market_cap / close。
+```
+
+### D.2 PE 历史分位为空
+
+PE 历史分位只在当前 `pe_ttm > 0` 且历史样本足够时计算。若目标公司当前亏损导致 `pe_ttm <= 0`，当前逻辑不会计算 PE 历史分位。
+
+本次样例：
+
+```text
+600410.SH 华胜天成：
+  net_profit_ttm < 0
+  pe_ttm = -66.46
+  PE 历史分位 = 暂无
+  PB 历史分位 / PS 历史分位可计算
+```
+
+这属于当前逻辑的预期行为，但报告层应更明确地区分：
+
+```text
+暂无，因为亏损或 PE 无效
+暂无，因为历史样本不足
+暂无，因为价格或股本缺失
+```
+
+### D.3 股息率为空
+
+当前 QMT 派生估值逻辑中，`dividend_yield` 直接设为 `None`。AKShare 估值补充只有在核心估值字段整体缺失时才触发，并且当前合并逻辑使用 `setdefault`，已有 key 即使值为 `None` 也不会被后续来源覆盖。
+
+因此，股息率在 QMT 路径下经常必然显示“暂无”。
+
+后续需要明确选择一种实现方式：
+
+```text
+1. 从 AKShare 估值接口补充股息率，并允许覆盖 None。
+2. 从 QMT 分红/除权除息数据计算近 12 个月现金分红收益率。
+3. 从本地分红表或外部基础数据库引入股息率字段。
+```
+
+### D.4 个股历史分位与行业横截面分位需要区分
+
+报告中存在两类分位：
+
+```text
+pe_percentile / pb_percentile / ps_percentile
+  个股历史分位，基于当前估值倍数和历史价格近似计算。
+
+industry_pe_percentile / industry_pb_percentile / industry_ps_percentile
+  行业横截面分位，基于同行池当前估值倍数计算。
+```
+
+本次核实中，部分股票的个股历史分位可用，但行业横截面分位不可用，原因是同行最新价样本不足。后续 UI 和报告应避免把这两类“暂无”混在一起解释。
+
+## E. 后续优先级建议
+
+```text
+P0. 补充 check_qmt_finance_cache.py，并扩展为 finance + price + share_capital 三类缓存预检。
+P0. 行业估值运行前接入预检；缓存不足时返回结构化 warning，不强行计算分位。
+P0. 查清 MiniQMT 批量补齐同行 K 线缓存的入口或可行 API，必要时新增独立维护脚本。
+P1. 为 total_volume 增加备用来源，解决 601728.SH 这类 TotalVolume=0 导致 PE/PS 为空的问题。
+P1. 实现股息率补充源，并修正 None 字段不能被补充来源覆盖的问题。
+P1. 实现或删除未接入的 fallback 配置，避免配置项误导。
+P2. 报告层增强“暂无”的原因披露，区分亏损、样本不足、价格缺失、股本缺失、股息数据缺失。
+P2. 专项验收 LLM prompt / evidence bundle 是否没有泄露完整同行列表。
+```
+
+---
+
 # Dandelions_investment_agent 行业功能改造计划 v3
 
 > 适用仓库：`DandelionYe/Dandelions_investment_agent`  
