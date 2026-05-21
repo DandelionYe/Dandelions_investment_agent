@@ -232,10 +232,24 @@ class QMTPeerCachePreflight:
                 eva_data = eva_provider.get_batch_share_capital(needs_fallback)
                 for symbol in needs_fallback:
                     data = eva_data.get(symbol)
-                    if data and _positive_float(data.get("total_volume")):
-                        eva_values[symbol] = data
-                    else:
+                    if not data:
                         still_needs_fallback.append(symbol)
+                        continue
+                    total_volume = _positive_float(data.get("total_volume"))
+                    source = "local_csmar_eva_structure"
+                    if total_volume is None:
+                        market_cap = _positive_float(data.get("market_cap"))
+                        close = _positive_float(price_map.get(symbol))
+                        if market_cap is not None and close is not None:
+                            total_volume = market_cap / close
+                            source = "local_csmar_eva_structure+inferred_from_market_value"
+                    if total_volume is None or total_volume <= 0:
+                        still_needs_fallback.append(symbol)
+                        continue
+                    filled = dict(data)
+                    filled["total_volume"] = total_volume
+                    filled["source"] = source
+                    eva_values[symbol] = filled
             else:
                 still_needs_fallback = list(needs_fallback)
         else:

@@ -41,15 +41,14 @@ def _stkcd_to_qmt(stkcd: str) -> str | None:
     """
     if len(stkcd) != 6 or not stkcd.isdigit():
         return None
-    prefix = stkcd[:1]
     prefix2 = stkcd[:2]
     prefix3 = stkcd[:3]
 
-    # SH: 60xxxx, 68xxxx, 900xxx (B股)
-    if prefix == "6":
+    # SH A-shares: 600/601/603/605/688/689.
+    if prefix3 in {"600", "601", "603", "605", "688", "689"}:
         return f"{stkcd}.SH"
-    # SZ: 00xxxx, 30xxxx, 002xxx, 200xxx (B股)
-    if prefix in ("0", "3", "2"):
+    # SZ A-shares: 000/001/002/003/300/301. Exclude 200xxx B-shares.
+    if prefix3 in {"000", "001", "002", "003", "300", "301"}:
         return f"{stkcd}.SZ"
     # BJ: 43xxxx, 83xxxx, 87xxxx, 92xxxx
     if prefix2 in ("43", "83", "87") or prefix3 == "920":

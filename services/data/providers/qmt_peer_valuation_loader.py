@@ -234,13 +234,21 @@ class QMTPeerValuationLoader:
                         still_missing.append(peer)
                         continue
                     total_volume = _positive_float(data.get("total_volume"))
+                    source = "local_csmar_eva_structure"
+                    if total_volume is None:
+                        market_cap = _positive_float(data.get("market_cap"))
+                        close = _positive_float(peer.get("close"))
+                        if market_cap is not None and close is not None:
+                            total_volume = market_cap / close
+                            source = "local_csmar_eva_structure+inferred_from_market_value"
                     if total_volume is not None and total_volume > 0:
                         peer["total_volume"] = total_volume
                         peer["share_capital_fallback_used"] = True
-                        peer["share_capital_fallback_source"] = "local_csmar_eva_structure"
+                        peer["share_capital_fallback_source"] = source
                         eva_filled += 1
                     else:
                         still_missing.append(peer)
+                        continue
                     existing_float_volume = _positive_float(peer.get("float_volume"))
                     float_volume = _positive_float(data.get("float_volume"))
                     if float_volume is not None and existing_float_volume is None:

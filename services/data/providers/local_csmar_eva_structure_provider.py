@@ -102,20 +102,15 @@ class LocalCSMAREVAStructureProvider:
         if row is None:
             return self._empty_result(symbol, started, f"symbol {symbol} not in eva_structure_latest")
 
-        # Check staleness
         end_date_str = row.get("end_date")
-        warning = None
-        if end_date_str:
-            try:
-                field_date = datetime.strptime(str(end_date_str), "%Y-%m-%d").date()
-                age = (date.today() - field_date).days
-                if age > _max_stale_days():
-                    warning = (
-                        f"EVA data is {age} days old (limit {_max_stale_days()}), "
-                        f"last updated {end_date_str}"
-                    )
-            except (ValueError, TypeError):
-                warning = f"EVA has unparseable end_date: {end_date_str}"
+        stale_warning = _stale_warning(end_date_str)
+        if stale_warning:
+            return self._empty_result(
+                symbol,
+                started,
+                stale_warning,
+                error_type=ProviderDataQualityError.error_type,
+            )
 
         total_volume = _positive_float(row.get("total_volume"))
         float_volume = _positive_float(row.get("float_volume"))
@@ -142,9 +137,6 @@ class LocalCSMAREVAStructureProvider:
         if equity_per_share is not None and equity_per_share > 0:
             data["equity_per_share"] = equity_per_share
 
-        if warning:
-            data["warnings"] = [warning]
-
         return ProviderResult(
             provider=self.provider,
             dataset=self.dataset,
@@ -155,8 +147,6 @@ class LocalCSMAREVAStructureProvider:
             metadata=ProviderMetadata(
                 source_url=f"sqlite:///{self._db_path}",
                 success=True,
-                error=warning,
-                error_type=ProviderDataQualityError.error_type if warning else None,
                 latency_ms=int((perf_counter() - started) * 1000),
             ),
         )
@@ -191,30 +181,24 @@ class LocalCSMAREVAStructureProvider:
             if not symbol:
                 continue
 
-            total_volume = _positive_float(row.get("total_volume"))
-            if total_volume is None or total_volume <= 0:
+            end_date_str = row.get("end_date")
+            if _stale_warning(end_date_str, today=today, stale_limit=stale_limit):
                 continue
 
-            # Check staleness
-            end_date_str = row.get("end_date")
-            if end_date_str:
-                try:
-                    field_date = datetime.strptime(str(end_date_str), "%Y-%m-%d").date()
-                    age = (today - field_date).days
-                    if age > stale_limit:
-                        continue
-                except (ValueError, TypeError):
-                    continue
+            total_volume = _positive_float(row.get("total_volume"))
+            market_cap = _positive_float(row.get("market_cap"))
+            if total_volume is None and market_cap is None:
+                continue
 
             data: dict[str, Any] = {
                 "symbol": symbol,
-                "total_volume": total_volume,
                 "source": self.provider,
             }
+            if total_volume is not None:
+                data["total_volume"] = total_volume
             float_volume = _positive_float(row.get("float_volume"))
             if float_volume is not None and float_volume > 0:
                 data["float_volume"] = float_volume
-            market_cap = _positive_float(row.get("market_cap"))
             if market_cap is not None and market_cap > 0:
                 data["market_cap"] = market_cap
 
@@ -256,7 +240,14 @@ class LocalCSMAREVAStructureProvider:
 
     # -- result helpers ----------------------------------------------------
 
-    def _empty_result(self, symbol: str, started: float, warning: str) -> ProviderResult:
+    def _empty_result(
+        self,
+        symbol: str,
+        started: float,
+        warning: str,
+        *,
+        error_type: str | None = None,
+    ) -> ProviderResult:
         logger.debug("EVA provider empty result for %s: %s", symbol, warning)
         return ProviderResult(
             provider=self.provider,
@@ -269,6 +260,7 @@ class LocalCSMAREVAStructureProvider:
                 source_url=f"sqlite:///{self._db_path}",
                 success=True,
                 error=warning,
+                error_type=error_type,
                 latency_ms=int((perf_counter() - started) * 1000),
             ),
         )
@@ -288,3 +280,26 @@ def _positive_float(value: Any) -> float | None:
     if math.isnan(number) or math.isinf(number) or number <= 0:
         return None
     return number
+
+
+def _stale_warning(
+    end_date_str: Any,
+    *,
+    today: date | None = None,
+    stale_limit: int | None = None,
+) -> str | None:
+    if not end_date_str:
+        return "EVA has missing end_date"
+    effective_today = today or date.today()
+    effective_limit = stale_limit if stale_limit is not None else _max_stale_days()
+    try:
+        field_date = datetime.strptime(str(end_date_str), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return f"EVA has unparseable end_date: {end_date_str}"
+    age = (effective_today - field_date).days
+    if age > effective_limit:
+        return (
+            f"EVA data is {age} days old (limit {effective_limit}), "
+            f"last updated {end_date_str}"
+        )
+    return None

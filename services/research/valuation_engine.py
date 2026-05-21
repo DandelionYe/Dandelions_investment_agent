@@ -244,21 +244,16 @@ class ValuationService:
             return False
 
         result = self.eva_provider.get_latest_share_capital(symbol)
-        provider_run_log.append({
-            "provider": result.provider,
-            "dataset": result.dataset,
-            "symbol": symbol,
-            "status": "success" if result.data.get("total_volume") else "no_usable_data",
-            "rows": 1 if result.data.get("total_volume") else 0,
-            "error": result.metadata.error,
-            "error_type": result.metadata.error_type,
-            "as_of": str(date.today()),
-        })
-
         data = result.data
         eva_total_volume = _to_float(data.get("total_volume"))
         eva_market_cap = _to_float(data.get("market_cap"))
         eva_float_volume = _to_float(data.get("float_volume"))
+        available_fields = [
+            field
+            for field in ("total_volume", "market_cap", "float_volume")
+            if _to_float(data.get(field)) is not None
+        ]
+        applied_fields = []
 
         derived = False
         source_tag = "local_csmar_eva_structure"
@@ -266,22 +261,34 @@ class ValuationService:
 
         if eva_total_volume and eva_total_volume > 0:
             basic_info["total_volume"] = eva_total_volume
+            applied_fields.append("total_volume")
             if eva_float_volume and eva_float_volume > 0:
                 existing_float_volume = _to_float(
                     basic_info.get("float_volume") or basic_info.get("FloatVolume")
                 )
                 if not existing_float_volume or existing_float_volume <= 0:
                     basic_info["float_volume"] = eva_float_volume
+                    applied_fields.append("float_volume")
             derived = True
         elif eva_market_cap and eva_market_cap > 0 and close > 0:
             inferred_tv = eva_market_cap / close
             if inferred_tv > 0:
                 basic_info["total_volume"] = inferred_tv
+                applied_fields.extend(["market_cap", "total_volume_inferred"])
                 derived = True
                 source_tag = "local_csmar_eva_structure+inferred_from_market_value"
                 method_tag = "share_capital_from_local_csmar_eva_structure_inferred"
 
         if not derived:
+            provider_run_log.append(
+                self._eva_run_log_entry(
+                    result=result,
+                    symbol=symbol,
+                    status="available_not_applied" if available_fields else "no_usable_data",
+                    available_fields=available_fields,
+                    applied_fields=applied_fields,
+                )
+            )
             return False
 
         valuation_data.update(self.normalizer.derive_from_qmt(asset_data))
@@ -292,7 +299,38 @@ class ValuationService:
             calculation_method = (calc + " + " + method_tag).strip()
             valuation_data["calculation_method"] = calculation_method
             metadata["calculation_method"] = calculation_method
+        provider_run_log.append(
+            self._eva_run_log_entry(
+                result=result,
+                symbol=symbol,
+                status="success",
+                available_fields=available_fields,
+                applied_fields=applied_fields,
+            )
+        )
         return True
+
+    def _eva_run_log_entry(
+        self,
+        *,
+        result,
+        symbol: str,
+        status: str,
+        available_fields: list[str],
+        applied_fields: list[str],
+    ) -> dict:
+        return {
+            "provider": result.provider,
+            "dataset": result.dataset,
+            "symbol": symbol,
+            "status": status,
+            "rows": 1 if result.raw is not None else 0,
+            "error": result.metadata.error,
+            "error_type": result.metadata.error_type,
+            "as_of": str(date.today()),
+            "fields_available": available_fields,
+            "fields_applied": applied_fields,
+        }
 
     def _try_csmar_daily_derived_fallback(
         self,

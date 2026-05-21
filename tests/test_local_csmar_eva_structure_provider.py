@@ -9,6 +9,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from scripts.build_csmar_eva_structure_reference import _stkcd_to_qmt
 from services.data.providers.local_csmar_eva_structure_provider import (
     LocalCSMAREVAStructureProvider,
     _positive_float,
@@ -255,10 +256,11 @@ def test_very_stale_data_returns_warning():
         result = provider.get_latest_share_capital("000001.SZ")
 
         assert result.metadata.success is True
-        # 500 > 460, should have warning but data still returned
+        # 500 > 460, should be treated as no usable fallback data.
         assert result.metadata.error is not None
+        assert result.metadata.error_type == "provider_data_quality"
         assert "old" in result.metadata.error.lower()
-        assert result.data.get("total_volume") is not None
+        assert result.data.get("total_volume") is None
     finally:
         shutil.rmtree(td, ignore_errors=True)
 
@@ -310,16 +312,19 @@ def test_batch_returns_multiple_symbols():
         shutil.rmtree(td, ignore_errors=True)
 
 
-def test_batch_excludes_zero_total_volume():
+def test_batch_keeps_market_cap_only_for_inference():
     td = _make_tmp_dir()
     try:
         db = os.path.join(td, "test.sqlite")
         _create_test_db(db)
         provider = LocalCSMAREVAStructureProvider(db_path=db)
 
-        result = provider.get_batch_share_capital(["000002.SZ"])
+        result = provider.get_batch_share_capital(["000002.SZ", "000003.SZ"])
 
-        assert "000002.SZ" not in result  # total_volume is 0
+        assert result["000002.SZ"].get("total_volume") is None
+        assert result["000002.SZ"]["market_cap"] == pytest.approx(100000000.0)
+        assert result["000003.SZ"].get("total_volume") is None
+        assert result["000003.SZ"]["market_cap"] == pytest.approx(50000000.0)
     finally:
         shutil.rmtree(td, ignore_errors=True)
 
@@ -351,6 +356,15 @@ def test_positive_float():
     assert _positive_float(42) == pytest.approx(42.0)
 
 
+def test_build_symbol_mapping_excludes_b_shares():
+    assert _stkcd_to_qmt("000001") == "000001.SZ"
+    assert _stkcd_to_qmt("002624") == "002624.SZ"
+    assert _stkcd_to_qmt("600410") == "600410.SH"
+    assert _stkcd_to_qmt("920001") == "920001.BJ"
+    assert _stkcd_to_qmt("200041") is None
+    assert _stkcd_to_qmt("900947") is None
+
+
 # ---------------------------------------------------------------------------
 # Tests: build script
 # ---------------------------------------------------------------------------
@@ -375,6 +389,8 @@ def test_build_script_creates_tables():
         writer.writerow(["1", "2026/3/31", "100", "TestA", "1.1e10", "25",
                          "6e9", "1.2e10", "1e9", "8e8", "5.1", "3.6"])
         writer.writerow(["600410", "2026/3/31", "200", "TestB", "2e9", "15",
+                         "3e9", "5e9", "5e8", "4e8", "4.0", "7.0"])
+        writer.writerow(["200041", "2026/3/31", "300", "TestBShare", "2e9", "15",
                          "3e9", "5e9", "5e8", "4e8", "4.0", "7.0"])
 
     # Monkey-patch the module paths

@@ -354,6 +354,7 @@ class TestValuationEngineShareCapitalFallback:
         from services.research.valuation_engine import ValuationService
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
 
         fake_sc_result = type("R", (), {
             "provider": "akshare",
@@ -389,6 +390,128 @@ class TestValuationEngineShareCapitalFallback:
         # market_cap / close = 6.67e10 / 6.67 = 1e10
         assert valuation["market_cap"] is not None
         assert valuation["pe_ttm"] is not None
+
+    def test_eva_market_cap_only_infers_total_volume_and_logs_success(self, monkeypatch):
+        from services.data.normalizers.valuation_normalizer import ValuationNormalizer
+        from services.research.valuation_engine import ValuationService
+
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "true")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
+
+        class FakeEVAProvider:
+            def get_latest_share_capital(self, symbol):
+                return type("R", (), {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "data": {"market_cap": 6.67e10},
+                    "raw": {"symbol": symbol},
+                    "metadata": type("M", (), {
+                        "success": True, "error": None, "error_type": None,
+                    })(),
+                })()
+
+        class FakeSCProvider:
+            def fetch_share_capital(self, symbol):
+                raise AssertionError("AKShare should not be called when EVA can infer total_volume")
+
+        class NoopIndustryService:
+            def build(self, asset_data, valuation_data):
+                return {"fields": {}, "provider_run_log": []}
+
+        service = ValuationService(
+            normalizer=ValuationNormalizer(),
+            share_capital_provider=FakeSCProvider(),
+            industry_service=NoopIndustryService(),
+            eva_provider=FakeEVAProvider(),
+        )
+        asset_data = {
+            "symbol": "600410.SH",
+            "asset_type": "stock",
+            "data_source": "qmt",
+            "price_data": {"close": 6.67},
+            "basic_info": {"total_volume": 0, "float_volume": 0},
+            "fundamental_data": {"net_profit_ttm": 300, "revenue_ttm": 5000, "bps": 5},
+        }
+
+        result = service.build(asset_data)
+        valuation = result["data"]["valuation_data"]
+        eva_log = [
+            item for item in result["provider_run_log"]
+            if item["provider"] == "local_csmar_eva_structure"
+        ][0]
+
+        assert valuation["market_cap"] == pytest.approx(6.67e10)
+        assert "share_capital_from_local_csmar_eva_structure_inferred" in valuation["calculation_method"]
+        assert eva_log["status"] == "success"
+        assert eva_log["fields_applied"] == ["market_cap", "total_volume_inferred"]
+
+    def test_eva_no_usable_data_falls_through_to_akshare(self, monkeypatch):
+        from services.data.normalizers.valuation_normalizer import ValuationNormalizer
+        from services.research.valuation_engine import ValuationService
+
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "true")
+        monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
+
+        class FakeEVAProvider:
+            def get_latest_share_capital(self, symbol):
+                return type("R", (), {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "data": {"symbol": symbol},
+                    "raw": None,
+                    "metadata": type("M", (), {
+                        "success": True,
+                        "error": "EVA data is stale",
+                        "error_type": "provider_data_quality",
+                    })(),
+                })()
+
+        class FakeSCProvider:
+            def __init__(self):
+                self.called = False
+
+            def fetch_share_capital(self, symbol):
+                self.called = True
+                return type("R", (), {
+                    "provider": "akshare",
+                    "dataset": "stock_individual_info_em",
+                    "data": {"total_volume": 1e10},
+                    "metadata": type("M", (), {
+                        "success": True, "error": None, "error_type": None,
+                    })(),
+                })()
+
+        class NoopIndustryService:
+            def build(self, asset_data, valuation_data):
+                return {"fields": {}, "provider_run_log": []}
+
+        sc_provider = FakeSCProvider()
+        service = ValuationService(
+            normalizer=ValuationNormalizer(),
+            share_capital_provider=sc_provider,
+            industry_service=NoopIndustryService(),
+            eva_provider=FakeEVAProvider(),
+        )
+        asset_data = {
+            "symbol": "600410.SH",
+            "asset_type": "stock",
+            "data_source": "qmt",
+            "price_data": {"close": 6.67},
+            "basic_info": {"total_volume": 0, "float_volume": 0},
+            "fundamental_data": {"net_profit_ttm": 300, "revenue_ttm": 5000, "bps": 5},
+        }
+
+        result = service.build(asset_data)
+
+        assert sc_provider.called is True
+        assert result["data"]["valuation_data"]["market_cap"] == pytest.approx(6.67e10)
+        eva_log = [
+            item for item in result["provider_run_log"]
+            if item["provider"] == "local_csmar_eva_structure"
+        ][0]
+        assert eva_log["status"] == "no_usable_data"
+        assert eva_log["error_type"] == "provider_data_quality"
 
     def test_fallback_failure_does_not_block(self, monkeypatch):
         """When fallback fails, main flow continues. pb_mrq is still available via close/bps."""
@@ -864,3 +987,63 @@ class TestPreflightShareCapitalFallback:
             warning.startswith("qmt_peer_share_capital_fallback_skipped_by_limit")
             for warning in result["warnings"]
         )
+
+
+def test_peer_loader_eva_market_cap_only_infers_total_volume(monkeypatch):
+    from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
+
+    monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "true")
+
+    class FakeEVAProvider:
+        def get_batch_share_capital(self, symbols):
+            return {
+                symbols[0]: {
+                    "market_cap": 1000.0,
+                    "source": "local_csmar_eva_structure",
+                }
+            }
+
+    loader = QMTPeerValuationLoader(eva_provider=FakeEVAProvider())
+    peers = [{"symbol": "600410.SH", "close": 10.0, "total_volume": 0, "float_volume": 0}]
+
+    loader._apply_share_capital_fallback(peers)
+
+    assert peers[0]["total_volume"] == pytest.approx(100.0)
+    assert (
+        peers[0]["share_capital_fallback_source"]
+        == "local_csmar_eva_structure+inferred_from_market_value"
+    )
+    assert loader.last_share_capital_fallback["eva_filled_count"] == 1
+
+
+def test_preflight_eva_market_cap_only_infers_total_volume(monkeypatch):
+    from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflight
+    from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
+
+    monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "true")
+
+    class FakeEVAProvider:
+        def get_batch_share_capital(self, symbols):
+            return {
+                symbols[0]: {
+                    "market_cap": 1000.0,
+                    "source": "local_csmar_eva_structure",
+                }
+            }
+
+    preflight = QMTPeerCachePreflight(
+        loader=QMTPeerValuationLoader(),
+        eva_provider=FakeEVAProvider(),
+    )
+    result = preflight._build_share_capital_fallback_result(
+        ["600410.SH"],
+        detail_map={"600410.SH": {"TotalVolume": 0}},
+        price_map={"600410.SH": 10.0},
+    )
+
+    assert result["values"]["600410.SH"]["total_volume"] == pytest.approx(100.0)
+    assert (
+        result["values"]["600410.SH"]["source"]
+        == "local_csmar_eva_structure+inferred_from_market_value"
+    )
+    assert result["eva_filled_count"] == 1
