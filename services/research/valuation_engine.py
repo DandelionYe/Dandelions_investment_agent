@@ -585,7 +585,9 @@ class ValuationService:
         warnings.append(str(error))
         provider_run_log.append(
             {
-                "provider": "qmt",
+                "provider": self.industry_service.industry_provider.provider
+                if hasattr(self.industry_service, "industry_provider")
+                else "unknown",
                 "dataset": "industry_valuation",
                 "symbol": symbol,
                 "status": "failed",

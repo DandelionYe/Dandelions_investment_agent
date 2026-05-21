@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 from services.data.providers.local_csmar_industry_provider import LocalCSMARIndustryProvider
-from services.data.providers.qmt_industry_provider import QMTIndustryProvider
 
 
 class DisabledIndustryProvider:
@@ -36,6 +35,17 @@ def create_industry_provider():
     if provider == "local_csmar":
         return LocalCSMARIndustryProvider()
     if provider == "qmt":
+        if not os.getenv("QMT_INDUSTRY_PROVIDER_EXPERIMENTAL", "").strip().lower() == "true":
+            raise ValueError(
+                "QMT sector fallback is disabled by default. "
+                "Set INDUSTRY_CLASSIFICATION_PROVIDER=local_csmar (recommended) or "
+                "INDUSTRY_CLASSIFICATION_PROVIDER=disabled. "
+                "If you explicitly need the legacy QMT sector provider, set "
+                "QMT_INDUSTRY_PROVIDER_EXPERIMENTAL=true alongside "
+                "INDUSTRY_CLASSIFICATION_PROVIDER=qmt."
+            )
+        from services.data.providers.qmt_industry_provider import QMTIndustryProvider
+
         return QMTIndustryProvider()
     if provider == "disabled":
         return DisabledIndustryProvider()

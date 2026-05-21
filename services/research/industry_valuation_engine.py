@@ -80,22 +80,25 @@ class IndustryValuationService:
             level=level,
             as_of=asset_data.get("as_of"),
         )
+        provider_name = industry_result.provider
         if not industry_result.metadata.success:
+            detail = industry_result.metadata.error or "unknown error"
             raise ProviderDataQualityError(
-                industry_result.metadata.error
-                or f"QMT industry could not resolve sector for {symbol}"
+                f"Industry provider {provider_name} could not resolve industry "
+                f"for {symbol}: {detail}"
             )
 
         industry_payload = industry_result.data
         if not isinstance(industry_payload, dict):
             raise ProviderDataQualityError(
-                f"QMT industry payload must be dict, got {type(industry_payload).__name__}"
+                f"Industry provider {provider_name} payload must be dict, "
+                f"got {type(industry_payload).__name__}"
             )
 
         members = industry_payload.get("industry_members") or []
         if not members:
             raise ProviderDataQualityError(
-                f"QMT industry sector has no members for {symbol}"
+                f"Industry provider {provider_name} sector has no members for {symbol}"
             )
 
         preflight_result = self._maybe_run_preflight(asset_data, members)
@@ -152,7 +155,7 @@ class IndustryValuationService:
             "fields": fields,
             "provider_run_log": [
                 {
-                    "provider": "qmt",
+                    "provider": industry_result.provider,
                     "dataset": "industry_valuation",
                     "symbol": symbol,
                     "status": status,
@@ -166,9 +169,7 @@ class IndustryValuationService:
 
     @staticmethod
     def _industry_valuation_source(provider: str, industry_payload: dict) -> str:
-        classification_source = industry_payload.get("source")
-        if not classification_source:
-            classification_source = "qmt_sector" if provider == "qmt" else provider
+        classification_source = industry_payload.get("source") or provider
         return f"{classification_source}+qmt_financial+qmt_price"
 
     def _maybe_run_preflight(
@@ -225,7 +226,7 @@ class IndustryValuationService:
             "fields": fields,
             "provider_run_log": [
                 {
-                    "provider": "qmt",
+                    "provider": provider,
                     "dataset": "industry_valuation",
                     "symbol": symbol,
                     "status": "partial_success",

@@ -1,6 +1,11 @@
 import pandas as pd
+import pytest
 
 from scripts.build_csmar_industry_reference import load_and_clean, write_sqlite
+from services.data.providers.industry_provider_factory import (
+    DisabledIndustryProvider,
+    create_industry_provider,
+)
 from services.data.providers.local_csmar_industry_provider import LocalCSMARIndustryProvider
 from services.research.industry_valuation_engine import IndustryValuationService
 
@@ -136,3 +141,100 @@ def test_industry_service_uses_local_provider_factory(tmp_path, monkeypatch):
     assert fields["industry_peer_count"] == 2
     assert fields["industry_valuation_source"] == "local_csmar_trd_co+qmt_financial+qmt_price"
     assert fields["industry_pe_percentile"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Provider factory tests
+# ---------------------------------------------------------------------------
+
+def test_create_industry_provider_defaults_to_local_csmar(monkeypatch):
+    monkeypatch.delenv("INDUSTRY_CLASSIFICATION_PROVIDER", raising=False)
+    provider = create_industry_provider()
+    assert isinstance(provider, LocalCSMARIndustryProvider)
+
+
+def test_create_industry_provider_local_csmar_explicit(monkeypatch):
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "local_csmar")
+    provider = create_industry_provider()
+    assert isinstance(provider, LocalCSMARIndustryProvider)
+
+
+def test_create_industry_provider_disabled(monkeypatch):
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "disabled")
+    provider = create_industry_provider()
+    assert isinstance(provider, DisabledIndustryProvider)
+
+
+def test_disabled_provider_resolve_returns_failure():
+    provider = DisabledIndustryProvider()
+    result = provider.resolve_industry("600519.SH")
+    assert result.metadata.success is False
+    assert "disabled" in result.metadata.error.lower()
+
+
+def test_create_industry_provider_qmt_without_experimental_raises(monkeypatch):
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "qmt")
+    monkeypatch.delenv("QMT_INDUSTRY_PROVIDER_EXPERIMENTAL", raising=False)
+    with pytest.raises(ValueError, match="QMT sector fallback is disabled by default"):
+        create_industry_provider()
+
+
+def test_create_industry_provider_qmt_with_experimental(monkeypatch):
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "qmt")
+    monkeypatch.setenv("QMT_INDUSTRY_PROVIDER_EXPERIMENTAL", "true")
+    from services.data.providers.qmt_industry_provider import QMTIndustryProvider
+
+    provider = create_industry_provider()
+    assert isinstance(provider, QMTIndustryProvider)
+
+
+def test_create_industry_provider_unsupported_value_raises(monkeypatch):
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "unsupported_xyz")
+    with pytest.raises(ValueError, match="Unsupported INDUSTRY_CLASSIFICATION_PROVIDER"):
+        create_industry_provider()
+
+
+# ---------------------------------------------------------------------------
+# Error message and source attribution tests
+# ---------------------------------------------------------------------------
+
+def test_industry_service_error_message_uses_actual_provider(tmp_path, monkeypatch):
+    """When local_csmar cannot resolve, error should mention local_csmar, not QMT."""
+    db_path, _ = _build_reference(tmp_path)
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "local_csmar")
+    monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_DB", str(db_path))
+    monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_MIN_PEERS", "1")
+    monkeypatch.setenv("INDUSTRY_MIN_VALID_PEERS", "1")
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "false")
+
+    service = IndustryValuationService(peer_valuation_loader=_PeerLoader())
+    with pytest.raises(Exception) as exc_info:
+        service.build(
+            asset_data={"symbol": "999999.SH", "asset_type": "stock", "as_of": "2026-05-20"},
+            valuation_data={},
+        )
+    error_text = str(exc_info.value)
+    assert "QMT" not in error_text
+    assert "local_csmar" in error_text
+
+
+def test_industry_service_run_log_provider_is_actual_provider(tmp_path, monkeypatch):
+    db_path, _ = _build_reference(tmp_path)
+    monkeypatch.setenv("INDUSTRY_CLASSIFICATION_PROVIDER", "local_csmar")
+    monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_DB", str(db_path))
+    monkeypatch.setenv("LOCAL_CSMAR_INDUSTRY_MIN_PEERS", "1")
+    monkeypatch.setenv("INDUSTRY_MIN_VALID_PEERS", "1")
+    monkeypatch.setenv("QMT_PEER_CACHE_PREFLIGHT", "false")
+
+    service = IndustryValuationService(peer_valuation_loader=_PeerLoader())
+    result = service.build(
+        asset_data={"symbol": "600519.SH", "asset_type": "stock", "as_of": "2026-05-20"},
+        valuation_data={},
+    )
+
+    run_log = result["provider_run_log"]
+    assert len(run_log) >= 1
+    # The industry valuation run log should use actual provider name
+    industry_log = [e for e in run_log if e["dataset"] == "industry_valuation"]
+    assert len(industry_log) >= 1
+    assert industry_log[0]["provider"] == "local_csmar"
