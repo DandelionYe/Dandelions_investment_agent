@@ -4,8 +4,9 @@
 所有后续 API 调用自动携带 token，过期时自动刷新。
 """
 
-import streamlit as st
 import requests
+import streamlit as st
+from requests import Response
 
 API_BASE = "http://localhost:8000"
 
@@ -67,17 +68,48 @@ def auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def authenticated_request(
+    method: str,
+    path: str,
+    *,
+    timeout: float = 10,
+    **kwargs,
+) -> Response:
+    """发送带认证的 API 请求，401 时尝试刷新 token 后重试一次。"""
+    headers = dict(auth_headers())
+    extra_headers = kwargs.pop("headers", None)
+    if extra_headers:
+        headers.update(extra_headers)
+
+    resp = requests.request(
+        method,
+        f"{API_BASE}{path}",
+        headers=headers,
+        timeout=timeout,
+        **kwargs,
+    )
+    if resp.status_code != 401:
+        return resp
+
+    if not _refresh_auth_token():
+        return resp
+
+    retry_headers = dict(auth_headers())
+    if extra_headers:
+        retry_headers.update(extra_headers)
+    return requests.request(
+        method,
+        f"{API_BASE}{path}",
+        headers=retry_headers,
+        timeout=timeout,
+        **kwargs,
+    )
+
+
 def api_get(path: str, **kwargs) -> dict | list | None:
     """带认证的 GET 请求。token 过期时自动刷新。"""
     try:
-        resp = requests.get(
-            f"{API_BASE}{path}",
-            headers=auth_headers(),
-            timeout=10,
-            **kwargs,
-        )
-        if resp.status_code == 401:
-            return _try_refresh_and_retry("GET", path, **kwargs)
+        resp = authenticated_request("GET", path, **kwargs)
         if resp.status_code >= 400:
             return None
         return resp.json()
@@ -88,14 +120,7 @@ def api_get(path: str, **kwargs) -> dict | list | None:
 def api_post(path: str, json_data: dict | None = None) -> dict | None:
     """带认证的 POST 请求。"""
     try:
-        resp = requests.post(
-            f"{API_BASE}{path}",
-            json=json_data,
-            headers=auth_headers(),
-            timeout=10,
-        )
-        if resp.status_code == 401:
-            return _try_refresh_and_retry("POST", path, json_data=json_data)
+        resp = authenticated_request("POST", path, json=json_data)
         if resp.status_code >= 400:
             return None
         return resp.json()
@@ -105,10 +130,35 @@ def api_post(path: str, json_data: dict | None = None) -> dict | None:
 
 def _try_refresh_and_retry(method: str, path: str, **kwargs) -> dict | None:
     """尝试刷新 token 并重试请求。"""
+    if not _refresh_auth_token():
+        return None
+    try:
+        if method == "GET":
+            r = requests.get(
+                f"{API_BASE}{path}",
+                headers=auth_headers(),
+                timeout=10,
+            )
+        else:
+            r = requests.post(
+                f"{API_BASE}{path}",
+                json=kwargs.get("json_data"),
+                headers=auth_headers(),
+                timeout=10,
+            )
+        if r.status_code < 400:
+            return r.json()
+    except Exception:
+        _logout()
+    return None
+
+
+def _refresh_auth_token() -> bool:
+    """刷新 access token，成功时更新 session_state。"""
     refresh_token = st.session_state.get("refresh_token")
     if not refresh_token:
         _logout()
-        return None
+        return False
     try:
         resp = requests.post(
             f"{API_BASE}/api/v1/auth/refresh",
@@ -119,27 +169,12 @@ def _try_refresh_and_retry(method: str, path: str, **kwargs) -> dict | None:
             data = resp.json()
             st.session_state["auth_token"] = data["access_token"]
             st.session_state["refresh_token"] = data["refresh_token"]
-            # 重试原请求
-            if method == "GET":
-                r = requests.get(
-                    f"{API_BASE}{path}",
-                    headers=auth_headers(),
-                    timeout=10,
-                )
-            else:
-                r = requests.post(
-                    f"{API_BASE}{path}",
-                    json=kwargs.get("json_data"),
-                    headers=auth_headers(),
-                    timeout=10,
-                )
-            if r.status_code < 400:
-                return r.json()
+            return True
         else:
             _logout()
     except Exception:
         _logout()
-    return None
+    return False
 
 
 def _logout() -> None:

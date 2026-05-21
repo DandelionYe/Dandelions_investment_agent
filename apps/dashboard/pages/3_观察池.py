@@ -5,17 +5,17 @@
   - 后端不可用时直接访问 SQLite 存储（独立模式）
 """
 
-import json
 import sys
 from pathlib import Path
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from apps.dashboard.components.login import require_login
+from apps.dashboard.components.login import authenticated_request, require_login  # noqa: E402
+from apps.dashboard.components.progress_poller import poll_batch_progress  # noqa: E402
 
 st.set_page_config(page_title="观察池", page_icon="📋", layout="wide")
 
@@ -36,10 +36,8 @@ def _api_available() -> bool:
 
 
 def _api_call(method: str, path: str, **kwargs) -> dict | list | None:
-    import requests
-    url = f"{API_BASE}{path}"
     try:
-        resp = requests.request(method, url, timeout=10, **kwargs)
+        resp = authenticated_request(method, path, timeout=10, **kwargs)
         if resp.status_code >= 400:
             st.error(f"API 错误 [{resp.status_code}]: {resp.text[:300]}")
             return None
@@ -99,11 +97,23 @@ def _load_items(folder_id=None, tag_id=None, enabled=None) -> list[dict]:
             params["tag_id"] = tag_id
         if enabled is not None:
             params["enabled"] = str(enabled).lower()
-        params["page_size"] = 200
-        result = _api_call("GET", "/api/v1/watchlist/items", params=params)
-        if result and "items" in result:
-            return result["items"]
-        return []
+        page_size = 100
+        all_items = []
+        page = 1
+        while True:
+            result = _api_call(
+                "GET",
+                "/api/v1/watchlist/items",
+                params={**params, "page": page, "page_size": page_size},
+            )
+            if not isinstance(result, dict) or "items" not in result:
+                return all_items
+            batch = result["items"]
+            all_items.extend(batch)
+            total = result.get("total")
+            if not batch or (isinstance(total, int) and len(all_items) >= total):
+                return all_items
+            page += 1
     items, _ = _get_store().list_items(folder_id=folder_id, tag_id=tag_id,
                                         enabled=enabled, page=1, page_size=200)
     return items
@@ -202,7 +212,6 @@ with st.sidebar:
         if result:
             batch_id = result.get("batch_id")
             if batch_id and st.session_state["wl_api_ok"]:
-                from apps.dashboard.components.progress_poller import poll_batch_progress
                 poll_batch_progress(batch_id)
             else:
                 st.success(f"已触发扫描 {result.get('total_items', 0)} 个标的（离线模式，无法显示进度）")
@@ -359,7 +368,6 @@ if items:
                     if result:
                         batch_id = result.get("batch_id")
                         if batch_id and st.session_state["wl_api_ok"]:
-                            from apps.dashboard.components.progress_poller import poll_batch_progress
                             poll_batch_progress(batch_id)
                             st.rerun()
                         else:
