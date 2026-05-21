@@ -1,11 +1,20 @@
 from datetime import date, timedelta
 from typing import Any
 
-from services.data.normalizers.common import _to_float, _first_present, _ratio as _base_ratio
+from services.data.normalizers.common import _first_present, _to_float
+from services.data.normalizers.common import _ratio as _base_ratio
 
 
 def _ratio(value: Any) -> float | None:
     return _base_ratio(value, threshold=1.5)
+
+
+def _compute_percentile_from_values(current: float, values: list[float]) -> float:
+    """Fraction of *values* that are <= current."""
+    if not values:
+        return 0.5
+    below = sum(1 for v in values if v <= current)
+    return below / len(values)
 
 
 def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
@@ -16,6 +25,7 @@ def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
     try:
         # 动态导入，避免在非 AKShare 环境（如 QMT-only）导入失败
         import akshare as ak
+
         from services.data.akshare_provider import normalize_symbol, to_prefixed_symbol
     except ImportError:
         return []
@@ -188,7 +198,96 @@ class ValuationNormalizer:
                     )
                     result["percentile_n_days"] = len(history_close_list)
 
+        # CSMAR monthly history fallback: when QMT+AKShare price history
+        # are insufficient for percentile computation, use CSMAR monthly
+        # snapshots which contain actual PE/PB/PS values per month.
+        if result.get("pe_percentile") is None and result.get("pb_percentile") is None:
+            self._try_csmar_percentile_fallback(
+                result=result,
+                symbol=asset_data.get("symbol", ""),
+                current_pe=pe_ttm,
+                current_pb=pb_mrq,
+                current_ps=ps_ttm,
+            )
+
         return result
+
+    def _try_csmar_percentile_fallback(
+        self,
+        *,
+        result: dict,
+        symbol: str,
+        current_pe: float | None,
+        current_pb: float | None,
+        current_ps: float | None,
+    ) -> None:
+        """Use CSMAR monthly snapshots for PE/PB/PS percentile as last resort."""
+        try:
+            from services.data.providers.local_csmar_daily_derived_provider import (
+                LocalCSMARDailyDerivedProvider,
+                is_csmar_daily_derived_enabled,
+            )
+        except ImportError:
+            return
+
+        if not is_csmar_daily_derived_enabled():
+            return
+
+        try:
+            provider = LocalCSMARDailyDerivedProvider()
+            metrics_to_fetch = []
+            if current_pe is not None and current_pe > 0:
+                metrics_to_fetch.append("pe")
+            if current_pb is not None and current_pb > 0:
+                metrics_to_fetch.append("pb")
+            if current_ps is not None and current_ps > 0:
+                metrics_to_fetch.append("ps")
+
+            if not metrics_to_fetch:
+                return
+
+            monthly_result = provider.get_monthly_history(
+                symbols=[symbol],
+                metrics=metrics_to_fetch,
+            )
+            if not monthly_result.metadata.success or not monthly_result.data:
+                return
+
+            rows = monthly_result.data
+            sample_count = len(rows)
+
+            for csmar_key, percentile_key, max_val in [
+                ("pe", "pe_percentile", 300),
+                ("pb", "pb_percentile", 50),
+                ("ps", "ps_percentile", 100),
+            ]:
+                if result.get(percentile_key) is not None:
+                    continue
+                current_val = {"pe": current_pe, "pb": current_pb, "ps": current_ps}[csmar_key]
+                if current_val is None or current_val <= 0:
+                    continue
+
+                series = [
+                    float(row[csmar_key])
+                    for row in rows
+                    if row.get(csmar_key) is not None and 0 < float(row[csmar_key]) <= max_val
+                ]
+                if len(series) >= 12:
+                    result[percentile_key] = round(
+                        _compute_percentile_from_values(current_val, series), 4
+                    )
+
+            # Record source if any percentile was filled
+            if any(result.get(k) is not None for k in ("pe_percentile", "pb_percentile", "ps_percentile")):
+                result["calculation_method"] = (
+                    result.get("calculation_method", "")
+                    + " + percentile_from_csmar_monthly_history"
+                )
+                result["percentile_source"] = "local_csmar_daily_derived"
+                result["percentile_sample_count"] = sample_count
+        except Exception:
+            # CSMAR percentile fallback is non-blocking
+            pass
 
     def normalize_akshare(self, provider_result: dict) -> dict:
         records = provider_result.get("data", [])

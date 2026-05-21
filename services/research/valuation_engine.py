@@ -12,6 +12,10 @@ from services.data.providers.akshare_share_capital_provider import (
     is_share_capital_fallback_enabled,
 )
 from services.data.providers.akshare_valuation_provider import AKShareValuationProvider
+from services.data.providers.local_csmar_daily_derived_provider import (
+    LocalCSMARDailyDerivedProvider,
+    is_csmar_daily_derived_enabled,
+)
 from services.data.supplemental_provider import get_placeholder_supplemental_data
 from services.research.industry_valuation_engine import IndustryValuationService
 
@@ -23,11 +27,13 @@ class ValuationService:
         akshare_provider: AKShareValuationProvider | None = None,
         industry_service: IndustryValuationService | None = None,
         share_capital_provider: AKShareShareCapitalProvider | None = None,
+        csmar_provider: LocalCSMARDailyDerivedProvider | None = None,
     ):
         self.normalizer = normalizer or ValuationNormalizer()
         self.akshare_provider = akshare_provider or AKShareValuationProvider()
         self.industry_service = industry_service or IndustryValuationService()
         self.share_capital_provider = share_capital_provider or AKShareShareCapitalProvider()
+        self.csmar_provider = csmar_provider or LocalCSMARDailyDerivedProvider()
 
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
@@ -80,6 +86,16 @@ class ValuationService:
                     metadata["source"] = "qmt_derived+akshare"
                     metadata["confidence"] = 0.78
                     metadata["akshare_dataset"] = akshare_result.dataset
+
+        # CSMAR daily-derived fallback: fill remaining missing fields
+        # (dividend_yield, pe, pb, ps, pcf) from local SQLite snapshot.
+        # Uses setdefault — never overwrites fields already populated by QMT/AKShare.
+        self._try_csmar_daily_derived_fallback(
+            symbol=symbol,
+            valuation_data=valuation_data,
+            metadata=metadata,
+            provider_run_log=provider_run_log,
+        )
 
         if not self._has_core_fields(valuation_data):
             return self._placeholder_result(
@@ -184,6 +200,70 @@ class ValuationService:
                 ).strip()
                 valuation_data["calculation_method"] = calculation_method
                 metadata["calculation_method"] = calculation_method
+
+    def _try_csmar_daily_derived_fallback(
+        self,
+        *,
+        symbol: str,
+        valuation_data: dict,
+        metadata: dict,
+        provider_run_log: list[dict],
+    ) -> None:
+        if not is_csmar_daily_derived_enabled():
+            return
+
+        result = self.csmar_provider.get_latest_metrics(symbol)
+        provider_run_log.append({
+            "provider": result.provider,
+            "dataset": result.dataset,
+            "symbol": symbol,
+            "status": "success" if result.data.get("pe") is not None else "no_usable_data",
+            "rows": 1 if result.data.get("pe") is not None else 0,
+            "error": result.metadata.error,
+            "error_type": None,
+            "as_of": str(date.today()),
+        })
+
+        if not result.metadata.success:
+            return
+
+        data = result.data
+        csmar_fields_applied = []
+
+        # dividend_yield: CSMAR is the preferred fallback (often more reliable
+        # than QMT which may not compute it daily).
+        csmar_dy = _to_float(data.get("dividend_yield"))
+        if csmar_dy is not None and valuation_data.get("dividend_yield") is None:
+            valuation_data["dividend_yield"] = csmar_dy
+            valuation_data["dividend_yield_source"] = self.csmar_provider.provider
+            valuation_data["dividend_yield_date"] = data.get("dividend_yield_date")
+            csmar_fields_applied.append("dividend_yield")
+
+        # PE / PB / PS / PCF: only fill if currently None.
+        # Store as pe_ttm / pb_mrq / ps_ttm but mark source clearly.
+        for csmar_key, val_key in [("pe", "pe_ttm"), ("pb", "pb_mrq"), ("ps", "ps_ttm")]:
+            csmar_val = _to_float(data.get(csmar_key))
+            if csmar_val is not None and valuation_data.get(val_key) is None:
+                valuation_data[val_key] = csmar_val
+                valuation_data[f"{val_key}_source"] = self.csmar_provider.provider
+                valuation_data[f"{val_key}_date"] = data.get(f"{csmar_key}_date")
+                csmar_fields_applied.append(csmar_key)
+
+        pcf_val = _to_float(data.get("pcf"))
+        if pcf_val is not None and valuation_data.get("pcf") is None:
+            valuation_data["pcf"] = pcf_val
+            valuation_data["pcf_source"] = self.csmar_provider.provider
+            valuation_data["pcf_date"] = data.get("pcf_date")
+            csmar_fields_applied.append("pcf")
+
+        if csmar_fields_applied:
+            existing_method = str(metadata.get("calculation_method", ""))
+            if "csmar_daily_derived" not in existing_method:
+                metadata["calculation_method"] = (
+                    existing_method + " + csmar_daily_derived_fallback"
+                ).strip()
+            if "csmar" not in str(metadata.get("source", "")):
+                metadata["source"] = metadata["source"] + "+csmar_daily_derived"
 
     def _placeholder_result(self, symbol: str, error: str | None, provider_run_log: list[dict]) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)

@@ -254,6 +254,7 @@ class TestValuationEngineShareCapitalFallback:
         from services.research.valuation_engine import ValuationService
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
 
         fake_sc_result = type("R", (), {
             "provider": "akshare",
@@ -316,6 +317,7 @@ class TestValuationEngineShareCapitalFallback:
         from services.research.valuation_engine import ValuationService
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
 
         class FakeSCProvider:
             def __init__(self):
@@ -393,6 +395,7 @@ class TestValuationEngineShareCapitalFallback:
         from services.research.valuation_engine import ValuationService
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
 
         fake_sc_result = type("R", (), {
             "provider": "akshare",
