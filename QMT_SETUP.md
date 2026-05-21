@@ -272,3 +272,6 @@ python -c "from xtquant import xtdata; print(xtdata)"
 项目输出仍是 AKShare：
 
 查看输出中的 `data_warnings`。如果是 `QMT 行情数据为空`，先执行第 5 步下载日 K。
+
+## 10. 增量命令，将QMT的数据镜像到MiniQMT
+robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D:\迅投QMT极速交易系统交易终端 万联证券版\userdata_mini\datadir" /E /XC /XN /XO /R:1 /W:1 /COPY:DAT /DCOPY:DAT /MT:8
