@@ -255,6 +255,7 @@ class TestValuationEngineShareCapitalFallback:
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
         monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
 
         fake_sc_result = type("R", (), {
             "provider": "akshare",
@@ -396,6 +397,7 @@ class TestValuationEngineShareCapitalFallback:
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
         monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "false")
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
 
         fake_sc_result = type("R", (), {
             "provider": "akshare",
@@ -642,6 +644,7 @@ class TestPeerLoaderShareCapitalFallback:
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS", "2")
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
 
         symbols = [f"60000{i}.SH" for i in range(5)]
 
@@ -808,6 +811,7 @@ class TestPreflightShareCapitalFallback:
 
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_PROVIDER", "akshare")
         monkeypatch.setenv("QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS", "2")
+        monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
 
         symbols = [f"60000{i}.SH" for i in range(5)]
 

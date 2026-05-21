@@ -13,6 +13,10 @@ from services.data.providers.akshare_share_capital_provider import (
     _positive_float,
     resolve_share_capital_fallback,
 )
+from services.data.providers.local_csmar_eva_structure_provider import (
+    LocalCSMAREVAStructureProvider,
+    is_eva_structure_enabled,
+)
 from services.data.providers.qmt_peer_valuation_loader import (
     TOTAL_VOLUME_FIELDS,
     QMTPeerValuationLoader,
@@ -28,8 +32,13 @@ _SAMPLE_LIMIT = 10
 class QMTPeerCachePreflight:
     """Check QMT cache coverage for peer valuation inputs."""
 
-    def __init__(self, loader: QMTPeerValuationLoader | None = None) -> None:
+    def __init__(
+        self,
+        loader: QMTPeerValuationLoader | None = None,
+        eva_provider: LocalCSMAREVAStructureProvider | None = None,
+    ) -> None:
         self.loader = loader or QMTPeerValuationLoader()
+        self._eva_provider = eva_provider
 
     def check(
         self,
@@ -193,8 +202,7 @@ class QMTPeerCachePreflight:
     ) -> dict:
         """Build fallback data for symbols with missing/zero QMT total_volume.
 
-        Uses the same AKShare share capital provider and MAX_SYMBOLS limit as
-        qmt_peer_valuation_loader, keeping preflight and loader consistent.
+        Uses EVA local fallback first, then AKShare for remaining symbols.
         """
         needs_fallback = []
         for symbol in symbols:
@@ -212,10 +220,58 @@ class QMTPeerCachePreflight:
                 "skipped_count": 0,
                 "values": {},
                 "errors": [],
+                "eva_filled_count": 0,
             }
 
-        close_map = {symbol: price_map.get(symbol) for symbol in needs_fallback}
-        return resolve_share_capital_fallback(needs_fallback, close_map=close_map)
+        # Phase 1: EVA local fallback
+        eva_values: dict[str, dict] = {}
+        still_needs_fallback = []
+        if is_eva_structure_enabled():
+            eva_provider = self._get_eva_provider()
+            if eva_provider is not None:
+                eva_data = eva_provider.get_batch_share_capital(needs_fallback)
+                for symbol in needs_fallback:
+                    data = eva_data.get(symbol)
+                    if data and _positive_float(data.get("total_volume")):
+                        eva_values[symbol] = data
+                    else:
+                        still_needs_fallback.append(symbol)
+            else:
+                still_needs_fallback = list(needs_fallback)
+        else:
+            still_needs_fallback = list(needs_fallback)
+
+        # Phase 2: AKShare for remaining
+        if still_needs_fallback:
+            close_map = {symbol: price_map.get(symbol) for symbol in still_needs_fallback}
+            ak_result = resolve_share_capital_fallback(still_needs_fallback, close_map=close_map)
+            ak_values = ak_result.get("values", {})
+            # Merge EVA + AKShare
+            all_values = {**eva_values, **ak_values}
+            ak_result["values"] = all_values
+            ak_result["eva_filled_count"] = len(eva_values)
+            return ak_result
+
+        # All filled by EVA
+        return {
+            "enabled": True,
+            "max_symbols": 0,
+            "attempted_symbols": needs_fallback,
+            "skipped_symbols": [],
+            "skipped_count": 0,
+            "values": eva_values,
+            "errors": [],
+            "eva_filled_count": len(eva_values),
+        }
+
+    def _get_eva_provider(self) -> LocalCSMAREVAStructureProvider | None:
+        if self._eva_provider is not None:
+            return self._eva_provider
+        try:
+            self._eva_provider = LocalCSMAREVAStructureProvider()
+            return self._eva_provider
+        except Exception:
+            return None
 
     @staticmethod
     def _summarize_share_capital_fallback(fallback: dict) -> dict:
@@ -226,4 +282,5 @@ class QMTPeerCachePreflight:
             "filled_count": len(fallback.get("values", {})),
             "skipped_count": fallback.get("skipped_count", 0),
             "errors_count": len(fallback.get("errors", [])),
+            "eva_filled_count": fallback.get("eva_filled_count", 0),
         }

@@ -21,6 +21,10 @@ from services.data.providers.akshare_share_capital_provider import (
     _positive_float,
     resolve_share_capital_fallback,
 )
+from services.data.providers.local_csmar_eva_structure_provider import (
+    LocalCSMAREVAStructureProvider,
+    is_eva_structure_enabled,
+)
 from services.data.providers.qmt_financial_provider import QMT_FINANCIAL_TABLES
 from services.data.qmt_provider import _env_bool, _import_xtdata, connect_qmt
 
@@ -63,12 +67,17 @@ class QMTPeerValuationLoader:
     provider = "qmt"
     dataset = "peer_valuation_inputs"
 
-    def __init__(self, chunk_size: int | None = None) -> None:
+    def __init__(
+        self,
+        chunk_size: int | None = None,
+        eva_provider: LocalCSMAREVAStructureProvider | None = None,
+    ) -> None:
         configured_chunk_size = chunk_size or int(
             os.getenv("QMT_INDUSTRY_PEER_CHUNK_SIZE", "80")
         )
         self.chunk_size = max(1, configured_chunk_size)
         self.last_share_capital_fallback: dict | None = None
+        self._eva_provider = eva_provider
 
     def load_peer_inputs(
         self,
@@ -196,10 +205,11 @@ class QMTPeerValuationLoader:
         return metrics
 
     def _apply_share_capital_fallback(self, peers: list[dict]) -> None:
-        """Apply AKShare share capital fallback to peers with missing total_volume.
+        """Apply share capital fallback to peers with missing total_volume.
 
+        Priority: EVA local -> AKShare.
         Respects QMT_SHARE_CAPITAL_FALLBACK_MAX_SYMBOLS limit and
-        QMT_SHARE_CAPITAL_FALLBACK_PROVIDER=disabled to skip entirely.
+        QMT_SHARE_CAPITAL_FALLBACK_PROVIDER=disabled to skip AKShare.
         """
         missing_peers = [
             p for p in peers
@@ -210,35 +220,83 @@ class QMTPeerValuationLoader:
             self.last_share_capital_fallback = None
             return
 
-        close_map = {peer["symbol"]: peer.get("close") for peer in missing_peers}
-        fallback = resolve_share_capital_fallback(
-            [peer["symbol"] for peer in missing_peers],
-            close_map=close_map,
-        )
-        self.last_share_capital_fallback = self._summarize_share_capital_fallback(fallback)
-        values = fallback.get("values", {})
+        # Phase 1: Try EVA local fallback for all missing peers
+        eva_filled = 0
+        still_missing = []
+        if is_eva_structure_enabled():
+            eva_provider = self._get_eva_provider()
+            if eva_provider is not None:
+                missing_symbols = [p["symbol"] for p in missing_peers]
+                eva_data = eva_provider.get_batch_share_capital(missing_symbols)
+                for peer in missing_peers:
+                    data = eva_data.get(peer["symbol"])
+                    if not data:
+                        still_missing.append(peer)
+                        continue
+                    total_volume = _positive_float(data.get("total_volume"))
+                    if total_volume is not None and total_volume > 0:
+                        peer["total_volume"] = total_volume
+                        peer["share_capital_fallback_used"] = True
+                        peer["share_capital_fallback_source"] = "local_csmar_eva_structure"
+                        eva_filled += 1
+                    else:
+                        still_missing.append(peer)
+                    existing_float_volume = _positive_float(peer.get("float_volume"))
+                    float_volume = _positive_float(data.get("float_volume"))
+                    if float_volume is not None and existing_float_volume is None:
+                        peer["float_volume"] = float_volume
+            else:
+                still_missing = list(missing_peers)
+        else:
+            still_missing = list(missing_peers)
 
-        for peer in missing_peers:
-            data = values.get(peer["symbol"])
-            if not data:
-                continue
+        # Phase 2: AKShare fallback for remaining missing peers
+        if still_missing:
+            close_map = {peer["symbol"]: peer.get("close") for peer in still_missing}
+            fallback = resolve_share_capital_fallback(
+                [peer["symbol"] for peer in still_missing],
+                close_map=close_map,
+            )
+            self.last_share_capital_fallback = self._summarize_share_capital_fallback(
+                fallback, eva_filled=eva_filled,
+            )
+            values = fallback.get("values", {})
 
-            total_volume = _positive_float(data.get("total_volume"))
-            float_volume = _positive_float(data.get("float_volume"))
-            if total_volume is not None:
-                peer["total_volume"] = total_volume
-                peer["share_capital_fallback_used"] = True
-            existing_float_volume = _positive_float(peer.get("float_volume"))
-            if float_volume is not None and existing_float_volume is None:
-                peer["float_volume"] = float_volume
+            for peer in still_missing:
+                data = values.get(peer["symbol"])
+                if not data:
+                    continue
 
-        skipped = set(fallback.get("skipped_symbols", []))
-        for peer in peers:
-            if peer["symbol"] in skipped:
-                peer["share_capital_fallback_status"] = "skipped_by_limit"
+                total_volume = _positive_float(data.get("total_volume"))
+                float_volume = _positive_float(data.get("float_volume"))
+                if total_volume is not None:
+                    peer["total_volume"] = total_volume
+                    peer["share_capital_fallback_used"] = True
+                    peer["share_capital_fallback_source"] = "akshare"
+                existing_float_volume = _positive_float(peer.get("float_volume"))
+                if float_volume is not None and existing_float_volume is None:
+                    peer["float_volume"] = float_volume
+
+            skipped = set(fallback.get("skipped_symbols", []))
+            for peer in peers:
+                if peer["symbol"] in skipped:
+                    peer["share_capital_fallback_status"] = "skipped_by_limit"
+        else:
+            self.last_share_capital_fallback = self._summarize_share_capital_fallback(
+                {}, eva_filled=eva_filled,
+            )
+
+    def _get_eva_provider(self) -> LocalCSMAREVAStructureProvider | None:
+        if self._eva_provider is not None:
+            return self._eva_provider
+        try:
+            self._eva_provider = LocalCSMAREVAStructureProvider()
+            return self._eva_provider
+        except Exception:
+            return None
 
     @staticmethod
-    def _summarize_share_capital_fallback(fallback: dict) -> dict:
+    def _summarize_share_capital_fallback(fallback: dict, eva_filled: int = 0) -> dict:
         return {
             "enabled": fallback.get("enabled", False),
             "max_symbols": fallback.get("max_symbols", 0),
@@ -246,6 +304,7 @@ class QMTPeerValuationLoader:
             "filled_count": len(fallback.get("values", {})),
             "skipped_count": fallback.get("skipped_count", 0),
             "errors_count": len(fallback.get("errors", [])),
+            "eva_filled_count": eva_filled,
         }
 
     def _extract_financial_metrics(self, tables: dict) -> dict:

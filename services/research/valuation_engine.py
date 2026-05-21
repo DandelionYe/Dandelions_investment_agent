@@ -16,6 +16,10 @@ from services.data.providers.local_csmar_daily_derived_provider import (
     LocalCSMARDailyDerivedProvider,
     is_csmar_daily_derived_enabled,
 )
+from services.data.providers.local_csmar_eva_structure_provider import (
+    LocalCSMAREVAStructureProvider,
+    is_eva_structure_enabled,
+)
 from services.data.supplemental_provider import get_placeholder_supplemental_data
 from services.research.industry_valuation_engine import IndustryValuationService
 
@@ -28,12 +32,14 @@ class ValuationService:
         industry_service: IndustryValuationService | None = None,
         share_capital_provider: AKShareShareCapitalProvider | None = None,
         csmar_provider: LocalCSMARDailyDerivedProvider | None = None,
+        eva_provider: LocalCSMAREVAStructureProvider | None = None,
     ):
         self.normalizer = normalizer or ValuationNormalizer()
         self.akshare_provider = akshare_provider or AKShareValuationProvider()
         self.industry_service = industry_service or IndustryValuationService()
         self.share_capital_provider = share_capital_provider or AKShareShareCapitalProvider()
         self.csmar_provider = csmar_provider or LocalCSMARDailyDerivedProvider()
+        self.eva_provider = eva_provider or LocalCSMAREVAStructureProvider()
 
     def build(self, asset_data: dict) -> dict:
         symbol = asset_data["symbol"]
@@ -143,9 +149,6 @@ class ValuationService:
         provider_run_log: list[dict],
         symbol: str,
     ) -> None:
-        if not is_share_capital_fallback_enabled():
-            return
-
         price_data = asset_data.get("price_data", {})
         close = _to_float(price_data.get("close"))
         if not close or close <= 0:
@@ -156,6 +159,22 @@ class ValuationService:
             basic_info.get("total_volume") or basic_info.get("TotalVolume")
         )
         if existing_total_volume and existing_total_volume > 0:
+            return
+
+        # Priority: EVA local fallback -> AKShare fallback
+        eva_applied = self._try_eva_share_capital_fallback(
+            symbol=symbol,
+            asset_data=asset_data,
+            valuation_data=valuation_data,
+            metadata=metadata,
+            provider_run_log=provider_run_log,
+            close=close,
+            basic_info=basic_info,
+        )
+        if eva_applied:
+            return
+
+        if not is_share_capital_fallback_enabled():
             return
 
         result = self.share_capital_provider.fetch_share_capital(symbol)
@@ -205,6 +224,75 @@ class ValuationService:
                 ).strip()
                 valuation_data["calculation_method"] = calculation_method
                 metadata["calculation_method"] = calculation_method
+
+    def _try_eva_share_capital_fallback(
+        self,
+        *,
+        symbol: str,
+        asset_data: dict,
+        valuation_data: dict,
+        metadata: dict,
+        provider_run_log: list[dict],
+        close: float,
+        basic_info: dict,
+    ) -> bool:
+        """Try EVA_Structure as local share capital fallback.
+
+        Returns True if EVA successfully provided data (so AKShare is skipped).
+        """
+        if not is_eva_structure_enabled():
+            return False
+
+        result = self.eva_provider.get_latest_share_capital(symbol)
+        provider_run_log.append({
+            "provider": result.provider,
+            "dataset": result.dataset,
+            "symbol": symbol,
+            "status": "success" if result.data.get("total_volume") else "no_usable_data",
+            "rows": 1 if result.data.get("total_volume") else 0,
+            "error": result.metadata.error,
+            "error_type": result.metadata.error_type,
+            "as_of": str(date.today()),
+        })
+
+        data = result.data
+        eva_total_volume = _to_float(data.get("total_volume"))
+        eva_market_cap = _to_float(data.get("market_cap"))
+        eva_float_volume = _to_float(data.get("float_volume"))
+
+        derived = False
+        source_tag = "local_csmar_eva_structure"
+        method_tag = "share_capital_from_local_csmar_eva_structure"
+
+        if eva_total_volume and eva_total_volume > 0:
+            basic_info["total_volume"] = eva_total_volume
+            if eva_float_volume and eva_float_volume > 0:
+                existing_float_volume = _to_float(
+                    basic_info.get("float_volume") or basic_info.get("FloatVolume")
+                )
+                if not existing_float_volume or existing_float_volume <= 0:
+                    basic_info["float_volume"] = eva_float_volume
+            derived = True
+        elif eva_market_cap and eva_market_cap > 0 and close > 0:
+            inferred_tv = eva_market_cap / close
+            if inferred_tv > 0:
+                basic_info["total_volume"] = inferred_tv
+                derived = True
+                source_tag = "local_csmar_eva_structure+inferred_from_market_value"
+                method_tag = "share_capital_from_local_csmar_eva_structure_inferred"
+
+        if not derived:
+            return False
+
+        valuation_data.update(self.normalizer.derive_from_qmt(asset_data))
+        metadata["source"] = f"qmt_derived+{source_tag}"
+        metadata["confidence"] = 0.70
+        calc = str(valuation_data.get("calculation_method", ""))
+        if method_tag not in calc:
+            calculation_method = (calc + " + " + method_tag).strip()
+            valuation_data["calculation_method"] = calculation_method
+            metadata["calculation_method"] = calculation_method
+        return True
 
     def _try_csmar_daily_derived_fallback(
         self,
