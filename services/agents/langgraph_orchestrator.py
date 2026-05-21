@@ -27,20 +27,19 @@ LangGraph 投委会辩论编排器（多轮辩论版）。
 import concurrent.futures
 from typing import TypedDict
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import interrupt, Command
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph.state import CompiledStateGraph
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command, interrupt
 
-from services.agents.bull_analyst import BullAnalyst
 from services.agents.bear_analyst import BearAnalyst
-from services.agents.risk_officer import RiskOfficer
+from services.agents.bull_analyst import BullAnalyst
 from services.agents.committee_secretary import CommitteeSecretary
+from services.agents.risk_officer import RiskOfficer
 from services.agents.supervisor import Supervisor
 from services.protocols.validation import validate_protocol
 from services.research.decision_guard import apply_decision_guard
-
 
 _DEBATE_CHECKPOINTER = MemorySaver()
 _FULL_RESEARCH_CHECKPOINTER = MemorySaver()
@@ -824,8 +823,8 @@ def _full_node_validate_and_assemble(state: FullResearchState) -> dict:
 
 def _full_node_handle_data_error(state: FullResearchState) -> dict:
     """数据加载失败时降级为 mock placeholder."""
-    from services.data.mock_provider import get_mock_asset_data
     from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
+    from services.data.mock_provider import get_mock_asset_data
     from services.research.scoring_engine import score_asset
 
     asset_data = ResearchDataAggregator().enrich(

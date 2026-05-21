@@ -5,26 +5,23 @@ LangGraph 多轮辩论编排器测试。
 HITL 中断/恢复、错误处理路径、向后兼容性。
 """
 
-import pytest
 
 from services.agents.langgraph_orchestrator import (
-    DebateState,
-    build_debate_graph,
-    generate_debate_result_langgraph,
-    start_hitl_debate,
-    resume_hitl_debate,
-    _node_run_initial_round,
-    _node_bull_challenge,
-    _node_bear_challenge,
-    _node_risk_challenge,
-    _node_supervisor_judge,
-    _node_committee_convergence,
     _node_assemble_result,
+    _node_bear_challenge,
+    _node_bull_challenge,
+    _node_committee_convergence,
     _node_error_handler,
+    _node_risk_challenge,
+    _node_run_initial_round,
+    _node_supervisor_judge,
     _route_after_initial,
     _route_after_supervisor,
+    build_debate_graph,
+    generate_debate_result_langgraph,
+    resume_hitl_debate,
+    start_hitl_debate,
 )
-
 
 # ── 测试数据 ──────────────────────────────────────────────────────
 

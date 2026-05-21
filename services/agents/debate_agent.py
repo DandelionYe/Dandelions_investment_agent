@@ -8,10 +8,10 @@
 当 langgraph 不可用时，自动回退到顺序编排。
 """
 
-from services.agents.bull_analyst import BullAnalyst
 from services.agents.bear_analyst import BearAnalyst
-from services.agents.risk_officer import RiskOfficer
+from services.agents.bull_analyst import BullAnalyst
 from services.agents.committee_secretary import CommitteeSecretary
+from services.agents.risk_officer import RiskOfficer
 from services.protocols.validation import validate_protocol
 
 

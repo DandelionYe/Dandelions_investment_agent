@@ -555,3 +555,48 @@ class TestAuditMetadataWithCompactData:
         # The snapshot should not contain peer lists
         val = snapshot.get("valuation_data", {})
         assert "industry_peer_inputs" not in val
+
+    def test_build_agent_metadata_defensively_compacts_raw_data(self):
+        from services.agents.audit_metadata import build_agent_metadata
+
+        metadata = build_agent_metadata(
+            agent_role="bull",
+            prompt_version="test_v1",
+            model="test-model",
+            system_prompt="test system",
+            user_prompt="test user",
+            research_result=_full_research_result(),
+        )
+
+        snapshot = metadata.get("input_snapshot", {})
+        val = snapshot.get("valuation_data", {})
+        assert "industry_peer_inputs" not in val
+        assert "industry_members" not in val
+        assert "raw" not in val
+        assert len(snapshot["evidence_bundle"]["items_preview"]) <= 8
+        assert len(snapshot["event_data"]["events"]) <= 3
+
+    def test_summarize_agent_metadata_drops_nested_snapshot(self):
+        from services.agents.audit_metadata import summarize_agent_metadata
+
+        metadata = {
+            "agent_role": "bull",
+            "prompt_version": "bull_analyst_v1",
+            "model": "test-model",
+            "prompt_hashes": {"user_sha256": "abc"},
+            "challenge_present": False,
+            "debate_history_turns": 0,
+            "input_snapshot": {"valuation_data": {"industry_peer_inputs": [1, 2, 3]}},
+        }
+
+        summary = summarize_agent_metadata(metadata)
+
+        assert summary == {
+            "agent_role": "bull",
+            "prompt_version": "bull_analyst_v1",
+            "model": "test-model",
+            "prompt_hashes": {"user_sha256": "abc"},
+            "challenge_present": False,
+            "debate_history_turns": 0,
+        }
+        assert "input_snapshot" not in summary

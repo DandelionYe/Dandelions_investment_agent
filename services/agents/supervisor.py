@@ -1,6 +1,6 @@
 import json
 
-from services.agents.audit_metadata import build_agent_metadata
+from services.agents.audit_metadata import build_agent_metadata, summarize_agent_metadata
 from services.agents.json_call import chat_json_checked
 from services.agents.research_context import compact_research_result_for_llm
 from services.llm.deepseek_client import get_deepseek_client
@@ -56,9 +56,15 @@ class Supervisor:
                 extra_inputs={
                     "current_round": current_round,
                     "max_rounds": max_rounds,
-                    "bull_case_metadata": bull_case.get("metadata"),
-                    "bear_case_metadata": bear_case.get("metadata"),
-                    "risk_review_metadata": risk_review.get("metadata"),
+                    "bull_case_metadata": summarize_agent_metadata(
+                        bull_case.get("metadata")
+                    ),
+                    "bear_case_metadata": summarize_agent_metadata(
+                        bear_case.get("metadata")
+                    ),
+                    "risk_review_metadata": summarize_agent_metadata(
+                        risk_review.get("metadata")
+                    ),
                 },
             ),
             required_fields=[

@@ -7,17 +7,14 @@ debate_history 累积、协议兼容性、向后兼容、HITL 保持、错误路
 
 import pytest
 
-from services.agents.supervisor import Supervisor
 from services.agents.bull_analyst import BullAnalyst
-from services.agents.bear_analyst import BearAnalyst
-from services.agents.risk_officer import RiskOfficer
 from services.agents.committee_secretary import CommitteeSecretary
 from services.agents.langgraph_orchestrator import (
     generate_debate_result_langgraph,
-    start_hitl_debate,
     resume_hitl_debate,
+    start_hitl_debate,
 )
-
+from services.agents.supervisor import Supervisor
 
 # ── 测试数据 ──────────────────────────────────────────────────────
 

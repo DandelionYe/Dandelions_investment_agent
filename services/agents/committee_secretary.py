@@ -1,6 +1,6 @@
 import json
 
-from services.agents.audit_metadata import build_agent_metadata
+from services.agents.audit_metadata import build_agent_metadata, summarize_agent_metadata
 from services.agents.debate_utils import format_debate_history
 from services.agents.json_call import chat_json_checked
 from services.agents.research_context import compact_research_result_for_llm
@@ -121,16 +121,18 @@ class CommitteeSecretary:
                 extra_inputs={
                     "bull_case": {
                         "thesis": bull_case.get("thesis"),
-                        "metadata": bull_case.get("metadata"),
+                        "metadata": summarize_agent_metadata(bull_case.get("metadata")),
                     },
                     "bear_case": {
                         "thesis": bear_case.get("thesis"),
-                        "metadata": bear_case.get("metadata"),
+                        "metadata": summarize_agent_metadata(bear_case.get("metadata")),
                     },
                     "risk_review": {
                         "risk_level": risk_review.get("risk_level"),
                         "risk_summary": risk_review.get("risk_summary"),
-                        "metadata": risk_review.get("metadata"),
+                        "metadata": summarize_agent_metadata(
+                            risk_review.get("metadata")
+                        ),
                     },
                 },
             ),
