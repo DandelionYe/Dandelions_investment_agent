@@ -530,6 +530,13 @@ $env:RUN_WEB_NEWS_NETWORK='1'
 python -m pytest tests/integration/test_web_news_network_live.py -q -p no:cacheprovider
 ```
 
+验证说明文档：
+
+- [docs/verification.md](docs/verification.md)：本地 smoke、pytest、CLI、PDF 和服务启动的验证基线。
+- [docs/integration_testing.md](docs/integration_testing.md)：FastAPI、Celery/Redis、WebSocket、QMT、AKShare、网页新闻等 opt-in live 集成测试说明。
+
+`tests/integration/` 下已有默认跳过的真实环境 smoke 测试，覆盖 AKShare 网络、Celery/Redis、FastAPI 研究任务、QMT 本地接口、WebSocket 进度推送和网页新闻网络源。按文档设置对应环境变量后再运行，避免默认测试依赖外部服务。
+
 手动数据源验证脚本位于 `scripts/manual_tests/`：
 
 ```powershell
