@@ -51,6 +51,23 @@ class ValuationService:
         provider_run_log = []
 
         valuation_data = self.normalizer.derive_from_qmt(asset_data)
+
+        # Store QMT input references for missing_reason computation later.
+        price_data = asset_data.get("price_data", {})
+        basic_info = asset_data.get("basic_info", {})
+        fundamental = asset_data.get("fundamental_data", {})
+        valuation_data["_close_ref"] = _to_float(price_data.get("close"))
+        valuation_data["_total_volume_ref"] = _to_float(
+            basic_info.get("total_volume") or basic_info.get("TotalVolume")
+        )
+        valuation_data["_net_profit_ttm_ref"] = _to_float(
+            fundamental.get("net_profit_ttm")
+        )
+        valuation_data["_revenue_ttm_ref"] = _to_float(
+            fundamental.get("revenue_ttm")
+        )
+        valuation_data["_bps_ref"] = _to_float(fundamental.get("bps"))
+
         metadata = {
             "source": "qmt_derived",
             "confidence": 0.72 if valuation_data.get("market_cap") else 0.45,
@@ -114,6 +131,7 @@ class ValuationService:
                 (akshare_result.metadata.error if akshare_result else None)
                 or "QMT-derived valuation core fields are missing.",
                 provider_run_log,
+                missing_reason_source=valuation_data,
             )
 
         valuation_data.setdefault("valuation_label", self._label(valuation_data))
@@ -122,6 +140,14 @@ class ValuationService:
             valuation_data=valuation_data,
             provider_run_log=provider_run_log,
         )
+
+        _compute_missing_reasons(valuation_data)
+
+        # Remove internal reference fields before returning.
+        for key in list(valuation_data):
+            if key.startswith("_"):
+                valuation_data.pop(key, None)
+
         return {
             "data": {"valuation_data": valuation_data},
             "source_metadata": {"valuation_data": metadata},
@@ -343,6 +369,7 @@ class ValuationService:
         if not is_csmar_daily_derived_enabled():
             return
 
+        valuation_data["_csmar_enabled"] = True
         result = self.csmar_provider.get_latest_metrics(symbol)
         data = result.data
         available_fields = [
@@ -350,9 +377,15 @@ class ValuationService:
             for field in ("dividend_yield", "pe", "pb", "ps", "pcf")
             if isinstance(data, dict) and data.get(field) is not None
         ]
+        csmar_warnings = list(data.get("warnings", [])) if isinstance(data, dict) else []
+        if _has_warning(csmar_warnings, "dividend_yield is") or _has_warning(
+            csmar_warnings, "dividend_yield has unparseable date"
+        ):
+            valuation_data["_csmar_stale_dividend_yield"] = True
         csmar_fields_applied = []
 
         if not result.metadata.success:
+            valuation_data["_csmar_failed"] = True
             provider_run_log.append(
                 self._csmar_run_log_entry(
                     result=result,
@@ -405,6 +438,7 @@ class ValuationService:
             status = "available_not_applied"
         else:
             status = "no_usable_data"
+            valuation_data["_csmar_no_data"] = True
 
         provider_run_log.append(
             self._csmar_run_log_entry(
@@ -471,9 +505,18 @@ class ValuationService:
             }
         )
 
-    def _placeholder_result(self, symbol: str, error: str | None, provider_run_log: list[dict]) -> dict:
+    def _placeholder_result(
+        self,
+        symbol: str,
+        error: str | None,
+        provider_run_log: list[dict],
+        *,
+        missing_reason_source: dict | None = None,
+    ) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)
         valuation_data = dict(supplemental["valuation_data"])
+        if missing_reason_source is not None:
+            _copy_missing_reasons_to_placeholder(valuation_data, missing_reason_source)
         valuation_data.setdefault("valuation_label", self._label(valuation_data))
         metadata = dict(supplemental["source_metadata"]["valuation_data"])
         return {
@@ -569,3 +612,169 @@ class ValuationService:
         if pe_percentile <= 0.80:
             return "slightly_expensive"
         return "expensive"
+
+
+def _copy_missing_reasons_to_placeholder(target: dict, source: dict) -> None:
+    reason_source = dict(source)
+    _compute_missing_reasons(reason_source)
+    for reason_field, reason in reason_source.items():
+        if not reason_field.endswith("_missing_reason"):
+            continue
+        value_field = reason_field.removesuffix("_missing_reason")
+        if target.get(value_field) is None:
+            target.setdefault(reason_field, reason)
+
+
+def _compute_missing_reasons(valuation_data: dict) -> None:
+    """Attach machine-readable *_missing_reason to valuation fields that are None.
+
+    Called once after all fallbacks have been tried.
+    """
+    _compute_market_cap_reason(valuation_data)
+    _compute_pe_reason(valuation_data)
+    _compute_pb_reason(valuation_data)
+    _compute_ps_reason(valuation_data)
+    _compute_percentile_missing_reasons(valuation_data)
+    _compute_dividend_yield_reason(valuation_data)
+    _compute_industry_missing_reasons(valuation_data)
+
+
+def _compute_market_cap_reason(vd: dict) -> None:
+    if vd.get("market_cap") is not None or "market_cap_missing_reason" in vd:
+        return
+    if not _to_float(vd.get("_close_ref")):
+        vd["market_cap_missing_reason"] = "missing_close"
+    elif not _to_float(vd.get("_total_volume_ref")):
+        vd["market_cap_missing_reason"] = "missing_total_volume"
+    else:
+        vd["market_cap_missing_reason"] = "share_capital_fallback_unavailable"
+
+
+def _compute_pe_reason(vd: dict) -> None:
+    if vd.get("pe_ttm") is not None or "pe_ttm_missing_reason" in vd:
+        return
+    if vd.get("market_cap") is None:
+        vd["pe_ttm_missing_reason"] = (
+            vd.get("market_cap_missing_reason") or "missing_market_cap"
+        )
+    elif _to_float(vd.get("_net_profit_ttm_ref")) is None:
+        vd["pe_ttm_missing_reason"] = "missing_net_profit_ttm"
+    else:
+        vd["pe_ttm_missing_reason"] = "loss_making_or_invalid_pe"
+
+
+def _compute_pb_reason(vd: dict) -> None:
+    if vd.get("pb_mrq") is not None or "pb_mrq_missing_reason" in vd:
+        return
+    if not _to_float(vd.get("_close_ref")):
+        vd["pb_mrq_missing_reason"] = "missing_close"
+    elif _to_float(vd.get("_bps_ref")) is None:
+        vd["pb_mrq_missing_reason"] = "missing_bps"
+    else:
+        vd["pb_mrq_missing_reason"] = "invalid_bps"
+
+
+def _compute_ps_reason(vd: dict) -> None:
+    if vd.get("ps_ttm") is not None or "ps_ttm_missing_reason" in vd:
+        return
+    if vd.get("market_cap") is None:
+        vd["ps_ttm_missing_reason"] = (
+            vd.get("market_cap_missing_reason") or "missing_market_cap"
+        )
+    elif _to_float(vd.get("_revenue_ttm_ref")) is None:
+        vd["ps_ttm_missing_reason"] = "missing_revenue_ttm"
+    else:
+        vd["ps_ttm_missing_reason"] = "invalid_revenue_ttm"
+
+
+def _compute_dividend_yield_reason(vd: dict) -> None:
+    if vd.get("dividend_yield") is not None or "dividend_yield_missing_reason" in vd:
+        return
+    if not vd.get("_csmar_enabled"):
+        vd["dividend_yield_missing_reason"] = "provider_disabled"
+    elif vd.get("_csmar_failed"):
+        vd["dividend_yield_missing_reason"] = "missing_dividend_yield_source"
+    elif vd.get("_csmar_stale_dividend_yield"):
+        vd["dividend_yield_missing_reason"] = "stale_local_csmar_daily_derived"
+    elif vd.get("_csmar_no_data"):
+        vd["dividend_yield_missing_reason"] = "missing_dividend_yield_source"
+    else:
+        vd["dividend_yield_missing_reason"] = "stale_local_csmar_daily_derived"
+
+
+def _compute_percentile_missing_reasons(vd: dict) -> None:
+    warnings = list(vd.get("percentile_warnings", []))
+    for metric, percentile_field, current_field, invalid_reason in [
+        ("pe", "pe_percentile", "pe_ttm", "loss_making_or_invalid_pe"),
+        ("pb", "pb_percentile", "pb_mrq", "invalid_bps"),
+        ("ps", "ps_percentile", "ps_ttm", "invalid_revenue_ttm"),
+    ]:
+        reason_field = f"{percentile_field}_missing_reason"
+        if vd.get(percentile_field) is not None or reason_field in vd:
+            continue
+
+        current_value = _to_float(vd.get(current_field))
+        if current_value is None:
+            vd[reason_field] = (
+                vd.get(f"{current_field}_missing_reason") or "field_not_supported"
+            )
+        elif current_value <= 0:
+            vd[reason_field] = invalid_reason
+        elif _has_warning(warnings, f"insufficient_{metric}_samples"):
+            vd[reason_field] = "insufficient_history_samples"
+        elif _has_warning(warnings, "insufficient"):
+            vd[reason_field] = "insufficient_history_samples"
+        elif _has_warning(warnings, "unavailable") or _has_warning(warnings, "failed"):
+            vd[reason_field] = "provider_unavailable"
+        else:
+            vd[reason_field] = "insufficient_history_samples"
+
+
+def _compute_industry_missing_reasons(vd: dict) -> None:
+    # Skip if no industry valuation was computed at all.
+    if "industry_valuation_warnings" not in vd and "industry_pe_percentile" not in vd:
+        return
+
+    warnings = vd.get("industry_valuation_warnings", [])
+    preflight = vd.get("industry_cache_preflight")
+    is_preflight_fail = (
+        preflight is not None and not preflight.get("ready", True)
+    )
+
+    for field, reason_field in [
+        ("industry_pe_percentile", "industry_pe_percentile_missing_reason"),
+        ("industry_pb_percentile", "industry_pb_percentile_missing_reason"),
+        ("industry_ps_percentile", "industry_ps_percentile_missing_reason"),
+    ]:
+        if vd.get(field) is not None or reason_field in vd:
+            continue
+        if is_preflight_fail:
+            vd[reason_field] = "peer_cache_preflight_failed"
+        elif _has_warning(warnings, "qmt_peer_price_cache_insufficient"):
+            vd[reason_field] = "missing_peer_close"
+        elif _has_warning(warnings, "qmt_finance_cache_insufficient_for_peer_valuation"):
+            vd[reason_field] = "missing_peer_finance"
+        elif _has_warning(warnings, "qmt_peer_share_capital_insufficient"):
+            vd[reason_field] = "missing_peer_share_capital"
+        elif _has_warning(warnings, "is below"):
+            vd[reason_field] = "insufficient_peer_samples"
+        elif _has_warning(warnings, "is not in valid peer inputs"):
+            vd[reason_field] = "target_not_in_peer_inputs"
+        elif _has_warning(warnings, "insufficient"):
+            vd[reason_field] = "insufficient_peer_samples"
+        else:
+            vd[reason_field] = "unknown"
+
+    # Aggregate field
+    if "industry_percentile_missing_reason" not in vd:
+        any_reason = (
+            vd.get("industry_pe_percentile_missing_reason")
+            or vd.get("industry_pb_percentile_missing_reason")
+            or vd.get("industry_ps_percentile_missing_reason")
+        )
+        if any_reason:
+            vd["industry_percentile_missing_reason"] = any_reason
+
+
+def _has_warning(warnings: list[str], keyword: str) -> bool:
+    return any(keyword in w for w in warnings)

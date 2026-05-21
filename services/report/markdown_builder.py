@@ -15,6 +15,32 @@ from services.data.data_quality import (
     localize_risk_level,
 )
 
+_MISSING_REASON_CODES: dict[str, str] = {
+    "missing_close": "收盘价缺失",
+    "missing_total_volume": "股本数据缺失",
+    "missing_market_cap": "市值数据缺失",
+    "share_capital_fallback_unavailable": "股本备用来源不可用",
+    "missing_net_profit_ttm": "净利润TTM缺失",
+    "loss_making_or_invalid_pe": "亏损或PE无效",
+    "missing_bps": "每股净资产缺失",
+    "invalid_bps": "每股净资产无效",
+    "missing_revenue_ttm": "营收TTM缺失",
+    "invalid_revenue_ttm": "营收TTM无效",
+    "provider_disabled": "数据源未启用",
+    "missing_dividend_yield_source": "股息数据缺失",
+    "stale_local_csmar_daily_derived": "本地CSMAR数据过期",
+    "peer_cache_preflight_failed": "同行缓存预检未通过",
+    "missing_peer_close": "同行价格缺失",
+    "missing_peer_finance": "同行财务数据缺失",
+    "missing_peer_share_capital": "同行股本数据缺失",
+    "insufficient_peer_samples": "行业有效样本不足",
+    "insufficient_history_samples": "历史样本不足",
+    "target_not_in_peer_inputs": "标的不在有效同行中",
+    "field_not_supported": "字段不支持",
+    "provider_unavailable": "数据源不可用",
+    "unknown": "未知原因",
+}
+
 
 def _as_bullets(items: list[Any] | None) -> str:
     """
@@ -24,6 +50,22 @@ def _as_bullets(items: list[Any] | None) -> str:
         return "- 暂无"
 
     return "\n".join(f"- {item}" for item in items)
+
+
+def _build_missing_reason_cell(
+    value: Any,
+    valuation_data: dict,
+    reason_key: str,
+    formatter: Any,
+) -> str:
+    """Format a valuation cell, appending missing reason when value is None."""
+    if value is not None:
+        return formatter(value)
+    reason_code = valuation_data.get(reason_key)
+    if reason_code:
+        reason_text = _MISSING_REASON_CODES.get(reason_code, reason_code)
+        return f"暂无（原因：{reason_text}）"
+    return formatter(value)
 
 
 def _build_field_quality_table(field_quality: dict) -> str:
@@ -84,7 +126,11 @@ def _build_valuation_summary_table(valuation_data: dict) -> str:
         ("dividend_yield", "股息率", format_percent),
         ("valuation_label", "估值标签", _format_text),
     ]:
-        rows.append(f"| {title} | {formatter(valuation_data.get(field))} |")
+        reason_key = f"{field}_missing_reason"
+        cell = _build_missing_reason_cell(
+            valuation_data.get(field), valuation_data, reason_key, formatter
+        )
+        rows.append(f"| {title} | {cell} |")
     return "\n".join(rows)
 
 
@@ -121,7 +167,11 @@ def _build_industry_valuation_table(valuation_data: dict) -> str:
         ("industry_valuation_label", "行业估值标签", _format_text),
         ("industry_valuation_source", "行业估值来源", _format_text),
     ]:
-        rows.append(f"| {title} | {formatter(valuation_data.get(field))} |")
+        reason_key = f"{field}_missing_reason"
+        cell = _build_missing_reason_cell(
+            valuation_data.get(field), valuation_data, reason_key, formatter
+        )
+        rows.append(f"| {title} | {cell} |")
     return "\n".join(rows)
 
 
