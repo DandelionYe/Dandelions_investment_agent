@@ -41,3 +41,4 @@ local_review_archive/
 data/raw/
 storage/reference/*.sqlite
 storage/reference/*.md
+storage/reference/*.csv

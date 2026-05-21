@@ -51,6 +51,189 @@ float_market_cap
 
 该 fallback 用于修复因股本缺失导致的 `market_cap`、`PE_TTM`、`PS_TTM` 为空问题。同行估值 loader 和预检共用同一套 fallback 逻辑，并通过最大请求数量限制避免批量滥用。
 
+### 4.1 本地 CSMAR 股本 / 市值数据
+
+2026-05-21 已确认：`data/raw/csmar/EVA_Structure.csv` 可以作为本地股本与市值补充数据源。该文件包含：
+
+```text
+Symbol
+EndDate
+ShortName
+CirculatedMarketValue
+MarketValue
+TotalShares
+NegotiableShares
+EquityPerShare
+```
+
+关键覆盖情况：
+
+```text
+总行数：274693
+股票数：5831
+最新日期：2026-03-31
+最新期记录数：5496
+最新期 TotalShares 正值：5496 / 5496
+最新期 MarketValue 正值：5496 / 5496
+本地行业库 securities 覆盖：5489 / 5519，约 99.46%
+600410.SH、002624.SZ、000419.SZ 三个样例行业合并同行池覆盖：513 / 513，100%
+```
+
+结论：
+
+```text
+1. 对行业 PE / PB / PS 横截面分位来说，当前核心数据已经基本齐全：
+   行业同行池来自 TRD_Co；
+   财务字段来自 MiniQMT Finance；
+   最新 close 来自 MiniQMT K 线；
+   total_volume / market_cap 可由 EVA_Structure 本地补充。
+
+2. EVA_Structure 更适合作为 total_volume / market_cap 的本地权威补充源，
+   优先级应高于 AKShare 网络 fallback。
+
+3. 计算当前估值时，优先使用 TotalShares × 当前 close 得到当前 market_cap；
+   MarketValue 可作为校验或在缺少 close 时的备用字段。
+
+4. NegotiableShares 在最新期覆盖较弱，不应作为第一阶段 float_volume 的主要来源。
+```
+
+因此，后续推进重点已经从“数据是否存在”转为“把 EVA_Structure 接入现有估值与预检链路”。
+
+### 4.2 本地 CSMAR 个股日交易衍生指标快照库
+
+2026-05-21 已完成对 `data/raw/csmar/个股日交易衍生指标*` 原始日频数据的压缩处理方案。原始数据规模较大，不适合在研究流程中直接扫描；当前已新增构建脚本：
+
+```text
+scripts/build_csmar_daily_derived_snapshots.py
+```
+
+该脚本按本地 CSMAR 行业库中的 A 股证券范围过滤数据，并生成以下本地快照文件：
+
+```text
+storage/reference/csmar_daily_derived_snapshots.sqlite
+storage/reference/csmar_daily_derived_latest.csv
+storage/reference/csmar_daily_derived_latest_metrics.csv
+storage/reference/csmar_daily_derived_build_report.md
+```
+
+SQLite 表结构定位：
+
+```text
+monthly_snapshots：
+  每只股票每个自然月只保留最后一个可用交易日记录。
+
+latest_snapshot：
+  每只股票保留最新交易日记录。
+
+latest_non_null_metrics：
+  每只股票按字段保留“最新非空值 + 对应日期”，用于处理股息率这类非每日更新字段。
+```
+
+本次构建结果：
+
+```text
+原始扫描行数：11811258
+过滤后覆盖股票数：5519
+monthly_snapshots：560316 行
+latest_snapshot：5519 行
+latest_non_null_metrics：5519 行
+最新交易日范围：2026-04-13 至 2026-05-18
+
+latest_non_null_metrics 覆盖：
+  dividend_yield：5127 / 5519
+  pe：5485 / 5519
+  pb：5519 / 5519
+  ps：5518 / 5519
+  circulated_market_value：5519 / 5519
+```
+
+字段含义：
+
+```text
+dividend_yield：由 CSMAR Ret 转换而来，原始 Ret 是百分数，快照库中除以 100 后存储为小数。
+pe / pb / pcf / ps：直接保留 CSMAR 日交易衍生指标中的估值倍数。
+turnover：换手率。
+circulated_market_value：流通市值。
+change_ratio：涨跌幅。
+amount：成交金额。
+liquidility：流动性指标。
+```
+
+这批快照库可以作为后续接入行业估值与报告字段的本地数据源，尤其适合补充：
+
+```text
+股息率
+PE / PB / PCF / PS 当前值
+PE / PB / PS 历史分位所需的月度历史样本
+换手率、流通市值、涨跌幅、成交金额、流动性指标
+```
+
+当前边界：数据已经压缩并验证，但主估值链路和报告层尚未读取 `csmar_daily_derived_snapshots.sqlite`。因此它目前是“已准备好的本地数据底座”，不是已经自动出现在报告里的字段。
+
+推荐接入方式：
+
+```text
+1. 新增本地 provider
+   建议新增 LocalCSMARDailyDerivedProvider，默认读取：
+   storage/reference/csmar_daily_derived_snapshots.sqlite
+
+   provider 至少提供两个查询接口：
+   - get_latest_metrics(symbol)
+     从 latest_non_null_metrics 读取当前可用指标及 value_date。
+   - get_monthly_history(symbols, metrics, start_date=None, end_date=None)
+     从 monthly_snapshots 读取月度历史样本，用于历史分位。
+
+2. 当前估值字段接入
+   对单只股票报告字段，优先读取 latest_non_null_metrics：
+   - dividend_yield
+   - pe
+   - pb
+   - pcf
+   - ps
+   - turnover
+   - circulated_market_value
+   - change_ratio
+   - amount
+   - liquidility
+
+   每个字段都应同时保留对应的 *_date，避免把过旧数据当成当前值。
+
+3. 行业历史分位接入
+   PE / PB / PS 历史分位不要扫描原始 CSMAR CSV，也不要只用 latest_snapshot。
+   应按行业同行池读取 monthly_snapshots，并按 symbol + period 形成月度横截面样本。
+
+   建议第一阶段只接入：
+   - pe historical percentile
+   - pb historical percentile
+   - ps historical percentile
+
+   pcf、turnover、流通市值等字段可以作为后续扩展。
+
+4. 数据源优先级
+   当前值：
+   - close：仍优先使用 MiniQMT K 线最新价。
+   - total_volume / market_cap：优先使用 EVA_Structure 本地股本 / 市值补充。
+   - dividend_yield、pe、pb、pcf、ps：优先使用 CSMAR daily derived latest_non_null_metrics。
+   - QMT / AKShare 对应字段可作为缺口 fallback，但不应覆盖更新且可信的本地 CSMAR 快照字段。
+
+   行业分位：
+   - 同行池：local_csmar 行业库。
+   - 同行当前横截面估值：优先使用现有 QMT 财务 + close + 股本链路。
+   - 历史分位样本：优先使用 CSMAR daily derived monthly_snapshots。
+
+5. 新鲜度校验
+   latest_non_null_metrics 中每个指标都有独立日期。
+   建议接入时增加最大陈旧天数或最大陈旧月份配置，例如：
+   - dividend_yield 可允许更长窗口，因为通常随分红或年报更新。
+   - pe / pb / ps 应要求更接近当前交易日。
+
+   若字段超过新鲜度阈值，不应静默输出，应在 provider_run_log / source_metadata 中记录 stale warning。
+
+6. 失败策略
+   本地 SQLite 不存在、表不存在、字段缺失或查询失败时，不阻断主流程。
+   provider 应返回结构化 warning，并允许现有 QMT / EVA / AKShare 链路继续运行。
+```
+
 ### 5. MiniQMT Finance 同步边界
 
 已确认的边界是：
@@ -141,13 +324,15 @@ userdata_mini\datadir\SZ\86400 文件数：6202
 
 这是当前设计的预期行为，不应改成静默给出低质量分位。
 
-在已同步完整版 QMT 数据到 MiniQMT `userdata_mini\datadir` 后，Finance 和 close 覆盖率已经明显改善；但 `total_volume` 仍可能不足。因此后续判断行业分位是否可用时，不能只看 Finance 和 K 线，还必须继续检查股本覆盖率。
+在已同步完整版 QMT 数据到 MiniQMT `userdata_mini\datadir` 后，Finance 和 close 覆盖率已经明显改善。新增的 `EVA_Structure.csv` 又基本补齐了 A 股 `TotalShares / MarketValue`。因此，对于行业 PE / PB / PS 横截面估值，当前所需核心数据已经基本齐全；剩余风险主要是接入逻辑、少量新股覆盖缺口，以及异常字段校验。
 
-### 2. 股息率仍未可靠实现
+### 2. CSMAR 派生指标尚未接入主估值链路
 
-当前股息率不是 QMT 派生估值链路中的可靠字段。即使 PE / PB / PS 可用，`dividend_yield` 仍可能显示“暂无”。
+`个股日交易衍生指标` 已经被压缩为本地快照库，底层数据可以覆盖大部分 A 股的股息率、PE、PB、PS、PCF、换手率、流通市值等字段。
 
-后续需要明确股息率来源，例如 AKShare 估值接口、QMT 除权除息 / 分红数据，或本地分红数据表。
+但当前主估值链路和报告层尚未接入该快照库。因此，在 UI 或报告中，`dividend_yield`、历史 PE / PB / PS 分位等字段仍可能显示“暂无”。这不再主要是“没有数据源”的问题，而是“本地数据源尚未接入现有 provider / valuation engine / report pipeline”的问题。
+
+接入时应优先读取 `latest_non_null_metrics`，避免直接使用 `latest_snapshot` 导致股息率这类非每日更新字段误判为空；历史分位计算则应读取 `monthly_snapshots`。
 
 ### 3. “暂无”的原因披露还不够细
 
@@ -171,17 +356,38 @@ userdata_mini\datadir\SZ\86400 文件数：6202
 
 ## 后续必要开发计划
 
-### P1. 股息率补充
+### P0. 接入 EVA_Structure 本地股本 / 市值数据
 
-实现可靠的 `dividend_yield` 来源，并允许补充来源覆盖当前值为 `None` 的字段。
+新增本地 CSMAR 股本数据 provider，将 `EVA_Structure.csv` 清洗成可快速查询的本地 SQLite 或缓存表。
 
-建议优先级：
+第一阶段目标：
 
 ```text
-1. 先接入 AKShare 估值接口中的股息率字段。
-2. 保证 fallback 失败不阻断主流程。
-3. 在 provider_run_log 和 source_metadata 中记录来源。
+1. 按 Symbol + EndDate 读取最新期记录。
+2. 输出 normalized_symbol、as_of、total_volume、market_cap、equity_per_share。
+3. 在 QMT TotalVolume 为 0 或缺失时，优先用 EVA_Structure 的 TotalShares 补齐。
+4. 行业同行预检也使用同一套本地股本补充逻辑。
+5. 只有本地 EVA_Structure 不覆盖时，才调用 AKShare 网络 fallback。
 ```
+
+接入后，行业 PE / PB / PS 分位的数据基础应基本完整。
+
+### P0. 接入 CSMAR 个股日交易衍生指标快照库
+
+新增本地 CSMAR 日交易衍生指标 provider，读取 `storage/reference/csmar_daily_derived_snapshots.sqlite`，并接入估值与报告链路。
+
+第一阶段目标：
+
+```text
+1. 按 normalized_symbol 读取 latest_non_null_metrics。
+2. 补充 dividend_yield、pe、pb、pcf、ps、turnover、circulated_market_value 等当前指标。
+3. 行业历史分位需要历史样本时，读取 monthly_snapshots，而不是扫描原始 CSV。
+4. 对每个字段记录 value_date，避免使用过旧指标时没有提示。
+5. 在 provider_run_log 和 source_metadata 中记录来源为 local_csmar_daily_derived。
+6. 该 provider 失败时不阻断主流程，只返回结构化 warning。
+```
+
+接入后，报告中的股息率和 PE / PB / PS 历史分位应优先使用本地 CSMAR 快照库；AKShare 更适合作为缺口补充，而不是第一来源。
 
 ### P1. 报告层“暂无原因”披露
 
@@ -249,11 +455,12 @@ warning
 ## 推荐推进顺序
 
 ```text
-1. 股息率补充
-2. 报告层“暂无原因”披露
-3. MiniQMT 数据同步脚本
-4. provider fallback 配置整理
-5. LLM 输出瘦身验收
+1. 接入 EVA_Structure 本地股本 / 市值数据
+2. 接入 CSMAR 个股日交易衍生指标快照库
+3. 报告层“暂无原因”披露
+4. MiniQMT 数据同步脚本
+5. provider fallback 配置整理
+6. LLM 输出瘦身验收
 ```
 
-当前最值得优先做的是股息率补充。原因是行业分类、同行预检、价格缓存补齐、股本 fallback 都已基本落地；股息率是用户仍能直接看到“暂无”的主要剩余字段之一。
+当前最值得优先做的是接入 `EVA_Structure.csv` 和 `csmar_daily_derived_snapshots.sqlite`。前者解决股本 / 市值本地补充，后者解决股息率、估值倍数和历史分位样本的本地化查询。两者接入后，行业估值链路对 QMT 缓存和网络 fallback 的依赖会明显下降。
