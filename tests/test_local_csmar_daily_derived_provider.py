@@ -285,6 +285,9 @@ def test_stale_warning_in_metadata_error():
         result = provider.get_latest_metrics("000001.SZ")
         # The provider should still succeed
         assert result.metadata.success is True
+        assert "pe is" in (result.metadata.error or "")
+        assert result.metadata.error_type == "provider_data_quality"
+        assert any("pe is" in warning for warning in result.data.get("warnings", []))
     finally:
         shutil.rmtree(td, ignore_errors=True)
 

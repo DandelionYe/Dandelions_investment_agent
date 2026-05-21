@@ -51,6 +51,11 @@ class ValuationService:
             "as_of": str(date.today()),
             "calculation_method": valuation_data.get("calculation_method"),
         }
+        self._append_csmar_percentile_run_log(
+            symbol=symbol,
+            valuation_data=valuation_data,
+            provider_run_log=provider_run_log,
+        )
 
         # Share capital fallback: if QMT total_volume is missing/zero,
         # try AKShare to get total_volume or market_cap.
@@ -213,22 +218,25 @@ class ValuationService:
             return
 
         result = self.csmar_provider.get_latest_metrics(symbol)
-        provider_run_log.append({
-            "provider": result.provider,
-            "dataset": result.dataset,
-            "symbol": symbol,
-            "status": "success" if result.data.get("pe") is not None else "no_usable_data",
-            "rows": 1 if result.data.get("pe") is not None else 0,
-            "error": result.metadata.error,
-            "error_type": None,
-            "as_of": str(date.today()),
-        })
+        data = result.data
+        available_fields = [
+            field
+            for field in ("dividend_yield", "pe", "pb", "ps", "pcf")
+            if isinstance(data, dict) and data.get(field) is not None
+        ]
+        csmar_fields_applied = []
 
         if not result.metadata.success:
+            provider_run_log.append(
+                self._csmar_run_log_entry(
+                    result=result,
+                    symbol=symbol,
+                    status="failed",
+                    available_fields=available_fields,
+                    applied_fields=csmar_fields_applied,
+                )
+            )
             return
-
-        data = result.data
-        csmar_fields_applied = []
 
         # dividend_yield: CSMAR is the preferred fallback (often more reliable
         # than QMT which may not compute it daily).
@@ -264,6 +272,78 @@ class ValuationService:
                 ).strip()
             if "csmar" not in str(metadata.get("source", "")):
                 metadata["source"] = metadata["source"] + "+csmar_daily_derived"
+
+        if csmar_fields_applied:
+            status = "success"
+        elif available_fields:
+            status = "available_not_applied"
+        else:
+            status = "no_usable_data"
+
+        provider_run_log.append(
+            self._csmar_run_log_entry(
+                result=result,
+                symbol=symbol,
+                status=status,
+                available_fields=available_fields,
+                applied_fields=csmar_fields_applied,
+            )
+        )
+
+    def _csmar_run_log_entry(
+        self,
+        *,
+        result,
+        symbol: str,
+        status: str,
+        available_fields: list[str],
+        applied_fields: list[str],
+    ) -> dict:
+        return {
+            "provider": result.provider,
+            "dataset": result.dataset,
+            "symbol": symbol,
+            "status": status,
+            "rows": 1 if result.raw is not None else 0,
+            "error": result.metadata.error,
+            "error_type": result.metadata.error_type,
+            "as_of": str(date.today()),
+            "fields_available": available_fields,
+            "fields_applied": applied_fields,
+        }
+
+    def _append_csmar_percentile_run_log(
+        self,
+        *,
+        symbol: str,
+        valuation_data: dict,
+        provider_run_log: list[dict],
+    ) -> None:
+        applied_fields = list(valuation_data.get("percentile_fields_from_csmar", []))
+        warnings = list(valuation_data.get("percentile_warnings", []))
+        if not applied_fields and not warnings:
+            return
+
+        if applied_fields and warnings:
+            status = "partial_success"
+        elif applied_fields:
+            status = "success"
+        else:
+            status = "no_usable_data"
+
+        provider_run_log.append(
+            {
+                "provider": "local_csmar_daily_derived",
+                "dataset": "monthly_snapshots",
+                "symbol": symbol,
+                "status": status,
+                "rows": valuation_data.get("percentile_sample_count", 0),
+                "error": "; ".join(warnings) if warnings else None,
+                "error_type": ProviderDataQualityError.error_type if warnings else None,
+                "as_of": str(date.today()),
+                "fields_applied": applied_fields,
+            }
+        )
 
     def _placeholder_result(self, symbol: str, error: str | None, provider_run_log: list[dict]) -> dict:
         supplemental = get_placeholder_supplemental_data(symbol)

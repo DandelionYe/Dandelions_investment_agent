@@ -24,6 +24,7 @@ from time import perf_counter
 from typing import Any, Sequence
 
 from services.data.provider_contracts import (
+    ProviderDataQualityError,
     ProviderMetadata,
     ProviderResult,
 )
@@ -156,6 +157,8 @@ class LocalCSMARDailyDerivedProvider:
 
         # Always carry source even if all fields were filtered out
         data["source"] = self.provider
+        if warnings:
+            data["warnings"] = warnings
 
         return ProviderResult(
             provider=self.provider,
@@ -167,6 +170,8 @@ class LocalCSMARDailyDerivedProvider:
             metadata=ProviderMetadata(
                 source_url=f"sqlite:///{self._db_path}",
                 success=True,
+                error="; ".join(warnings) if warnings else None,
+                error_type=ProviderDataQualityError.error_type if warnings else None,
                 latency_ms=int((perf_counter() - started) * 1000),
             ),
         )
@@ -193,6 +198,9 @@ class LocalCSMARDailyDerivedProvider:
 
         if not Path(self._db_path).exists():
             return self._empty_list_result(symbols, started, f"SQLite not found: {self._db_path}")
+
+        if not symbols:
+            return self._empty_list_result(symbols, started, "no symbols requested")
 
         # Validate requested metrics against known columns
         valid_metrics = [m for m in metrics if m in _ALL_FIELDS]

@@ -40,7 +40,7 @@ def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
 
     df = None
     # 东财 → 腾讯 → 新浪 fallback
-    for source, fetch_fn in [
+    for _source, fetch_fn in [
         ("eastmoney", lambda: ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq")),
         ("tencent", lambda: ak.stock_zh_a_hist_tx(symbol=prefixed, start_date=start, end_date=end, adjust="qfq")),
         ("sina", lambda: ak.stock_zh_a_daily(symbol=prefixed, adjust="qfq")),
@@ -201,7 +201,12 @@ class ValuationNormalizer:
         # CSMAR monthly history fallback: when QMT+AKShare price history
         # are insufficient for percentile computation, use CSMAR monthly
         # snapshots which contain actual PE/PB/PS values per month.
-        if result.get("pe_percentile") is None and result.get("pb_percentile") is None:
+        if self._needs_csmar_percentile_fallback(
+            result=result,
+            current_pe=pe_ttm,
+            current_pb=pb_mrq,
+            current_ps=ps_ttm,
+        ):
             self._try_csmar_percentile_fallback(
                 result=result,
                 symbol=asset_data.get("symbol", ""),
@@ -211,6 +216,25 @@ class ValuationNormalizer:
             )
 
         return result
+
+    def _needs_csmar_percentile_fallback(
+        self,
+        *,
+        result: dict,
+        current_pe: float | None,
+        current_pb: float | None,
+        current_ps: float | None,
+    ) -> bool:
+        return any(
+            result.get(percentile_key) is None
+            and current_value is not None
+            and current_value > 0
+            for percentile_key, current_value in [
+                ("pe_percentile", current_pe),
+                ("pb_percentile", current_pb),
+                ("ps_percentile", current_ps),
+            ]
+        )
 
     def _try_csmar_percentile_fallback(
         self,
@@ -236,11 +260,11 @@ class ValuationNormalizer:
         try:
             provider = LocalCSMARDailyDerivedProvider()
             metrics_to_fetch = []
-            if current_pe is not None and current_pe > 0:
+            if result.get("pe_percentile") is None and current_pe is not None and current_pe > 0:
                 metrics_to_fetch.append("pe")
-            if current_pb is not None and current_pb > 0:
+            if result.get("pb_percentile") is None and current_pb is not None and current_pb > 0:
                 metrics_to_fetch.append("pb")
-            if current_ps is not None and current_ps > 0:
+            if result.get("ps_percentile") is None and current_ps is not None and current_ps > 0:
                 metrics_to_fetch.append("ps")
 
             if not metrics_to_fetch:
@@ -250,11 +274,22 @@ class ValuationNormalizer:
                 symbols=[symbol],
                 metrics=metrics_to_fetch,
             )
-            if not monthly_result.metadata.success or not monthly_result.data:
+            if not monthly_result.metadata.success:
+                self._append_percentile_warning(
+                    result,
+                    f"csmar_monthly_history_unavailable: {monthly_result.metadata.error}",
+                )
+                return
+            if not monthly_result.data:
+                self._append_percentile_warning(
+                    result,
+                    "csmar_monthly_history_unavailable: no rows returned",
+                )
                 return
 
             rows = monthly_result.data
             sample_count = len(rows)
+            filled_percentiles = []
 
             for csmar_key, percentile_key, max_val in [
                 ("pe", "pe_percentile", 300),
@@ -276,18 +311,35 @@ class ValuationNormalizer:
                     result[percentile_key] = round(
                         _compute_percentile_from_values(current_val, series), 4
                     )
+                    result[f"{percentile_key}_sample_count"] = len(series)
+                    filled_percentiles.append(percentile_key)
+                else:
+                    self._append_percentile_warning(
+                        result,
+                        f"csmar_monthly_history_insufficient_{csmar_key}_samples: "
+                        f"{len(series)} < 12",
+                    )
 
             # Record source if any percentile was filled
-            if any(result.get(k) is not None for k in ("pe_percentile", "pb_percentile", "ps_percentile")):
+            if filled_percentiles:
                 result["calculation_method"] = (
                     result.get("calculation_method", "")
                     + " + percentile_from_csmar_monthly_history"
                 )
                 result["percentile_source"] = "local_csmar_daily_derived"
                 result["percentile_sample_count"] = sample_count
-        except Exception:
+                result["percentile_fields_from_csmar"] = filled_percentiles
+        except Exception as exc:
             # CSMAR percentile fallback is non-blocking
-            pass
+            self._append_percentile_warning(
+                result,
+                f"csmar_monthly_history_fallback_failed: {exc}",
+            )
+
+    def _append_percentile_warning(self, result: dict, warning: str) -> None:
+        warnings = result.setdefault("percentile_warnings", [])
+        if warning not in warnings:
+            warnings.append(warning)
 
     def normalize_akshare(self, provider_result: dict) -> dict:
         records = provider_result.get("data", [])

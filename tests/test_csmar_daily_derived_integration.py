@@ -338,6 +338,34 @@ def test_csmar_appears_in_provider_run_log():
         shutil.rmtree(td, ignore_errors=True)
 
 
+def test_csmar_run_log_success_when_only_dividend_yield_applied():
+    """CSMAR run log should not require PE to mark usable fallback data."""
+    td = _make_tmp_dir()
+    try:
+        db = os.path.join(td, "csmar.sqlite")
+        _create_csmar_db(db)
+        csmar_provider = _CSMARSpy(LocalCSMARDailyDerivedProvider(db_path=db))
+
+        service = ValuationService(
+            normalizer=_StubNormalizer(),
+            akshare_provider=_StubAkshareProvider(),
+            industry_service=_StubIndustryService(),
+            csmar_provider=csmar_provider,
+        )
+
+        result = service.build(_asset_data("000002.SZ"))
+        v = result["data"]["valuation_data"]
+        log = result["provider_run_log"]
+
+        assert v["dividend_yield"] == pytest.approx(0.03)
+        csmar_entries = [e for e in log if e["provider"] == "local_csmar_daily_derived"]
+        assert csmar_entries[0]["status"] == "success"
+        assert csmar_entries[0]["fields_available"] == ["dividend_yield"]
+        assert csmar_entries[0]["fields_applied"] == ["dividend_yield"]
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # Test: calculation_method includes CSMAR
 # ---------------------------------------------------------------------------
@@ -371,13 +399,15 @@ def test_calculation_method_mentions_csmar():
 # Test: percentile fallback from CSMAR monthly history
 # ---------------------------------------------------------------------------
 
-def test_csmar_percentile_fallback_fills_pe_percentile():
+def test_csmar_percentile_fallback_fills_pe_percentile(monkeypatch):
     """When QMT/AKShare history is insufficient, CSMAR monthly history
     should provide PE/PB/PS percentiles."""
     td = _make_tmp_dir()
     try:
         db = os.path.join(td, "csmar.sqlite")
         _create_csmar_db(db)
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "true")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_DB", db)
 
         normalizer = ValuationNormalizer()
 
@@ -394,54 +424,6 @@ def test_csmar_percentile_fallback_fills_pe_percentile():
             },
         }
 
-        # Monkey-patch the normalizer to use our test DB
-        def patched_try(*, result, symbol, current_pe, current_pb, current_ps):
-            provider = LocalCSMARDailyDerivedProvider(db_path=db)
-            metrics = []
-            if current_pe and current_pe > 0:
-                metrics.append("pe")
-            if current_pb and current_pb > 0:
-                metrics.append("pb")
-            if current_ps and current_ps > 0:
-                metrics.append("ps")
-            if not metrics:
-                return
-
-            monthly_result = provider.get_monthly_history(symbols=[symbol], metrics=metrics)
-            if not monthly_result.metadata.success or not monthly_result.data:
-                return
-
-            rows = monthly_result.data
-            for csmar_key, percentile_key, max_val in [
-                ("pe", "pe_percentile", 300),
-                ("pb", "pb_percentile", 50),
-                ("ps", "ps_percentile", 100),
-            ]:
-                if result.get(percentile_key) is not None:
-                    continue
-                current_val = {"pe": current_pe, "pb": current_pb, "ps": current_ps}[csmar_key]
-                if current_val is None or current_val <= 0:
-                    continue
-                series = [
-                    float(row[csmar_key])
-                    for row in rows
-                    if row.get(csmar_key) is not None and 0 < float(row[csmar_key]) <= max_val
-                ]
-                if len(series) >= 12:
-                    result[percentile_key] = round(
-                        _compute_percentile_from_values(current_val, series), 4
-                    )
-
-            if any(result.get(k) is not None for k in ("pe_percentile", "pb_percentile", "ps_percentile")):
-                result["calculation_method"] = (
-                    result.get("calculation_method", "")
-                    + " + percentile_from_csmar_monthly_history"
-                )
-                result["percentile_source"] = "local_csmar_daily_derived"
-                result["percentile_sample_count"] = len(rows)
-
-        normalizer._try_csmar_percentile_fallback = patched_try
-
         result = normalizer.derive_from_qmt(asset_data)
 
         # Without history_close, percentiles should come from CSMAR fallback
@@ -449,6 +431,68 @@ def test_csmar_percentile_fallback_fills_pe_percentile():
         assert result.get("pb_percentile") is not None
         assert "csmar_monthly_history" in result.get("calculation_method", "")
         assert result.get("percentile_source") == "local_csmar_daily_derived"
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def test_csmar_percentile_fallback_fills_missing_fields_individually(monkeypatch):
+    td = _make_tmp_dir()
+    try:
+        db = os.path.join(td, "csmar.sqlite")
+        _create_csmar_db(db)
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "true")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_DB", db)
+
+        normalizer = ValuationNormalizer()
+        result = {
+            "pe_percentile": 0.42,
+            "pb_percentile": None,
+            "ps_percentile": None,
+            "calculation_method": "derived_from_qmt_price_share_capital_and_financials",
+        }
+
+        normalizer._try_csmar_percentile_fallback(
+            result=result,
+            symbol="600519.SH",
+            current_pe=25.0,
+            current_pb=8.0,
+            current_ps=12.0,
+        )
+
+        assert result["pe_percentile"] == pytest.approx(0.42)
+        assert result["pb_percentile"] is not None
+        assert result["ps_percentile"] is not None
+        assert result["percentile_fields_from_csmar"] == ["pb_percentile", "ps_percentile"]
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def test_csmar_percentile_fallback_is_recorded_in_run_log(monkeypatch):
+    td = _make_tmp_dir()
+    try:
+        db = os.path.join(td, "csmar.sqlite")
+        _create_csmar_db(db)
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_PROVIDER", "true")
+        monkeypatch.setenv("CSMAR_DAILY_DERIVED_DB", db)
+
+        service = ValuationService(
+            normalizer=ValuationNormalizer(),
+            akshare_provider=_StubAkshareProvider(),
+            industry_service=_StubIndustryService(),
+            csmar_provider=LocalCSMARDailyDerivedProvider(db_path=db),
+        )
+
+        result = service.build(_asset_data("600519.SH"))
+        csmar_monthly_entries = [
+            entry
+            for entry in result["provider_run_log"]
+            if entry["provider"] == "local_csmar_daily_derived"
+            and entry["dataset"] == "monthly_snapshots"
+        ]
+
+        assert csmar_monthly_entries
+        assert csmar_monthly_entries[0]["status"] == "success"
+        assert csmar_monthly_entries[0]["fields_applied"]
     finally:
         shutil.rmtree(td, ignore_errors=True)
 
