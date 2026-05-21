@@ -1,8 +1,9 @@
 import json
 
-from services.llm.deepseek_client import get_deepseek_client
-from services.agents.json_call import chat_json_checked
 from services.agents.audit_metadata import build_agent_metadata
+from services.agents.json_call import chat_json_checked
+from services.agents.research_context import compact_research_result_for_llm
+from services.llm.deepseek_client import get_deepseek_client
 
 
 class Supervisor:
@@ -50,7 +51,7 @@ class Supervisor:
                 model=self._model,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                research_result=research_result,
+                research_result=compact_research_result_for_llm(research_result),
                 debate_history=debate_history,
                 extra_inputs={
                     "current_round": current_round,
@@ -122,11 +123,12 @@ class Supervisor:
         current_round: int,
         max_rounds: int,
     ) -> str:
+        compact = compact_research_result_for_llm(research_result)
         summary = {
-            "symbol": research_result.get("symbol"),
-            "name": research_result.get("name"),
-            "score": research_result.get("score"),
-            "rating": research_result.get("rating"),
+            "symbol": compact.get("symbol"),
+            "name": compact.get("name"),
+            "score": compact.get("score"),
+            "rating": compact.get("rating"),
         }
 
         parts = [
@@ -139,7 +141,7 @@ class Supervisor:
             "==========================",
             "完整研究数据",
             "==========================",
-            json.dumps(research_result, ensure_ascii=False, indent=2),
+            json.dumps(compact, ensure_ascii=False, indent=2),
             "",
             "==========================",
             "多头分析师当前立场 (bull_case)",

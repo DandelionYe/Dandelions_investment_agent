@@ -1,9 +1,10 @@
 import json
 
-from services.llm.deepseek_client import get_deepseek_client
+from services.agents.audit_metadata import build_agent_metadata
 from services.agents.debate_utils import format_debate_history
 from services.agents.json_call import chat_json_checked
-from services.agents.audit_metadata import build_agent_metadata
+from services.agents.research_context import compact_research_result_for_llm
+from services.llm.deepseek_client import get_deepseek_client
 
 
 class CommitteeSecretary:
@@ -61,7 +62,7 @@ class CommitteeSecretary:
             "==========================\n"
             "原始研究数据\n"
             "==========================\n"
-            + json.dumps(research_result, ensure_ascii=False, indent=2)
+            + json.dumps(compact_research_result_for_llm(research_result), ensure_ascii=False, indent=2)
             + "\n\n"
             "==========================\n"
             "多头分析师意见 (bull_case)\n"
@@ -115,7 +116,7 @@ class CommitteeSecretary:
                 model=self._model,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                research_result=research_result,
+                research_result=compact_research_result_for_llm(research_result),
                 debate_history=debate_history,
                 extra_inputs={
                     "bull_case": {

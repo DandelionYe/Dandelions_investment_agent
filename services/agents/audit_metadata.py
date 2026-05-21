@@ -10,108 +10,38 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _pick(mapping: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
-    return {key: mapping[key] for key in keys if key in mapping}
-
-
-def _evidence_preview(evidence_bundle: dict[str, Any], limit: int = 8) -> dict[str, Any]:
+def _evidence_preview(evidence_bundle: dict[str, Any]) -> dict[str, Any]:
     items = evidence_bundle.get("items") or []
-    preview = []
-    for item in items[:limit]:
-        preview.append(
-            _pick(
-                item,
-                (
-                    "evidence_id",
-                    "category",
-                    "title",
-                    "source",
-                    "source_date",
-                    "confidence",
-                    "display_value",
-                ),
-            )
-        )
     return {
         "bundle_id": evidence_bundle.get("bundle_id"),
         "item_count": len(items),
-        "items_preview": preview,
-    }
-
-
-def _event_preview(event_data: dict[str, Any], limit: int = 8) -> dict[str, Any]:
-    items = event_data.get("items") or event_data.get("events") or []
-    preview = []
-    for item in items[:limit]:
-        if isinstance(item, dict):
-            preview.append(
-                _pick(
-                    item,
-                    (
-                        "title",
-                        "event_type",
-                        "severity",
-                        "published_at",
-                        "source",
-                        "summary",
-                    ),
-                )
-            )
-    return {
-        "item_count": len(items),
-        "items_preview": preview,
-        **_pick(event_data, ("positive_count", "negative_count", "critical_count")),
+        "items_preview": items[:8],
     }
 
 
 def build_research_input_snapshot(research_result: dict[str, Any]) -> dict[str, Any]:
-    """Build a compact, auditable snapshot of the data shown to an LLM agent."""
-    price_data = research_result.get("price_data") or {}
-    fundamental_data = research_result.get("fundamental_data") or {}
-    valuation_data = research_result.get("valuation_data") or {}
-    event_data = research_result.get("event_data") or {}
+    """Build a compact, auditable snapshot of the data shown to an LLM agent.
 
+    Agents are expected to pass already-compacted data (via
+    ``compact_research_result_for_llm``), so this function simply records the
+    fields that matter for audit without re-filtering.
+    """
+    bundle = research_result.get("evidence_bundle") or {}
     return {
         "symbol": research_result.get("symbol"),
         "name": research_result.get("name"),
         "asset_type": research_result.get("asset_type"),
         "as_of": research_result.get("as_of"),
         "data_source": research_result.get("data_source"),
-        "data_source_chain": research_result.get("data_source_chain", []),
         "score": research_result.get("score"),
         "rating": research_result.get("rating"),
         "action": research_result.get("action"),
-        "source_metadata": research_result.get("source_metadata", {}),
+        "price_data": research_result.get("price_data", {}),
+        "fundamental_data": research_result.get("fundamental_data", {}),
+        "valuation_data": research_result.get("valuation_data", {}),
+        "event_data": research_result.get("event_data", {}),
+        "evidence_bundle": _evidence_preview(bundle),
         "data_quality": research_result.get("data_quality", {}),
-        "price_data": _pick(
-            price_data,
-            (
-                "close",
-                "change_pct",
-                "ma20",
-                "ma60",
-                "volume",
-                "turnover",
-                "data_vendor",
-            ),
-        ),
-        "fundamental_data": _pick(
-            fundamental_data,
-            (
-                "revenue_growth",
-                "profit_growth",
-                "roe",
-                "gross_margin",
-                "net_margin",
-                "debt_to_asset",
-            ),
-        ),
-        "valuation_data": _pick(
-            valuation_data,
-            ("pe_ttm", "pb", "pe_percentile", "pb_percentile", "valuation_score"),
-        ),
-        "event_data": _event_preview(event_data),
-        "evidence_bundle": _evidence_preview(research_result.get("evidence_bundle") or {}),
     }
 
 
