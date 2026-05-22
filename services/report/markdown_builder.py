@@ -241,11 +241,27 @@ def _filter_stale_warnings(data_warnings: list[str]) -> list[str]:
     ]
 
 
-def build_markdown_report(result: dict) -> str:
+def build_markdown_report(result: dict, template_config=None) -> str:
     """
     把研究结果转换成 Markdown 报告。
     支持展示完整 DeepSeek 辩论结果、行情摘要、数据质量提示和决策保护器结果。
+
+    Parameters
+    ----------
+    result : dict
+        研究结果。
+    template_config : ReportTemplateConfig | dict | None
+        模板配置。dict 会自动转换为 ReportTemplateConfig。
+        None 使用默认配置（包含所有章节）。
     """
+    from services.report.template_config import ReportTemplateConfig, template_config_from_dict
+
+    if template_config is None:
+        cfg = ReportTemplateConfig()
+    elif isinstance(template_config, dict):
+        cfg = template_config_from_dict(template_config)
+    else:
+        cfg = template_config
 
     score_breakdown = result.get("score_breakdown", {})
     price_data = result.get("price_data", {})
@@ -305,8 +321,8 @@ def build_markdown_report(result: dict) -> str:
         guard_summary = "本次未启用决策保护器。"
 
     data_quality_notes = build_data_quality_notes(price_data)
-    field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {}))
-    evidence_preview_table = _build_evidence_preview(evidence_bundle)
+    field_quality_table = _build_field_quality_table(data_quality.get("field_quality", {})) if cfg.show_data_quality else ""
+    evidence_preview_table = _build_evidence_preview(evidence_bundle) if cfg.show_evidence else ""
     valuation_summary_table = _build_valuation_summary_table(valuation_data)
     industry_valuation_table = _build_industry_valuation_table(valuation_data)
     industry_valuation_warnings = valuation_data.get("industry_valuation_warnings", [])
@@ -329,6 +345,53 @@ def build_markdown_report(result: dict) -> str:
     price_source_display = localize_price_source(price_data.get("latest_price_source"))
     price_status_display = localize_price_status(price_data.get("price_is_stale"))
     price_history_display = localize_price_history_source(price_data.get("price_history_source"))
+
+    # --- Build conditional sections (avoid nested triple-quoted f-strings) ---
+    if cfg.show_data_quality:
+        data_quality_section = (
+            f"### 3.2 研究数据层质量报告\n\n"
+            f"- 整体置信度：{format_confidence(data_quality.get('overall_confidence'))}\n"
+            f"- 是否存在 placeholder：{localize_bool(data_quality.get('has_placeholder'))}\n"
+            f"- 阻断项：{len(data_quality.get('blocking_issues', []))}\n\n"
+            f"{field_quality_table}\n\n"
+            f"#### 数据质量警告\n\n"
+            f"{_as_bullets(data_quality.get('warnings'))}\n\n"
+            f"#### 数据质量阻断项\n\n"
+            f"{_as_bullets(data_quality.get('blocking_issues'))}"
+        )
+    else:
+        data_quality_section = ""
+
+    if cfg.show_evidence:
+        evidence_section = f"### 3.3 EvidenceBundle 摘要\n\n{evidence_preview_table}"
+    else:
+        evidence_section = ""
+
+    if cfg.show_decision_guard:
+        guard_section = (
+            f"## 八、决策保护器说明\n\n"
+            f"### 8.1 保护器状态\n\n"
+            f"- 是否启用：{guard_enabled_display}\n"
+            f"- 本地评分：{guard_score}\n"
+            f"- 本地评级：{guard_rating}\n"
+            f"- 风险等级：{guard_risk_level}\n"
+            f"- 模型原始建议：{guard_llm_action}\n"
+            f"- 系统允许最高建议：{guard_max_allowed_action}\n"
+            f"- 最终操作建议：{guard_final_action}\n"
+            f"- 降级/限制原因：{'; '.join(guard_reasons) if guard_reasons else '暂无'}\n\n"
+            f"### 8.2 保护器解释\n\n"
+            f"> {guard_summary}"
+        )
+    else:
+        guard_section = ""
+
+    if cfg.show_disclaimer:
+        disclaimer_section = (
+            "## 十一、免责声明\n\n"
+            "本报告由 Dandelions Investment Agent 自动生成，仅用于研究和复盘，不构成任何投资建议。"
+        )
+    else:
+        disclaimer_section = ""
 
     # Filter stale warnings from data_warnings to avoid duplication
     filtered_data_warnings = _filter_stale_warnings(result.get("data_warnings", []))
@@ -394,25 +457,9 @@ def build_markdown_report(result: dict) -> str:
 
 {_as_bullets(data_quality_notes)}
 
-### 3.2 研究数据层质量报告
+{data_quality_section}
 
-- 整体置信度：{format_confidence(data_quality.get("overall_confidence"))}
-- 是否存在 placeholder：{localize_bool(data_quality.get("has_placeholder"))}
-- 阻断项：{len(data_quality.get("blocking_issues", []))}
-
-{field_quality_table}
-
-#### 数据质量警告
-
-{_as_bullets(data_quality.get("warnings"))}
-
-#### 数据质量阻断项
-
-{_as_bullets(data_quality.get("blocking_issues"))}
-
-### 3.3 EvidenceBundle 摘要
-
-{evidence_preview_table}
+{evidence_section}
 
 ### 3.4 行情解读
 
@@ -495,22 +542,7 @@ def build_markdown_report(result: dict) -> str:
 
 {_as_bullets(risk_review.get("risk_triggers"))}
 
-## 八、决策保护器说明
-
-### 8.1 保护器状态
-
-- 是否启用：{guard_enabled_display}
-- 本地评分：{guard_score}
-- 本地评级：{guard_rating}
-- 风险等级：{guard_risk_level}
-- 模型原始建议：{guard_llm_action}
-- 系统允许最高建议：{guard_max_allowed_action}
-- 最终操作建议：{guard_final_action}
-- 降级/限制原因：{"; ".join(guard_reasons) if guard_reasons else "暂无"}
-
-### 8.2 保护器解释
-
-> {guard_summary}
+{guard_section}
 
 ## 九、辩论收敛纪要
 
@@ -533,9 +565,7 @@ def build_markdown_report(result: dict) -> str:
 - 跟踪估值分位是否继续抬升。
 - 若出现重大公告、政策变化或异常放量，应重新评估。
 
-## 十一、免责声明
-
-本报告由 Dandelions Investment Agent 自动生成，仅用于研究和复盘，不构成任何投资建议。
+{disclaimer_section}
 """
 
     if analysis_notice:

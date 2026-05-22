@@ -122,14 +122,16 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - 57 项 RBAC 测试覆盖任务/观察池/报告/WebSocket/管理员接口/迁移。
 - 旧数据幂等迁移，归属 `'default'` owner。
 
-## P2：研究质量与报告能力
+## P2：研究质量与报告能力（第一阶段已完成）
 
-这些事项不阻塞当前主链路，但会影响报告可信度和长期扩展。
+详见 `docs/research_quality_and_reports.md`。
 
-1. 历史回测与压力测试：用历史行情和财务样本验证评分、估值分位、行业分位和决策保护器表现。
-2. 报告模板体系升级：在现有 Markdown/HTML/PDF 基础上，增加更稳定的模板、版式和主题配置。
-3. 数据证据结构统一：逐步把关键字段统一为 value/source/as_of/quality/warnings，减少各 provider 的隐式差异。
-4. 网页新闻/舆情长期质量验收：持续验证来源可用性、相关性、去重、超时和失败降级。
+已完成：
+
+1. 历史回测与压力测试：8 个离线样本覆盖高质量低估值、高估值趋势强、大回撤高波动、亏损PE无效、行业样本不足、critical事件、placeholder阻断、ETF无基本面。脚本 `scripts/run_research_quality_backtest.py` 输出 JSON/Markdown artifact。
+2. 报告模板体系升级：`ReportTemplateConfig` 支持章节开关（evidence/data_quality/decision_guard/disclaimer）、3 个内置主题（institutional_light/dark/compact_blue）。`build_markdown_report` 和 `build_html_report` 向后兼容。
+3. 数据证据结构统一：`evidence_schema.py` 提供 `make_evidence_field`/`is_evidence_field`/`normalize_evidence_field`/`extract_display_value`/`normalize_key_fields`。覆盖 17 个关键字段路径，不修改原始裸值。
+4. 网页新闻/舆情质量验收：`news_quality.py` 提供去重、相关性评分、质量分类、provider 结果评估、汇总。7 个离线样本覆盖相关新闻、重复、低质量、不相关热榜、provider 失败/超时。脚本 `scripts/run_web_news_quality_check.py` 输出 JSON/Markdown artifact。
 
 ## P3/P4：可延后事项
 

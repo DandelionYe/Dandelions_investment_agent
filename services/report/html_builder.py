@@ -3,10 +3,30 @@ from pathlib import Path
 import markdown as md
 
 
-def build_html_report(markdown_text: str, title: str = "投研报告") -> str:
+def build_html_report(markdown_text: str, title: str = "投研报告", theme=None) -> str:
     """
     把 Markdown 文本转换成 HTML。
+
+    Parameters
+    ----------
+    markdown_text : str
+        Markdown 文本。
+    title : str
+        HTML 标题。
+    theme : ReportTheme | dict | None
+        视觉主题。dict 会自动转换为 ReportTheme。None 使用默认主题。
     """
+    from services.report.template_config import ReportTheme, build_theme_css
+
+    if theme is None:
+        from services.report.template_config import get_theme
+        theme_obj = get_theme("institutional_light")
+    elif isinstance(theme, dict):
+        theme_obj = ReportTheme(**theme)
+    else:
+        theme_obj = theme
+
+    css = build_theme_css(theme_obj)
 
     body_html = md.markdown(
         markdown_text,
@@ -19,119 +39,7 @@ def build_html_report(markdown_text: str, title: str = "投研报告") -> str:
     <meta charset="UTF-8">
     <title>{title}</title>
     <style>
-        @page {{
-            size: A4;
-            margin: 18mm 16mm 18mm 16mm;
-        }}
-
-        body {{
-            font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif;
-            line-height: 1.75;
-            color: #222;
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 0;
-            background: #ffffff;
-            font-size: 14px;
-        }}
-
-        h1 {{
-            text-align: center;
-            border-bottom: 2px solid #222;
-            padding-bottom: 16px;
-            margin: 0 0 28px 0;
-            font-size: 26px;
-            line-height: 1.35;
-        }}
-
-        h2 {{
-            margin-top: 30px;
-            margin-bottom: 14px;
-            border-left: 5px solid #333;
-            padding: 8px 12px;
-            background: #f5f5f5;
-            font-size: 20px;
-            line-height: 1.35;
-            break-after: avoid;
-        }}
-
-        h3 {{
-            margin-top: 22px;
-            margin-bottom: 10px;
-            font-size: 16px;
-            line-height: 1.35;
-            color: #333;
-            break-after: avoid;
-        }}
-
-        p {{
-            margin: 8px 0 12px 0;
-        }}
-
-        ul, ol {{
-            margin-top: 8px;
-            margin-bottom: 12px;
-            padding-left: 24px;
-        }}
-
-        li {{
-            margin: 4px 0;
-        }}
-
-        table {{
-            border-collapse: collapse;
-            width: 100%;
-            margin: 14px 0 20px 0;
-            font-size: 13px;
-            page-break-inside: avoid;
-        }}
-
-        th, td {{
-            border: 1px solid #ccc;
-            padding: 7px 10px;
-            text-align: left;
-            vertical-align: top;
-        }}
-
-        th {{
-            background: #f0f0f0;
-            font-weight: 600;
-        }}
-
-        td:last-child,
-        th:last-child {{
-            text-align: left;
-        }}
-
-        blockquote {{
-            border-left: 4px solid #888;
-            margin: 14px 0 18px 0;
-            padding: 8px 14px;
-            background: #f7f7f7;
-            color: #333;
-        }}
-
-        code {{
-            background: #f2f2f2;
-            padding: 2px 4px;
-            border-radius: 4px;
-            font-family: Consolas, "Courier New", monospace;
-        }}
-
-        strong {{
-            font-weight: 700;
-        }}
-
-        hr {{
-            border: none;
-            border-top: 1px solid #ddd;
-            margin: 24px 0;
-        }}
-
-        a {{
-            color: #222;
-            text-decoration: none;
-        }}
+        {css}
     </style>
 </head>
 <body>

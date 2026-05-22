@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "id": "relevant_company_news",
+      "description": "相关公司新闻",
+      "items": [
+        {
+          "title": "贵州茅台一季度净利润同比增长15%",
+          "url": "https://finance.example.com/600519-q1-earnings",
+          "publish_time": "2026-04-30",
+          "summary": "贵州茅台发布2026年一季报，净利润同比增长15%，超出市场预期。",
+          "publisher": "财经日报",
+          "query_provider": "eastmoney"
+        }
+      ],
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "relevant_count_min": 1,
+        "low_quality_count_max": 0,
+        "deduped_total": 1
+      }
+    },
+    {
+      "id": "duplicate_title_news",
+      "description": "同标题重复新闻",
+      "items": [
+        {
+          "title": "茅台集团宣布新战略",
+          "url": "https://a.example.com/news1",
+          "publish_time": "2026-05-01",
+          "summary": "茅台集团宣布数字化转型新战略。",
+          "publisher": "财经网",
+          "query_provider": "eastmoney"
+        },
+        {
+          "title": "茅台集团宣布新战略",
+          "url": "https://b.example.com/news2",
+          "publish_time": "2026-05-01",
+          "summary": "茅台集团宣布数字化转型新战略。",
+          "publisher": "新浪财经",
+          "query_provider": "sina"
+        }
+      ],
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "deduped_total": 1
+      }
+    },
+    {
+      "id": "duplicate_url_news",
+      "description": "同URL重复新闻",
+      "items": [
+        {
+          "title": "茅台最新消息A",
+          "url": "https://example.com/same-url",
+          "publish_time": "2026-05-01",
+          "summary": "消息A内容。",
+          "publisher": "来源A",
+          "query_provider": "eastmoney"
+        },
+        {
+          "title": "茅台最新消息B",
+          "url": "https://example.com/same-url",
+          "publish_time": "2026-05-01",
+          "summary": "消息B内容。",
+          "publisher": "来源B",
+          "query_provider": "sina"
+        }
+      ],
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "deduped_total": 1
+      }
+    },
+    {
+      "id": "low_quality_promotion",
+      "description": "低质量推广/福利新闻",
+      "items": [
+        {
+          "title": "茅台福利大放送，免费领取品鉴酒",
+          "url": "https://promo.example.com/free-moutai",
+          "publish_time": "2026-05-01",
+          "summary": "限时福利，点击领取茅台品鉴酒。",
+          "publisher": "推广号",
+          "query_provider": "eastmoney"
+        },
+        {
+          "title": "600519行情分析：茅台股价走势",
+          "url": "https://finance.example.com/600519-analysis",
+          "publish_time": "2026-05-01",
+          "summary": "600519茅台技术面分析。",
+          "publisher": "财经分析",
+          "query_provider": "eastmoney"
+        }
+      ],
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "low_quality_count_min": 1,
+        "relevant_count_min": 1
+      }
+    },
+    {
+      "id": "irrelevant_hotrank",
+      "description": "泛财经但不相关热榜",
+      "items": [
+        {
+          "title": "今日A股大盘指数大涨3%",
+          "url": "https://news.example.com/market-up",
+          "publish_time": "2026-05-01",
+          "summary": "A股三大指数集体大涨。",
+          "publisher": "财经网",
+          "query_provider": "hotrank",
+          "hot_score": 9500
+        },
+        {
+          "title": "新能源板块集体爆发",
+          "url": "https://news.example.com/new-energy",
+          "publish_time": "2026-05-01",
+          "summary": "新能源概念股集体涨停。",
+          "publisher": "证券时报",
+          "query_provider": "hotrank",
+          "hot_score": 8800
+        }
+      ],
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "relevant_count_max": 1,
+        "deduped_total": 2
+      }
+    },
+    {
+      "id": "provider_unavailable",
+      "description": "provider不可用",
+      "items": [],
+      "provider_metadata": {
+        "success": false,
+        "error": "Connection refused",
+        "error_type": "provider_unavailable"
+      },
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "failure_count": 1,
+        "total": 0
+      }
+    },
+    {
+      "id": "provider_timeout",
+      "description": "provider超时",
+      "items": [],
+      "provider_metadata": {
+        "success": false,
+        "error": "Request timeout after 10s",
+        "error_type": "provider_unavailable"
+      },
+      "symbol_info": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "plain_code": "600519",
+        "normalized_symbol": "600519.sh"
+      },
+      "expected": {
+        "failure_count": 1,
+        "total": 0
+      }
+    }
+  ]
+}

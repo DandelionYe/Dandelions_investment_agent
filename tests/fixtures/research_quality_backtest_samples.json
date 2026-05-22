@@ -1,0 +1,442 @@
+{
+  "version": 1,
+  "samples": [
+    {
+      "sample_id": "high_quality_low_valuation",
+      "symbol": "600519.SH",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "高质量低估值上涨",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.08,
+          "change_60d": 0.12,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 800000000,
+          "max_drawdown_60d": -0.05,
+          "volatility_60d": 0.15
+        },
+        "fundamental_data": {
+          "roe": 0.25,
+          "gross_margin": 0.60,
+          "net_profit_growth": 0.18,
+          "debt_ratio": 0.30
+        },
+        "valuation_data": {
+          "pe_ttm": 18.0,
+          "pb_mrq": 4.5,
+          "ps_ttm": 6.0,
+          "pe_percentile": 0.25,
+          "pb_percentile": 0.30,
+          "ps_percentile": 0.35,
+          "market_cap": 2000000000000,
+          "dividend_yield": 0.025,
+          "industry_pe_percentile": 0.30,
+          "industry_pb_percentile": 0.25,
+          "industry_ps_percentile": 0.40
+        },
+        "event_data": {
+          "recent_news_sentiment": "positive",
+          "policy_risk": "low",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.90
+        }
+      },
+      "expected": {
+        "min_score": 70,
+        "forbidden_actions": ["回避", "谨慎观察"]
+      },
+      "notes": "高质量低估值标的，评分应较高，不应强制回避"
+    },
+    {
+      "sample_id": "high_valuation_strong_trend",
+      "symbol": "300750.SZ",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "高估值但趋势强",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.15,
+          "change_60d": 0.25,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 1200000000,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.25,
+          "net_profit_growth": 0.30,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 85.0,
+          "pb_mrq": 12.0,
+          "ps_ttm": 15.0,
+          "pe_percentile": 0.90,
+          "pb_percentile": 0.85,
+          "ps_percentile": 0.88,
+          "market_cap": 800000000000,
+          "dividend_yield": 0.003,
+          "industry_pe_percentile": 0.80,
+          "industry_pb_percentile": 0.75,
+          "industry_ps_percentile": 0.82
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.85
+        }
+      },
+      "expected": {
+        "max_score": 90
+      },
+      "notes": "高估值标的评分不应无上限膨胀"
+    },
+    {
+      "sample_id": "large_drawdown_high_volatility",
+      "symbol": "000001.SZ",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "大回撤高波动",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.12,
+          "change_60d": -0.25,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 600000000,
+          "max_drawdown_60d": -0.35,
+          "volatility_60d": 0.42
+        },
+        "fundamental_data": {
+          "roe": 0.08,
+          "gross_margin": 0.20,
+          "net_profit_growth": -0.10,
+          "debt_ratio": 0.65
+        },
+        "valuation_data": {
+          "pe_ttm": 15.0,
+          "pb_mrq": 1.2,
+          "ps_ttm": 3.0,
+          "pe_percentile": 0.30,
+          "pb_percentile": 0.20,
+          "ps_percentile": 0.25,
+          "market_cap": 300000000000,
+          "dividend_yield": 0.04,
+          "industry_pe_percentile": 0.35,
+          "industry_pb_percentile": 0.25,
+          "industry_ps_percentile": 0.30
+        },
+        "event_data": {
+          "recent_news_sentiment": "negative",
+          "policy_risk": "high",
+          "event_summary": {"critical_count": 0, "high_count": 1},
+          "events": [{"severity": "high", "sentiment": "negative", "title": "业绩预警"}]
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.80
+        }
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "notes": "大回撤高波动标的，risk_control应明显降低，决策保护器应限制激进建议"
+    },
+    {
+      "sample_id": "loss_making_invalid_pe",
+      "symbol": "688001.SH",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "亏损或PE无效",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.02,
+          "change_60d": -0.05,
+          "ma20_position": "near",
+          "ma60_position": "below",
+          "avg_turnover_20d": 200000000,
+          "max_drawdown_60d": -0.20,
+          "volatility_60d": 0.35
+        },
+        "fundamental_data": {
+          "roe": -0.05,
+          "gross_margin": 0.10,
+          "net_profit_growth": -0.50,
+          "debt_ratio": 0.70
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 2.0,
+          "ps_ttm": 5.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "pe_percentile": null,
+          "pb_percentile": 0.40,
+          "ps_percentile": 0.50,
+          "market_cap": 50000000000,
+          "dividend_yield": null,
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": 0.45,
+          "industry_ps_percentile": 0.50
+        },
+        "event_data": {
+          "recent_news_sentiment": "negative",
+          "policy_risk": "medium",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.70
+        }
+      },
+      "expected": {
+        "forbidden_actions": ["买入", "分批买入"]
+      },
+      "notes": "PE缺失/无效时不应生成买入级别建议"
+    },
+    {
+      "sample_id": "industry_insufficient_peers",
+      "symbol": "830799.BJ",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "行业样本不足",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.10,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 50000000,
+          "max_drawdown_60d": -0.10,
+          "volatility_60d": 0.25
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.08,
+          "debt_ratio": 0.45
+        },
+        "valuation_data": {
+          "pe_ttm": 25.0,
+          "pb_mrq": 3.0,
+          "ps_ttm": 8.0,
+          "pe_percentile": 0.50,
+          "pb_percentile": 0.45,
+          "ps_percentile": 0.55,
+          "market_cap": 20000000000,
+          "dividend_yield": 0.01,
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": null,
+          "industry_ps_percentile": null,
+          "industry_pe_percentile_missing_reason": "insufficient_peer_samples",
+          "industry_pb_percentile_missing_reason": "insufficient_peer_samples",
+          "industry_ps_percentile_missing_reason": "insufficient_peer_samples",
+          "industry_valuation_warnings": ["行业有效样本不足，无法计算行业估值分位"],
+          "industry_valuation_label": "industry_insufficient_peers"
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.75
+        }
+      },
+      "expected": {
+        "industry_percentile_may_be_missing": true
+      },
+      "notes": "行业样本不足时industry percentile应允许缺失，缺失原因应稳定表达"
+    },
+    {
+      "sample_id": "critical_event",
+      "symbol": "002594.SZ",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "critical事件",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.08,
+          "change_60d": -0.15,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 500000000,
+          "max_drawdown_60d": -0.30,
+          "volatility_60d": 0.38
+        },
+        "fundamental_data": {
+          "roe": 0.10,
+          "gross_margin": 0.22,
+          "net_profit_growth": -0.20,
+          "debt_ratio": 0.60
+        },
+        "valuation_data": {
+          "pe_ttm": 30.0,
+          "pb_mrq": 3.5,
+          "ps_ttm": 5.0,
+          "pe_percentile": 0.55,
+          "pb_percentile": 0.50,
+          "ps_percentile": 0.48,
+          "market_cap": 400000000000,
+          "dividend_yield": 0.015,
+          "industry_pe_percentile": 0.50,
+          "industry_pb_percentile": 0.45,
+          "industry_ps_percentile": 0.50
+        },
+        "event_data": {
+          "recent_news_sentiment": "negative",
+          "policy_risk": "high",
+          "event_summary": {"critical_count": 1, "high_count": 2},
+          "events": [
+            {"severity": "critical", "sentiment": "negative", "title": "涉嫌财务造假被立案调查"},
+            {"severity": "high", "sentiment": "negative", "title": "大股东减持"}
+          ]
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.85
+        }
+      },
+      "expected": {
+        "max_action": "回避",
+        "guard_reason_must_contain": "critical"
+      },
+      "notes": "critical事件必须强制回避或至少不得高于观察"
+    },
+    {
+      "sample_id": "placeholder_blocking",
+      "symbol": "000002.SZ",
+      "as_of": "2026-05-01",
+      "asset_type": "stock",
+      "scenario": "placeholder数据质量阻断",
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.10,
+          "change_60d": 0.18,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 900000000,
+          "max_drawdown_60d": -0.06,
+          "volatility_60d": 0.18
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.12,
+          "debt_ratio": 0.50
+        },
+        "valuation_data": {
+          "pe_ttm": 12.0,
+          "pb_mrq": 1.8,
+          "ps_ttm": 3.0,
+          "pe_percentile": 0.30,
+          "pb_percentile": 0.25,
+          "ps_percentile": 0.35,
+          "market_cap": 350000000000,
+          "dividend_yield": 0.03,
+          "industry_pe_percentile": 0.35,
+          "industry_pb_percentile": 0.30,
+          "industry_ps_percentile": 0.40
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {
+          "fundamental_data": {"source": "mock_placeholder"},
+          "valuation_data": {"source": "mock_placeholder"}
+        },
+        "data_quality": {
+          "has_placeholder": true,
+          "blocking_issues": ["关键财务数据为placeholder"],
+          "overall_confidence": 0.30
+        }
+      },
+      "expected": {
+        "forbidden_actions": ["买入", "分批买入", "回调关注"]
+      },
+      "notes": "placeholder数据或blocking issues时最终action必须被限制"
+    },
+    {
+      "sample_id": "etf_no_fundamental",
+      "symbol": "510300.SH",
+      "as_of": "2026-05-01",
+      "asset_type": "etf",
+      "scenario": "ETF无股票基本面",
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": 0.06,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 1500000000,
+          "max_drawdown_60d": -0.04,
+          "volatility_60d": 0.12
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "etf_data": {
+          "market_price": 4.25,
+          "fund_nav": 4.23,
+          "premium_discount": 0.005,
+          "fund_size": 30000000000,
+          "tracking_index": "沪深300",
+          "tracking_error": 0.002
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "low",
+          "event_summary": {"critical_count": 0, "high_count": 0},
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.95
+        }
+      },
+      "expected": {
+        "min_score": 50
+      },
+      "notes": "ETF不要求fundamental/valuation，不应因缺少这些字段错误降级"
+    }
+  ]
+}
