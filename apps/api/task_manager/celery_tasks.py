@@ -281,16 +281,28 @@ def scan_watchlist() -> dict:
     """收盘后批量扫描：扫描所有启用的观察项。
 
     由 Celery Beat 在工作日 15:07 触发。
+    按 owner 分组创建批次，每个 owner 一个独立批次。
     """
     store = get_watchlist_store()
     items = store.get_all_enabled_items()
     if not items:
         return {"batch_id": None, "total": 0}
-    item_ids = [it["id"] for it in items]
-    batch_id = store.create_batch("scheduled", item_ids)
-    for item in items:
-        scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled")
-    return {"batch_id": batch_id, "total": len(items)}
+
+    # 按 owner 分组
+    by_owner: dict[str, list[dict]] = {}
+    for it in items:
+        owner = it.get("owner_username", "default")
+        by_owner.setdefault(owner, []).append(it)
+
+    batch_ids = []
+    for owner, owner_items in by_owner.items():
+        item_ids = [it["id"] for it in owner_items]
+        batch_id = store.create_batch("scheduled", item_ids, owner_username=owner)
+        batch_ids.append(batch_id)
+        for item in owner_items:
+            scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled")
+
+    return {"batch_ids": batch_ids, "total": len(items)}
 
 
 @celery_app.task(
@@ -324,9 +336,10 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
     if pause_until and pause_until > utc_now_iso():
         return {"item_id": item_id, "status": "paused", "until": pause_until}
 
-    # 创建 research_task 记录
+    # 创建 research_task 记录，created_by 继承 item 的 owner
     task_id = new_task_id()
     created_at = utc_now_iso()
+    item_owner = item.get("owner_username", "default")
     task_store.create_task(
         task_id=task_id,
         symbol=symbol,
@@ -336,6 +349,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
         use_graph=True,
         schedule_id=item_id,
         created_at=created_at,
+        created_by=item_owner,
     )
 
     task_store.update_status(task_id, TaskStatus.RUNNING, started_at=utc_now_iso(),

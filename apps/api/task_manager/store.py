@@ -9,7 +9,6 @@ import sqlite3
 import threading
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from apps.api.schemas.task import TaskStatus
 from apps.api.utils.time_utils import utc_now_iso
@@ -284,12 +283,14 @@ class TaskStore:
 
 
 # ═══════════════════════════════════════════════════════════════
-# 观察池持久化
+# 观察池持久化（含 owner_username 多用户隔离）
 # ═══════════════════════════════════════════════════════════════
 
-_WATCHLIST_SCHEMA_SQL = """
+# 新建库使用的 schema —— 表定义（CREATE TABLE IF NOT EXISTS 兼容新旧库）。
+_WATCHLIST_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS watchlist_folders (
     id TEXT PRIMARY KEY,
+    owner_username TEXT NOT NULL DEFAULT 'default',
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
     icon TEXT DEFAULT 'folder',
@@ -300,7 +301,8 @@ CREATE TABLE IF NOT EXISTS watchlist_folders (
 
 CREATE TABLE IF NOT EXISTS watchlist_items (
     id TEXT PRIMARY KEY,
-    symbol TEXT NOT NULL UNIQUE,
+    owner_username TEXT NOT NULL DEFAULT 'default',
+    symbol TEXT NOT NULL,
     asset_type TEXT NOT NULL CHECK(asset_type IN ('stock', 'etf')),
     asset_name TEXT DEFAULT '',
     folder_id TEXT NOT NULL REFERENCES watchlist_folders(id) ON DELETE RESTRICT,
@@ -315,14 +317,17 @@ CREATE TABLE IF NOT EXISTS watchlist_items (
     last_scan_at TEXT,
     next_scan_at TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_username, symbol)
 );
 
 CREATE TABLE IF NOT EXISTS watchlist_tags (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
+    owner_username TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
     color TEXT DEFAULT '#6366f1',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    UNIQUE(owner_username, name)
 );
 
 CREATE TABLE IF NOT EXISTS watchlist_item_tags (
@@ -333,6 +338,7 @@ CREATE TABLE IF NOT EXISTS watchlist_item_tags (
 
 CREATE TABLE IF NOT EXISTS watchlist_batches (
     id TEXT PRIMARY KEY,
+    owner_username TEXT NOT NULL DEFAULT 'default',
     trigger_type TEXT NOT NULL CHECK(trigger_type IN ('manual', 'scheduled', 'condition')),
     status TEXT NOT NULL DEFAULT 'running',
     total_items INTEGER DEFAULT 0,
@@ -342,15 +348,31 @@ CREATE TABLE IF NOT EXISTS watchlist_batches (
     created_at TEXT NOT NULL,
     completed_at TEXT
 );
+"""
 
+# 索引定义（需要 owner_username 列存在后才能执行）。
+_WATCHLIST_INDEXES_SQL = """
+CREATE INDEX IF NOT EXISTS idx_wl_folders_owner ON watchlist_folders(owner_username);
 CREATE INDEX IF NOT EXISTS idx_wl_items_folder ON watchlist_items(folder_id);
 CREATE INDEX IF NOT EXISTS idx_wl_items_enabled ON watchlist_items(enabled);
 CREATE INDEX IF NOT EXISTS idx_wl_items_next_scan ON watchlist_items(next_scan_at);
 CREATE INDEX IF NOT EXISTS idx_wl_items_symbol ON watchlist_items(symbol);
+CREATE INDEX IF NOT EXISTS idx_wl_items_owner ON watchlist_items(owner_username);
+CREATE INDEX IF NOT EXISTS idx_wl_tags_owner ON watchlist_tags(owner_username);
 CREATE INDEX IF NOT EXISTS idx_wl_item_tags_tag ON watchlist_item_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_wl_batches_owner ON watchlist_batches(owner_username);
 CREATE INDEX IF NOT EXISTS idx_wl_batches_status ON watchlist_batches(status);
 CREATE INDEX IF NOT EXISTS idx_wl_batches_created ON watchlist_batches(created_at DESC);
 """
+
+# 旧表 → 新 schema 的列迁移映射。
+# 兼容策略：旧数据 owner_username 默认填 'default'。
+_MIGRATION_COLUMNS = [
+    ("watchlist_folders", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
+    ("watchlist_items", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
+    ("watchlist_tags", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
+    ("watchlist_batches", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
+]
 
 
 
@@ -359,7 +381,11 @@ def _new_id() -> str:
 
 
 class WatchlistStore:
-    """观察池 SQLite 存储，线程安全。"""
+    """观察池 SQLite 存储，线程安全。
+
+    owner_username 字段实现多用户数据隔离。
+    迁移策略：启动时检测缺失列并 ALTER TABLE 补列，旧数据归属 'default'。
+    """
 
     def __init__(self, db_path: str | None = None):
         self._db_path = str(db_path or DB_PATH)
@@ -382,12 +408,25 @@ class WatchlistStore:
             conn.execute("BEGIN IMMEDIATE")
         return conn
 
+    def _table_has_column(self, conn: sqlite3.Connection, table: str, column: str) -> bool:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(r["name"] == column for r in rows)
+
     def _init_db(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             conn = self._get_conn()
             try:
-                conn.executescript(_WATCHLIST_SCHEMA_SQL)
+                # 第一步：创建表（IF NOT EXISTS 兼容新旧库）
+                conn.executescript(_WATCHLIST_TABLES_SQL)
+                # 第二步：幂等迁移——为旧表补 owner_username 列
+                for table, column, col_def in _MIGRATION_COLUMNS:
+                    if not self._table_has_column(conn, table, column):
+                        conn.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"
+                        )
+                # 第三步：创建索引（此时 owner_username 列已存在）
+                conn.executescript(_WATCHLIST_INDEXES_SQL)
                 conn.commit()
             finally:
                 conn.close()
@@ -400,6 +439,7 @@ class WatchlistStore:
         description: str = "",
         icon: str = "folder",
         sort_order: int = 0,
+        owner_username: str = "default",
     ) -> dict:
         folder_id = _new_id()
         now = utc_now_iso()
@@ -407,25 +447,37 @@ class WatchlistStore:
             conn = self._get_conn()
             try:
                 conn.execute(
-                    """INSERT INTO watchlist_folders (id, name, description, icon, sort_order, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (folder_id, name, description, icon, sort_order, now, now),
+                    """INSERT INTO watchlist_folders
+                       (id, owner_username, name, description, icon, sort_order, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (folder_id, owner_username, name, description, icon, sort_order, now, now),
                 )
                 conn.commit()
             finally:
                 conn.close()
         return self.get_folder(folder_id)
 
-    def list_folders(self) -> list[dict]:
+    def list_folders(self, owner_username: str | None = None) -> list[dict]:
         conn = self._get_conn()
         try:
-            rows = conn.execute(
-                """SELECT f.*, COUNT(wi.id) AS item_count
-                   FROM watchlist_folders f
-                   LEFT JOIN watchlist_items wi ON wi.folder_id = f.id
-                   GROUP BY f.id
-                   ORDER BY f.sort_order, f.name"""
-            ).fetchall()
+            if owner_username:
+                rows = conn.execute(
+                    """SELECT f.*, COUNT(wi.id) AS item_count
+                       FROM watchlist_folders f
+                       LEFT JOIN watchlist_items wi ON wi.folder_id = f.id
+                       WHERE f.owner_username = ?
+                       GROUP BY f.id
+                       ORDER BY f.sort_order, f.name""",
+                    (owner_username,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT f.*, COUNT(wi.id) AS item_count
+                       FROM watchlist_folders f
+                       LEFT JOIN watchlist_items wi ON wi.folder_id = f.id
+                       GROUP BY f.id
+                       ORDER BY f.sort_order, f.name"""
+                ).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
@@ -492,8 +544,11 @@ class WatchlistStore:
         target_action: str = "观察",
         asset_name: str = "",
         tag_ids: list[str] | None = None,
+        owner_username: str = "default",
     ) -> dict:
-        self.get_folder(folder_id)  # 确保文件夹存在
+        folder = self.get_folder(folder_id)
+        if folder.get("owner_username", "default") != owner_username:
+            raise KeyError(f"文件夹不存在：{folder_id}")
         item_id = _new_id()
         now = utc_now_iso()
         schedule_json = json.dumps(schedule_config or {}, ensure_ascii=False)
@@ -502,17 +557,19 @@ class WatchlistStore:
             try:
                 conn.execute(
                     """INSERT INTO watchlist_items
-                       (id, symbol, asset_type, asset_name, folder_id, schedule_config,
-                        notes, target_action, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (item_id, symbol, asset_type, asset_name, folder_id, schedule_json,
-                     notes, target_action, now, now),
+                       (id, owner_username, symbol, asset_type, asset_name, folder_id,
+                        schedule_config, notes, target_action, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (item_id, owner_username, symbol, asset_type, asset_name, folder_id,
+                     schedule_json, notes, target_action, now, now),
                 )
                 conn.commit()
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(f"该标的已在观察池中：{symbol}") from exc
             finally:
                 conn.close()
         if tag_ids:
-            self.set_item_tags(item_id, tag_ids)
+            self.set_item_tags(item_id, tag_ids, owner_username=owner_username)
         return self.get_item(item_id)
 
     def get_item(self, item_id: str) -> dict:
@@ -540,11 +597,15 @@ class WatchlistStore:
         enabled: bool | None = None,
         page: int = 1,
         page_size: int = 50,
+        owner_username: str | None = None,
     ) -> tuple[list[dict], int]:
         conn = self._get_conn()
         try:
             where = []
             params: list = []
+            if owner_username:
+                where.append("wi.owner_username = ?")
+                params.append(owner_username)
             if folder_id:
                 where.append("wi.folder_id = ?")
                 params.append(folder_id)
@@ -609,7 +670,7 @@ class WatchlistStore:
         return self.get_item(item_id)
 
     def remove_item(self, item_id: str) -> None:
-        self.get_item(item_id)  # 确保存在
+        self.get_item(item_id)
         with self._lock:
             conn = self._get_conn()
             try:
@@ -652,33 +713,46 @@ class WatchlistStore:
 
     # ── 标签 CRUD ──────────────────────────────────────────────
 
-    def create_tag(self, name: str, color: str = "#6366f1") -> dict:
+    def create_tag(self, name: str, color: str = "#6366f1",
+                   owner_username: str = "default") -> dict:
         tag_id = _new_id()
         now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
                 conn.execute(
-                    "INSERT INTO watchlist_tags (id, name, color, created_at) VALUES (?, ?, ?, ?)",
-                    (tag_id, name, color, now),
+                    "INSERT INTO watchlist_tags (id, owner_username, name, color, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (tag_id, owner_username, name, color, now),
                 )
                 conn.commit()
-            except sqlite3.IntegrityError:
-                raise ValueError(f"标签名称已存在：{name}")
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(f"标签名称已存在：{name}") from exc
             finally:
                 conn.close()
         return self.get_tag(tag_id)
 
-    def list_tags(self) -> list[dict]:
+    def list_tags(self, owner_username: str | None = None) -> list[dict]:
         conn = self._get_conn()
         try:
-            rows = conn.execute(
-                """SELECT t.*, COUNT(it.item_id) AS item_count
-                   FROM watchlist_tags t
-                   LEFT JOIN watchlist_item_tags it ON it.tag_id = t.id
-                   GROUP BY t.id
-                   ORDER BY t.name"""
-            ).fetchall()
+            if owner_username:
+                rows = conn.execute(
+                    """SELECT t.*, COUNT(it.item_id) AS item_count
+                       FROM watchlist_tags t
+                       LEFT JOIN watchlist_item_tags it ON it.tag_id = t.id
+                       WHERE t.owner_username = ?
+                       GROUP BY t.id
+                       ORDER BY t.name""",
+                    (owner_username,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT t.*, COUNT(it.item_id) AS item_count
+                       FROM watchlist_tags t
+                       LEFT JOIN watchlist_item_tags it ON it.tag_id = t.id
+                       GROUP BY t.id
+                       ORDER BY t.name"""
+                ).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
@@ -714,8 +788,8 @@ class WatchlistStore:
                     params,
                 )
                 conn.commit()
-            except sqlite3.IntegrityError:
-                raise ValueError(f"标签名称已存在：{updates.get('name')}")
+            except sqlite3.IntegrityError as exc:
+                raise ValueError(f"标签名称已存在：{updates.get('name')}") from exc
             finally:
                 conn.close()
         return self.get_tag(tag_id)
@@ -732,7 +806,8 @@ class WatchlistStore:
 
     # ── 项-标签 关联 ────────────────────────────────────────────
 
-    def set_item_tags(self, item_id: str, tag_ids: list[str]) -> None:
+    def set_item_tags(self, item_id: str, tag_ids: list[str],
+                      owner_username: str | None = None) -> None:
         with self._lock:
             conn = self._get_conn()
             try:
@@ -748,16 +823,18 @@ class WatchlistStore:
 
     # ── 批量扫描 ──────────────────────────────────────────────
 
-    def create_batch(self, trigger_type: str, item_ids: list[str]) -> str:
+    def create_batch(self, trigger_type: str, item_ids: list[str],
+                     owner_username: str = "default") -> str:
         batch_id = _new_id()
         now = utc_now_iso()
         with self._lock:
             conn = self._get_conn()
             try:
                 conn.execute(
-                    """INSERT INTO watchlist_batches (id, trigger_type, status, total_items, item_ids, created_at)
-                       VALUES (?, ?, 'running', ?, ?, ?)""",
-                    (batch_id, trigger_type, len(item_ids), json.dumps(item_ids), now),
+                    """INSERT INTO watchlist_batches
+                       (id, owner_username, trigger_type, status, total_items, item_ids, created_at)
+                       VALUES (?, ?, ?, 'running', ?, ?, ?)""",
+                    (batch_id, owner_username, trigger_type, len(item_ids), json.dumps(item_ids), now),
                 )
                 conn.commit()
             finally:
@@ -798,6 +875,12 @@ class WatchlistStore:
             return d
         finally:
             conn.close()
+
+    def get_batch_for_user(self, batch_id: str, username: str) -> dict:
+        batch = self.get_batch(batch_id)
+        if batch.get("owner_username", "default") != username:
+            raise KeyError(f"扫描批次不存在：{batch_id}")
+        return batch
 
     # ── 扫描调度查询 ──────────────────────────────────────────
 

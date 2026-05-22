@@ -1,10 +1,12 @@
 """观察池 — 批量标的监控与管理。
 
-使用方式：
-  - 当 FastAPI 后端运行时自动走 API 调用
-  - 后端不可用时直接访问 SQLite 存储（独立模式）
+RBAC 模式：
+  - 默认只通过 API 调用，受 owner 权限控制。
+  - 本地 SQLite fallback 默认关闭，仅在 STREAMLIT_LOCAL_STORE_FALLBACK=true 时启用（单机自用）。
+  - 普通用户只看到自己的数据；管理员可看到全部。
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +16,12 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from apps.dashboard.components.login import authenticated_request, require_login  # noqa: E402
+from apps.dashboard.components.login import (
+    authenticated_request,
+    require_login,
+    is_admin,
+    current_user,
+)
 from apps.dashboard.components.progress_poller import poll_batch_progress  # noqa: E402
 
 st.set_page_config(page_title="观察池", page_icon="📋", layout="wide")
@@ -24,6 +31,9 @@ require_login()
 # ── API / 独立模式检测 ────────────────────────────────────────
 
 API_BASE = "http://localhost:8000"
+
+# 本地 fallback 需要显式环境变量开启，默认关闭
+LOCAL_FALLBACK_ENABLED = os.environ.get("STREAMLIT_LOCAL_STORE_FALLBACK", "").lower() in ("1", "true", "yes")
 
 
 def _api_available() -> bool:
@@ -47,8 +57,6 @@ def _api_call(method: str, path: str, **kwargs) -> dict | list | None:
         return None
 
 
-# ── 独立模式 store ────────────────────────────────────────────
-
 def _get_store():
     from apps.api.task_manager.store import get_watchlist_store
     return get_watchlist_store()
@@ -70,6 +78,15 @@ if "wl_show_add_folder" not in st.session_state:
     st.session_state["wl_show_add_folder"] = False
 if "wl_show_add_tag" not in st.session_state:
     st.session_state["wl_show_add_tag"] = False
+
+# API 不可用时的处理
+if not st.session_state["wl_api_ok"]:
+    if not LOCAL_FALLBACK_ENABLED:
+        st.error("API 服务不可用。多用户模式下必须通过 API 访问观察池。")
+        st.caption("如需单机本地模式，请设置环境变量 STREAMLIT_LOCAL_STORE_FALLBACK=true")
+        st.stop()
+    else:
+        st.warning("⚠️ API 不可用，使用本地模式（仅限单机自用）")
 
 
 # ── 数据加载 ───────────────────────────────────────────────────
@@ -145,7 +162,7 @@ folders = _load_folders()
 tags = _load_tags()
 
 enabled_count = sum(1 for i in items_all if i.get("enabled"))
-api_label = "🔗 API 模式" if st.session_state["wl_api_ok"] else "💾 本地模式"
+mode_label = "🔗 API 模式" if st.session_state["wl_api_ok"] else "💾 本地模式"
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -155,7 +172,13 @@ with col2:
 with col3:
     st.metric("文件夹", len(folders))
 with col4:
-    st.metric("模式", api_label)
+    st.metric("模式", mode_label)
+
+# 管理员 scope 提示
+if is_admin():
+    st.caption("🔑 管理员模式：可查看和管理所有用户数据")
+elif current_user():
+    st.caption(f"👤 用户：{current_user()}")
 
 st.divider()
 

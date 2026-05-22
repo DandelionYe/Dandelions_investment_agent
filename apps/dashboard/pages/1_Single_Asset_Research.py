@@ -412,6 +412,8 @@ with st.sidebar:
         "异步模式（显示实时进度）", value=True, disabled=hitl_mode and use_llm,
         help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。HITL 模式暂不支持异步。",
     )
+    if not async_mode:
+        st.warning("⚠️ 同步本地模式仅适合单机自用，生成的报告不会进入任务系统，其他用户不可见。")
     run_button = st.button("生成研究报告", type="primary")
 
 if run_button:

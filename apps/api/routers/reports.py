@@ -1,4 +1,10 @@
-"""报告下载 API 路由。"""
+"""报告下载 API 路由。
+
+权限规则：
+- 普通用户只能访问自己任务的报告。
+- 管理员可访问所有报告。
+- 通过 task owner 间接授权，不提供按文件路径下载的接口。
+"""
 
 from pathlib import Path
 
@@ -7,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from apps.api.task_manager.manager import TaskManager
 from apps.api.auth.dependencies import get_current_user
+from apps.api.auth.rbac import is_admin
 
 STORAGE_ROOT = Path("storage/reports").resolve()
 
@@ -29,6 +36,8 @@ def _validate_report_path(file_path: str) -> Path:
 async def get_report_info(task_id: str, user: dict = Depends(get_current_user)):
     """获取任务关联的报告文件信息。"""
     try:
+        if is_admin(user):
+            return _manager().get_report_info(task_id, username=None)
         return _manager().get_report_info(task_id, username=user["username"])
     except KeyError:
         raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
@@ -47,7 +56,10 @@ async def download_report(task_id: str, fmt: str, user: dict = Depends(get_curre
         )
 
     try:
-        info = _manager().get_report_info(task_id, username=user["username"])
+        if is_admin(user):
+            info = _manager().get_report_info(task_id, username=None)
+        else:
+            info = _manager().get_report_info(task_id, username=user["username"])
     except KeyError:
         raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
 

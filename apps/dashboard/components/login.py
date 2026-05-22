@@ -2,6 +2,10 @@
 
 在侧边栏渲染登录表单。登录后 token 存储在 st.session_state 中。
 所有后续 API 调用自动携带 token，过期时自动刷新。
+
+RBAC 支持：
+- 登录后调用 /api/v1/auth/me 获取并保存 auth_role。
+- 提供 current_user()、current_role()、is_admin() helper。
 """
 
 import requests
@@ -42,6 +46,8 @@ def require_login() -> str | None:
                     st.session_state["auth_token"] = data["access_token"]
                     st.session_state["refresh_token"] = data["refresh_token"]
                     st.session_state["auth_user"] = username
+                    # 获取用户角色
+                    _fetch_user_info(data["access_token"])
                     st.success(f"欢迎，{username}！")
                     st.rerun()
                 elif resp.status_code == 401:
@@ -58,6 +64,36 @@ def require_login() -> str | None:
         st.divider()
         st.stop()
     return None
+
+
+def _fetch_user_info(token: str) -> None:
+    """登录后调用 /me 获取用户角色信息。"""
+    try:
+        resp = requests.get(
+            f"{API_BASE}/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            st.session_state["auth_role"] = data.get("role", "user")
+    except Exception:
+        st.session_state["auth_role"] = "user"
+
+
+def current_user() -> str | None:
+    """返回当前登录用户名。"""
+    return st.session_state.get("auth_user")
+
+
+def current_role() -> str:
+    """返回当前用户角色（'admin' 或 'user'）。"""
+    return st.session_state.get("auth_role", "user")
+
+
+def is_admin() -> bool:
+    """判断当前用户是否为管理员。"""
+    return current_role() == "admin"
 
 
 def auth_headers() -> dict:
@@ -169,6 +205,7 @@ def _refresh_auth_token() -> bool:
             data = resp.json()
             st.session_state["auth_token"] = data["access_token"]
             st.session_state["refresh_token"] = data["refresh_token"]
+            _fetch_user_info(data["access_token"])
             return True
         else:
             _logout()
@@ -182,4 +219,5 @@ def _logout() -> None:
     st.session_state.pop("auth_token", None)
     st.session_state.pop("refresh_token", None)
     st.session_state.pop("auth_user", None)
+    st.session_state.pop("auth_role", None)
     st.rerun()

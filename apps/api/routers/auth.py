@@ -1,6 +1,5 @@
-"""认证路由 — 登录 / 刷新 / 用户信息 / 注册。"""
+"""认证路由 — 登录 / 刷新 / 用户信息 / 注册 / 用户管理。"""
 
-import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +11,7 @@ from apps.api.schemas.auth import (
     RefreshRequest,
     UserResponse,
     RegisterRequest,
+    UserUpdateRequest,
 )
 from apps.api.auth.security import (
     create_access_token,
@@ -146,3 +146,67 @@ async def register(req: RegisterRequest, user: dict = Depends(require_admin)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.get("/users", response_model=list[UserResponse])
+async def list_users(user: dict = Depends(require_admin)):
+    """列出所有用户（仅管理员可操作）。不返回 password_hash。"""
+    return [
+        UserResponse(
+            id=u["id"],
+            username=u["username"],
+            role=u.get("role", "user"),
+            enabled=u["enabled"],
+            created_at=u["created_at"],
+        )
+        for u in get_user_store().list_users()
+    ]
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: str, req: UserUpdateRequest,
+                      user: dict = Depends(require_admin)):
+    """修改用户状态/角色（仅管理员可操作）。
+
+    防止禁用最后一个 enabled admin。
+    """
+    store = get_user_store()
+    target = store.get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    kwargs = {}
+    if req.enabled is not None:
+        kwargs["enabled"] = req.enabled
+    if req.role is not None:
+        kwargs["role"] = req.role
+
+    if not kwargs:
+        return UserResponse(
+            id=target["id"],
+            username=target["username"],
+            role=target.get("role", "user"),
+            enabled=target["enabled"],
+            created_at=target["created_at"],
+        )
+
+    # 防止禁用最后一个 enabled admin
+    if req.enabled is False and target.get("role") == "admin" and target.get("enabled"):
+        admin_users = [u for u in store.list_users()
+                       if u.get("role") == "admin" and u.get("enabled")]
+        if len(admin_users) <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="不能禁用最后一个管理员账户",
+            )
+
+    updated = store.update_user(user_id, **kwargs)
+    if not updated:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return UserResponse(
+        id=updated["id"],
+        username=updated["username"],
+        role=updated.get("role", "user"),
+        enabled=updated["enabled"],
+        created_at=updated["created_at"],
+    )

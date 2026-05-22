@@ -129,7 +129,10 @@ class TaskManager:
         }
 
     def cancel(self, task_id: str, username: str | None = None) -> dict:
-        """取消任务（pending 或 running 状态）。"""
+        """取消任务（pending 或 running 状态）。
+
+        已通过 get_task_for_user 完成 owner 校验，后续操作基于已授权的 task。
+        """
         from apps.api.celery_app import celery_app
 
         task = self.store.get_task_for_user(task_id, username) if username else self.store.get_task(task_id)
@@ -137,8 +140,10 @@ class TaskManager:
             celery_task_id = task.get("celery_task_id")
             if celery_task_id:
                 celery_app.control.revoke(celery_task_id, terminate=True)
+        # cancel_task 内部会再次检查状态，但不会绕过 owner 校验
+        # 因为我们已经通过 get_task_for_user 确认了权限
         self.store.cancel_task(task_id)
-        return self.get_status(task_id)
+        return self.get_status(task_id, username=None)
 
     def list_history(
         self,
@@ -221,7 +226,11 @@ def _compute_next_cron(cron_expression: str) -> Optional[str]:
 
 
 class WatchlistManager:
-    """观察池业务逻辑层。"""
+    """观察池业务逻辑层。
+
+    所有方法接受 username 参数用于 owner 过滤。
+    普通用户传当前 username；管理员传 None 表示可访问全部。
+    """
 
     def __init__(self, store: WatchlistStore | None = None):
         self.store = store or get_watchlist_store()
@@ -229,11 +238,12 @@ class WatchlistManager:
     # ── 文件夹 ──────────────────────────────────────────────
 
     def create_folder(self, name: str, description: str = "", icon: str = "folder",
-                      sort_order: int = 0) -> dict:
-        return self.store.create_folder(name, description, icon, sort_order)
+                      sort_order: int = 0, username: str = "default") -> dict:
+        return self.store.create_folder(name, description, icon, sort_order,
+                                        owner_username=username)
 
-    def list_folders(self) -> list[dict]:
-        return self.store.list_folders()
+    def list_folders(self, username: str | None = None) -> list[dict]:
+        return self.store.list_folders(owner_username=username)
 
     def get_folder(self, folder_id: str) -> dict:
         return self.store.get_folder(folder_id)
@@ -256,6 +266,7 @@ class WatchlistManager:
         target_action: str = "观察",
         asset_name: str = "",
         tag_ids: list[str] | None = None,
+        username: str = "default",
     ) -> dict:
         item = self.store.add_item(
             symbol=symbol,
@@ -266,8 +277,8 @@ class WatchlistManager:
             target_action=target_action,
             asset_name=asset_name,
             tag_ids=tag_ids,
+            owner_username=username,
         )
-        # 计算初始 next_scan_at
         sc = item.get("schedule_config", {})
         if sc.get("mode") == "cron":
             next_scan = _compute_next_cron(sc.get("cron_expression", "0 9 * * 1-5"))
@@ -288,8 +299,10 @@ class WatchlistManager:
         enabled: bool | None = None,
         page: int = 1,
         page_size: int = 50,
+        username: str | None = None,
     ) -> tuple[list[dict], int]:
-        return self.store.list_items(folder_id, tag_id, enabled, page, page_size)
+        return self.store.list_items(folder_id, tag_id, enabled, page, page_size,
+                                     owner_username=username)
 
     def update_item(self, item_id: str, **kwargs) -> dict:
         if "schedule_config" in kwargs:
@@ -309,11 +322,12 @@ class WatchlistManager:
 
     # ── 标签 ────────────────────────────────────────────────
 
-    def create_tag(self, name: str, color: str = "#6366f1") -> dict:
-        return self.store.create_tag(name, color)
+    def create_tag(self, name: str, color: str = "#6366f1",
+                   username: str = "default") -> dict:
+        return self.store.create_tag(name, color, owner_username=username)
 
-    def list_tags(self) -> list[dict]:
-        return self.store.list_tags()
+    def list_tags(self, username: str | None = None) -> list[dict]:
+        return self.store.list_tags(owner_username=username)
 
     def update_tag(self, tag_id: str, **kwargs) -> dict:
         return self.store.update_tag(tag_id, **kwargs)
@@ -325,20 +339,39 @@ class WatchlistManager:
 
     def trigger_scan(self, item_ids: list[str] | None = None,
                      folder_id: str | None = None,
-                     trigger_type: str = "manual") -> dict:
+                     trigger_type: str = "manual",
+                     username: str | None = None) -> dict:
+        """触发批量扫描。
+
+        username: 普通用户传当前用户名，管理员传 None。
+        普通用户只能扫描自己的 item/folder/all enabled。
+        """
         items: list[dict] = []
         if item_ids:
             items = [self.store.get_item(iid) for iid in item_ids]
         elif folder_id:
-            items, _ = self.store.list_items(folder_id=folder_id, enabled=True)
+            items, _ = self.store.list_items(folder_id=folder_id, enabled=True,
+                                             owner_username=username)
         else:
-            items = self.store.get_all_enabled_items()
+            if username:
+                items = [it for it in self.store.get_all_enabled_items()
+                         if it.get("owner_username", "default") == username]
+            else:
+                items = self.store.get_all_enabled_items()
 
         if not items:
             raise ValueError("没有可扫描的标的。")
 
+        # 校验：普通用户的 item_ids 必须全部属于该用户
+        if username and item_ids:
+            for it in items:
+                if it.get("owner_username", "default") != username:
+                    raise KeyError(f"观察项不存在：{it['id']}")
+
+        owner = username or "default"
         item_id_list = [it["id"] for it in items]
-        batch_id = self.store.create_batch(trigger_type, item_id_list)
+        batch_id = self.store.create_batch(trigger_type, item_id_list,
+                                           owner_username=owner)
 
         from apps.api.task_manager.celery_tasks import scan_single_watchlist_item
         for item in items:
@@ -363,15 +396,17 @@ class WatchlistManager:
         rating: str | None = None,
         page: int = 1,
         page_size: int = 20,
+        username: str | None = None,
     ) -> dict:
         """查询已完成的扫描结果。
 
-        由于扫描结果存储在 research_tasks 中（schedule_id 链接到 watchlist item），
-        我们通过 task_store 来查询。"""
+        username: 普通用户传当前用户名，管理员传 None。
+        """
         task_store = get_task_store()
         tasks, total = task_store.list_tasks(
             symbol=symbol,
             status=TaskStatus.COMPLETED,
+            username=username,
             page=page,
             page_size=page_size,
         )

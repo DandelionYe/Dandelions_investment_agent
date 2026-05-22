@@ -1,9 +1,9 @@
 """WebSocket 端点 — 实时进度推送。
 
-端点：
-- ws/task/{task_id}      — 单票研究任务进度
-- ws/batch/{batch_id}    — 观察池批量扫描进度
-- ws/events              — 全局事件流
+权限规则：
+- /ws/task/{task_id}：普通用户只能订阅自己的任务；管理员可订阅任意任务。
+- /ws/batch/{batch_id}：普通用户只能订阅自己的批次；管理员可订阅任意批次。
+- /ws/events：仅管理员可订阅（全局事件流存在跨用户泄露风险）。
 """
 
 import json
@@ -66,34 +66,34 @@ def _build_progress_message(task: dict) -> dict:
 async def ws_task_progress(websocket: WebSocket, task_id: str, token: str = Query(...)):
     """订阅单票研究任务的实时进度。
 
-    流程：
-    0. 验证 query string 中的 token
-    1. 接受连接后，先从 SQLite 读取当前最新状态并推送
-    2. 若任务已终结（completed/failed/cancelled），推送后立即关闭
-    3. 否则订阅 Redis 频道 task:{task_id}，持续推送增量更新
-    4. 收到终结状态或客户端断开时关闭连接
+    权限：普通用户只能订阅自己的任务；管理员可订阅任意任务。
     """
-    if not await _ws_auth(websocket, token):
+    user = await _ws_auth(websocket, token)
+    if not user:
         return
-    await websocket.accept()
 
-    # 1. 推送当前最新状态
+    # 权限校验：普通用户只能订阅自己的任务
     try:
         task = get_task_store().get_task(task_id)
     except KeyError:
+        await websocket.accept()
         await websocket.send_json({"type": "error", "detail": f"任务不存在：{task_id}"})
         await websocket.close()
         return
 
+    if user.get("role") != "admin" and task.get("created_by", "default") != user["username"]:
+        await websocket.close(code=4003, reason="无权访问该任务")
+        return
+
+    await websocket.accept()
+
     current = _build_progress_message(task)
     await websocket.send_json(current)
 
-    # 2. 如果任务已终结，推送后关闭
     if task["status"] in ("completed", "failed", "cancelled"):
         await websocket.close()
         return
 
-    # 3. 订阅 Redis 频道
     redis = await get_async_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(f"task:{task_id}")
@@ -118,20 +118,26 @@ async def ws_task_progress(websocket: WebSocket, task_id: str, token: str = Quer
 async def ws_batch_progress(websocket: WebSocket, batch_id: str, token: str = Query(...)):
     """订阅观察池批量扫描的实时进度。
 
-    流程与 ws_task_progress 类似，但订阅 batch:{batch_id} 频道。
-    推送消息包含批量整体进度和各子任务的完成/失败事件。
+    权限：普通用户只能订阅自己的批次；管理员可订阅任意批次。
     """
-    if not await _ws_auth(websocket, token):
+    user = await _ws_auth(websocket, token)
+    if not user:
         return
-    await websocket.accept()
 
-    # 1. 推送当前最新批量状态
+    # 权限校验
     try:
         batch = get_watchlist_store().get_batch(batch_id)
     except KeyError:
+        await websocket.accept()
         await websocket.send_json({"type": "error", "detail": f"批次不存在：{batch_id}"})
         await websocket.close()
         return
+
+    if user.get("role") != "admin" and batch.get("owner_username", "default") != user["username"]:
+        await websocket.close(code=4003, reason="无权访问该批次")
+        return
+
+    await websocket.accept()
 
     await websocket.send_json({
         "type": "progress",
@@ -144,12 +150,10 @@ async def ws_batch_progress(websocket: WebSocket, batch_id: str, token: str = Qu
         "timestamp": batch.get("completed_at") or batch.get("created_at", ""),
     })
 
-    # 2. 如果批次已完成，关闭
     if batch["status"] == "completed":
         await websocket.close()
         return
 
-    # 3. 订阅 Redis 频道
     redis = await get_async_redis()
     pubsub = redis.pubsub()
     await pubsub.subscribe(f"batch:{batch_id}")
@@ -172,13 +176,18 @@ async def ws_batch_progress(websocket: WebSocket, batch_id: str, token: str = Qu
 
 @router.websocket("/ws/events")
 async def ws_events(websocket: WebSocket, token: str = Query(...)):
-    """全局事件流 — 接收所有任务的进度事件。
+    """全局事件流 — 仅管理员可订阅。
 
-    用于仪表盘等需要全局视图的场景。
-    注意：此端点不推送历史状态，仅推送连接后的增量事件。
+    普通用户订阅此端点会被拒绝，避免跨用户事件泄露。
     """
-    if not await _ws_auth(websocket, token):
+    user = await _ws_auth(websocket, token)
+    if not user:
         return
+
+    if user.get("role") != "admin":
+        await websocket.close(code=4003, reason="仅管理员可订阅全局事件流")
+        return
+
     await websocket.accept()
     redis = await get_async_redis()
     pubsub = redis.pubsub()

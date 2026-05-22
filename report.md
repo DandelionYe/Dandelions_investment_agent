@@ -24,7 +24,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P0 | 真实数据质量回归样本集 | 部分手工验证已完成，但缺少固定样本基线 | 防止 QMT 缓存、CSMAR 快照、EVA 股本、AKShare fallback 或 missing_reason 在后续修改中漂移 |
 | P1 | 观察池条件触发器真实行情验收 | 代码和测试存在，但仍偏单元层 | 观察池是持续使用入口，需要验证真实行情、批量扫描、进度推送和报告生成链路 |
 | P1 | 生产部署与运维安全 | 开发环境启动脚本已存在，生产部署体系不足 | Redis/Celery 持久化、日志、备份、密钥、进程守护、异常恢复需要明确方案 |
-| P1 | 多用户隔离与 RBAC | JWT 已有，权限粒度仍有限 | 如果开放给多用户使用，需要区分用户数据、观察池、报告访问权限和管理权限 |
+| P1 | 多用户隔离与 RBAC | ✅ 已完成 | owner_username 隔离、RBAC helper、API/Streamlit/存储层统一权限、57 项 RBAC 测试 |
 | P2 | 历史回测与压力测试 | 尚未形成系统能力 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
@@ -105,22 +105,22 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - 明确哪些目录必须备份，哪些目录可以清理。
 - 生产配置与开发配置有清晰边界。
 
-## P1：多用户隔离与 RBAC
+## P1：多用户隔离与 RBAC ✅
 
-目标：在已有 JWT 基础上补足多用户使用时的数据隔离。
+已在 JWT 基础上完成多用户数据隔离和 RBAC。详见 `docs/rbac_multi_user.md`。
 
-需要补齐：
+完成内容：
 
-- 用户只能访问自己的观察池、任务和报告。
-- 管理员与普通用户权限区分。
-- API 层、Streamlit 层和存储层的权限校验一致。
-- 历史报告下载、删除、批量任务等高影响操作需要权限保护。
-
-验收标准：
-
-- 跨用户读取和修改被测试覆盖。
-- 管理员能力有明确范围。
-- 默认单机自用模式仍保持简单可用。
+- watchlist_folders/items/tags/batches 新增 `owner_username` 字段，按 owner 隔离。
+- research_tasks 的 `created_by` 字段用于任务隔离。
+- RBAC helper (`apps/api/auth/rbac.py`)：`is_admin()`、`scope_username()`、`require_owner_or_admin()`。
+- API 路由统一权限语义：普通用户 404、管理员可跨用户访问。
+- WebSocket 端点增加 owner 校验，`/ws/events` 仅管理员可用。
+- 管理员用户管理接口：`GET /users`、`PATCH /users/{id}`。
+- Streamlit 报告库改用 API 而非直接文件扫描。
+- 观察池本地 fallback 默认关闭（需 `STREAMLIT_LOCAL_STORE_FALLBACK=true`）。
+- 57 项 RBAC 测试覆盖任务/观察池/报告/WebSocket/管理员接口/迁移。
+- 旧数据幂等迁移，归属 `'default'` owner。
 
 ## P2：研究质量与报告能力
 
