@@ -78,6 +78,37 @@ class TestEvaluateBacktestSample:
         result = evaluate_backtest_sample(sample)
         # 应能正常评分而不报错
         assert 0 <= result["score"] <= 100
+        assert all(c["passed"] for c in result["checks"])
+
+    def test_industry_missing_requires_warning_or_reason(self):
+        samples = load_backtest_samples(FIXTURE_PATH)
+        sample = next(s for s in samples if s["sample_id"] == "industry_insufficient_peers")
+        sample = json.loads(json.dumps(sample, ensure_ascii=False))
+        vd = sample["input_result"]["valuation_data"]
+        vd.pop("industry_valuation_warnings", None)
+        for metric in ["pe", "pb", "ps"]:
+            vd.pop(f"industry_{metric}_percentile_missing_reason", None)
+
+        result = evaluate_backtest_sample(sample)
+        check = next(c for c in result["checks"] if c["name"] == "industry_missing_handled")
+        assert check["passed"] is False
+
+    def test_forward_return_expectations_are_checked(self):
+        samples = load_backtest_samples(FIXTURE_PATH)
+        sample = next(s for s in samples if s["sample_id"] == "high_quality_low_valuation")
+        result = evaluate_backtest_sample(sample)
+        assert result["forward_return_60d"] == sample["forward_return_60d"]
+        check = next(c for c in result["checks"] if c["name"] == "min_forward_return_60d_check")
+        assert check["passed"] is True
+
+    def test_forward_return_expectation_can_fail(self):
+        samples = load_backtest_samples(FIXTURE_PATH)
+        sample = next(s for s in samples if s["sample_id"] == "high_quality_low_valuation")
+        sample = json.loads(json.dumps(sample, ensure_ascii=False))
+        sample["forward_return_60d"] = -0.2
+        result = evaluate_backtest_sample(sample)
+        check = next(c for c in result["checks"] if c["name"] == "min_forward_return_60d_check")
+        assert check["passed"] is False
 
     def test_critical_event(self):
         samples = load_backtest_samples(FIXTURE_PATH)

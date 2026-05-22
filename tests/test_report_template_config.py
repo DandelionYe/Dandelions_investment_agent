@@ -176,6 +176,36 @@ class TestSectionToggle:
         assert "决策保护器" in md
         assert "免责声明" in md
 
+    def test_sections_filter_removes_disabled_h2_sections(self):
+        """sections 配置应真正控制二级章节输出。"""
+        from services.report.markdown_builder import build_markdown_report
+
+        result = _minimal_result()
+        md = build_markdown_report(
+            result,
+            template_config={
+                "sections": ["basic_info", "scorecard", "disclaimer"],
+            },
+        )
+        assert "## 一、基本信息" in md
+        assert "## 四、量化因子打分卡" in md
+        assert "## 十一、免责声明" in md
+        assert "## 五、多头观点" not in md
+        assert "## 八、决策保护器说明" not in md
+
+    def test_save_markdown_accepts_template_config(self, tmp_path):
+        """保存 Markdown 报告时也应支持模板配置。"""
+        from services.report.markdown_builder import save_markdown_report
+
+        path = save_markdown_report(
+            _minimal_result(),
+            output_dir=str(tmp_path),
+            template_config={"sections": ["basic_info"]},
+        )
+        md = open(path, encoding="utf-8").read()
+        assert "## 一、基本信息" in md
+        assert "## 二、投委会结论" not in md
+
     def test_html_theme_css_applied(self):
         """HTML 应根据 theme 输出稳定 CSS。"""
         from services.report.html_builder import build_html_report
@@ -185,6 +215,18 @@ class TestSectionToggle:
         html = build_html_report("# Test", title="测试", theme=theme)
         assert theme.accent_color in html
         assert theme.heading_background in html
+
+    def test_save_html_accepts_theme(self, tmp_path):
+        """保存 HTML 报告时也应支持主题配置。"""
+        from services.report.html_builder import save_html_report
+        from services.report.template_config import get_theme
+
+        markdown_path = tmp_path / "sample_report.md"
+        markdown_path.write_text("# Test", encoding="utf-8")
+        theme = get_theme("compact_blue")
+        html_path = save_html_report(str(markdown_path), output_dir=str(tmp_path), theme=theme)
+        html = open(html_path, encoding="utf-8").read()
+        assert theme.accent_color in html
 
 
 def _minimal_result():

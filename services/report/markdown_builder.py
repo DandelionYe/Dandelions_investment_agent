@@ -241,6 +241,36 @@ def _filter_stale_warnings(data_warnings: list[str]) -> list[str]:
     ]
 
 
+_REPORT_SECTION_HEADINGS = {
+    "## 一、基本信息": "basic_info",
+    "## 二、投委会结论": "committee_conclusion",
+    "## 三、数据来源与行情摘要": "data_source_and_price",
+    "## 四、量化因子打分卡": "scorecard",
+    "## 五、多头观点": "bull_case",
+    "## 六、空头观点": "bear_case",
+    "## 七、风险官意见": "risk_officer",
+    "## 八、决策保护器说明": "decision_guard",
+    "## 九、辩论收敛纪要": "debate_convergence",
+    "## 十、后续跟踪建议": "follow_up",
+    "## 十一、免责声明": "disclaimer",
+}
+
+
+def _filter_markdown_sections(markdown: str, enabled_sections: list[str]) -> str:
+    """按模板配置过滤二级章节，保留报告标题和未知章节。"""
+    enabled = set(enabled_sections)
+    lines = markdown.splitlines()
+    output: list[str] = []
+    keep = True
+    for line in lines:
+        if line.startswith("## ") and not line.startswith("### "):
+            section_id = _REPORT_SECTION_HEADINGS.get(line.strip())
+            keep = section_id is None or section_id in enabled
+        if keep:
+            output.append(line)
+    return "\n".join(output).strip() + "\n"
+
+
 def build_markdown_report(result: dict, template_config=None) -> str:
     """
     把研究结果转换成 Markdown 报告。
@@ -577,10 +607,14 @@ def build_markdown_report(result: dict, template_config=None) -> str:
                 + markdown[first_break + 2 :]
             )
 
-    return markdown
+    return _filter_markdown_sections(markdown, cfg.sections)
 
 
-def save_markdown_report(result: dict, output_dir: str = "storage/reports") -> str:
+def save_markdown_report(
+    result: dict,
+    output_dir: str = "storage/reports",
+    template_config=None,
+) -> str:
     """
     保存 Markdown 报告。
     """
@@ -590,7 +624,7 @@ def save_markdown_report(result: dict, output_dir: str = "storage/reports") -> s
     filename = f'{result["symbol"]}_report.md'
     output_path = Path(output_dir) / filename
 
-    markdown = build_markdown_report(result)
+    markdown = build_markdown_report(result, template_config=template_config)
 
     output_path.write_text(markdown, encoding="utf-8")
 

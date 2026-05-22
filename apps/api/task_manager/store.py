@@ -374,6 +374,49 @@ _MIGRATION_COLUMNS = [
     ("watchlist_batches", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
 ]
 
+_CREATE_WATCHLIST_ITEMS_SQL = """
+CREATE TABLE watchlist_items (
+    id TEXT PRIMARY KEY,
+    owner_username TEXT NOT NULL DEFAULT 'default',
+    symbol TEXT NOT NULL,
+    asset_type TEXT NOT NULL CHECK(asset_type IN ('stock', 'etf')),
+    asset_name TEXT DEFAULT '',
+    folder_id TEXT NOT NULL REFERENCES watchlist_folders(id) ON DELETE RESTRICT,
+    schedule_config TEXT NOT NULL DEFAULT '{}',
+    notes TEXT DEFAULT '',
+    target_action TEXT DEFAULT '观察',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_scan_task_id TEXT,
+    last_score REAL,
+    last_rating TEXT,
+    last_action TEXT,
+    last_scan_at TEXT,
+    next_scan_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_username, symbol)
+);
+"""
+
+_CREATE_WATCHLIST_TAGS_SQL = """
+CREATE TABLE watchlist_tags (
+    id TEXT PRIMARY KEY,
+    owner_username TEXT NOT NULL DEFAULT 'default',
+    name TEXT NOT NULL,
+    color TEXT DEFAULT '#6366f1',
+    created_at TEXT NOT NULL,
+    UNIQUE(owner_username, name)
+);
+"""
+
+_CREATE_WATCHLIST_ITEM_TAGS_SQL = """
+CREATE TABLE watchlist_item_tags (
+    item_id TEXT NOT NULL REFERENCES watchlist_items(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES watchlist_tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (item_id, tag_id)
+);
+"""
+
 
 
 def _new_id() -> str:
@@ -412,6 +455,82 @@ class WatchlistStore:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         return any(r["name"] == column for r in rows)
 
+    def _table_sql(self, conn: sqlite3.Connection, table: str) -> str:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        return str(row["sql"] or "") if row else ""
+
+    def _needs_owner_unique_rebuild(self, conn: sqlite3.Connection) -> bool:
+        item_sql = " ".join(self._table_sql(conn, "watchlist_items").lower().split())
+        tag_sql = " ".join(self._table_sql(conn, "watchlist_tags").lower().split())
+        return (
+            "unique(owner_username, symbol)" not in item_sql
+            or "symbol text not null unique" in item_sql
+            or "unique(owner_username, name)" not in tag_sql
+            or "name text not null unique" in tag_sql
+        )
+
+    def _migrate_owner_unique_constraints(self, conn: sqlite3.Connection) -> None:
+        """Rebuild legacy watchlist tables that still have global UNIQUE keys."""
+        if not self._needs_owner_unique_rebuild(conn):
+            return
+
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            conn.execute("DROP TABLE IF EXISTS watchlist_item_tags_backup")
+            conn.execute(
+                "CREATE TABLE watchlist_item_tags_backup AS "
+                "SELECT item_id, tag_id FROM watchlist_item_tags"
+            )
+
+            conn.execute("ALTER TABLE watchlist_items RENAME TO watchlist_items_legacy")
+            conn.execute(_CREATE_WATCHLIST_ITEMS_SQL)
+            conn.execute(
+                """INSERT INTO watchlist_items (
+                       id, owner_username, symbol, asset_type, asset_name, folder_id,
+                       schedule_config, notes, target_action, enabled,
+                       last_scan_task_id, last_score, last_rating, last_action,
+                       last_scan_at, next_scan_at, created_at, updated_at
+                   )
+                   SELECT
+                       id, COALESCE(owner_username, 'default'), symbol, asset_type,
+                       COALESCE(asset_name, ''), folder_id,
+                       COALESCE(schedule_config, '{}'), COALESCE(notes, ''),
+                       COALESCE(target_action, '观察'), COALESCE(enabled, 1),
+                       last_scan_task_id, last_score, last_rating, last_action,
+                       last_scan_at, next_scan_at, created_at, updated_at
+                   FROM watchlist_items_legacy"""
+            )
+
+            conn.execute("ALTER TABLE watchlist_tags RENAME TO watchlist_tags_legacy")
+            conn.execute(_CREATE_WATCHLIST_TAGS_SQL)
+            conn.execute(
+                """INSERT INTO watchlist_tags (id, owner_username, name, color, created_at)
+                   SELECT id, COALESCE(owner_username, 'default'), name,
+                          COALESCE(color, '#6366f1'), created_at
+                   FROM watchlist_tags_legacy"""
+            )
+
+            conn.execute("DROP TABLE IF EXISTS watchlist_item_tags")
+            conn.execute(_CREATE_WATCHLIST_ITEM_TAGS_SQL)
+            conn.execute(
+                """INSERT OR IGNORE INTO watchlist_item_tags (item_id, tag_id)
+                   SELECT b.item_id, b.tag_id
+                   FROM watchlist_item_tags_backup b
+                   JOIN watchlist_items wi ON wi.id = b.item_id
+                   JOIN watchlist_tags wt ON wt.id = b.tag_id"""
+            )
+
+            conn.execute("DROP TABLE watchlist_items_legacy")
+            conn.execute("DROP TABLE watchlist_tags_legacy")
+            conn.execute("DROP TABLE watchlist_item_tags_backup")
+            conn.commit()
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
+
     def _init_db(self) -> None:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
@@ -425,7 +544,10 @@ class WatchlistStore:
                         conn.execute(
                             f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"
                         )
-                # 第三步：创建索引（此时 owner_username 列已存在）
+                conn.commit()
+                # 第三步：旧库的 UNIQUE(symbol/name) 需要重建为 owner 维度唯一。
+                self._migrate_owner_unique_constraints(conn)
+                # 第四步：创建索引（此时 owner_username 列已存在）
                 conn.executescript(_WATCHLIST_INDEXES_SQL)
                 conn.commit()
             finally:
@@ -640,7 +762,17 @@ class WatchlistStore:
         finally:
             conn.close()
 
-    def update_item(self, item_id: str, **kwargs) -> dict:
+    def update_item(
+        self,
+        item_id: str,
+        owner_username: str | None = None,
+        **kwargs,
+    ) -> dict:
+        item = self.get_item(item_id)
+        item_owner = item.get("owner_username", "default")
+        if owner_username is not None and item_owner != owner_username:
+            raise KeyError(f"观察项不存在：{item_id}")
+
         allowed = {
             "symbol", "asset_type", "asset_name", "folder_id", "schedule_config",
             "notes", "target_action", "enabled",
@@ -651,7 +783,9 @@ class WatchlistStore:
         if "enabled" in updates:
             updates["enabled"] = int(updates["enabled"])
         if "folder_id" in updates:
-            self.get_folder(updates["folder_id"])
+            folder = self.get_folder(updates["folder_id"])
+            if folder.get("owner_username", "default") != item_owner:
+                raise KeyError(f"文件夹不存在：{updates['folder_id']}")
         if not updates:
             return self.get_item(item_id)
         updates["updated_at"] = utc_now_iso()
@@ -808,6 +942,14 @@ class WatchlistStore:
 
     def set_item_tags(self, item_id: str, tag_ids: list[str],
                       owner_username: str | None = None) -> None:
+        item = self.get_item(item_id)
+        item_owner = item.get("owner_username", "default")
+        if owner_username is not None and item_owner != owner_username:
+            raise KeyError(f"观察项不存在：{item_id}")
+        for tid in tag_ids:
+            tag = self.get_tag(tid)
+            if tag.get("owner_username", "default") != item_owner:
+                raise KeyError(f"标签不存在：{tid}")
         with self._lock:
             conn = self._get_conn()
             try:

@@ -103,7 +103,7 @@ def evaluate_backtest_sample(sample: dict) -> dict:
     full_result = apply_decision_guard(full_result)
 
     # 执行验收检查
-    checks = _run_checks(full_result, expected, sample.get("scenario", ""))
+    checks = _run_checks(full_result, expected, sample)
 
     return {
         "sample_id": sample.get("sample_id", ""),
@@ -113,12 +113,14 @@ def evaluate_backtest_sample(sample: dict) -> dict:
         "action": full_result["action"],
         "score_breakdown": full_result["score_breakdown"],
         "decision_guard": full_result.get("decision_guard", {}),
+        "forward_return_20d": sample.get("forward_return_20d"),
+        "forward_return_60d": sample.get("forward_return_60d"),
         "expected": expected,
         "checks": checks,
     }
 
 
-def _run_checks(result: dict, expected: dict, scenario: str) -> list[dict]:
+def _run_checks(result: dict, expected: dict, sample: dict) -> list[dict]:
     """执行验收检查。"""
     checks: list[dict] = []
 
@@ -214,9 +216,27 @@ def _run_checks(result: dict, expected: dict, scenario: str) -> list[dict]:
         )
         checks.append({
             "name": "industry_missing_handled",
-            "passed": has_warning or has_missing or True,  # 允许缺失但不强制
+            "passed": has_warning or has_missing,
             "detail": f"has_warning={has_warning}, has_missing_reason={has_missing}",
         })
+
+    # 前瞻收益检查：fixture 给出 forward return 时，验收规则必须真实比较。
+    for horizon in ("20d", "60d"):
+        value = sample.get(f"forward_return_{horizon}")
+        min_key = f"min_forward_return_{horizon}"
+        max_key = f"max_forward_return_{horizon}"
+        if min_key in expected:
+            checks.append({
+                "name": f"{min_key}_check",
+                "passed": value is not None and value >= expected[min_key],
+                "detail": f"forward_return_{horizon}={value}, min_expected={expected[min_key]}",
+            })
+        if max_key in expected:
+            checks.append({
+                "name": f"{max_key}_check",
+                "passed": value is not None and value <= expected[max_key],
+                "detail": f"forward_return_{horizon}={value}, max_expected={expected[max_key]}",
+            })
 
     return checks
 
@@ -292,6 +312,8 @@ def summarize_backtest(backtest_result: dict) -> dict:
             "score": r.get("score"),
             "rating": r.get("rating"),
             "action": r.get("action"),
+            "forward_return_20d": r.get("forward_return_20d"),
+            "forward_return_60d": r.get("forward_return_60d"),
             "all_passed": r.get("all_passed", False),
             "failed_checks": [
                 c["name"] for c in r.get("checks", []) if not c["passed"]

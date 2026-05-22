@@ -1,12 +1,13 @@
 from services.data.aggregator.evidence_builder import EvidenceBuilder
 from services.data.cache.sqlite_cache import ResearchDataCache
+from services.data.evidence_schema import normalize_key_fields
 from services.data.quality.data_quality_rules import DataQualityService
 from services.data.symbol_resolver import SymbolResolver
+from services.protocols.validation import validate_protocol
 from services.research.etf_engine import ETFDataService
 from services.research.event_engine import EventService
 from services.research.fundamental_engine import FundamentalService
 from services.research.valuation_engine import ValuationService
-from services.protocols.validation import validate_protocol
 
 
 class ResearchDataAggregator:
@@ -62,6 +63,7 @@ class ResearchDataAggregator:
         merged["provider_run_log"] = provider_run_log
         merged["data_quality"] = self.quality_service.build_report(merged)
         merged["evidence_bundle"] = self.evidence_builder.build(merged)
+        normalize_key_fields(merged)
         validate_protocol("data_quality", merged["data_quality"])
         validate_protocol("evidence_bundle", merged["evidence_bundle"])
         self.cache.store_run(merged)

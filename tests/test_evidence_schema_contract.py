@@ -221,3 +221,121 @@ class TestNormalizeKeyFields:
         normalize_key_fields(result)
         # 4 price + 3 fundamental + 9 valuation + 1 event = 17
         assert len(result["evidence_fields"]) == 17
+
+
+class _StubResolver:
+    def resolve(self, symbol):
+        return {
+            "normalized_symbol": symbol,
+            "asset_type": "stock",
+            "plain_code": symbol.split(".")[0],
+            "exchange": "SH",
+        }
+
+
+class _StubService:
+    def __init__(self, data):
+        self.data = data
+
+    def build(self, merged):
+        return {
+            "data": self.data,
+            "source_metadata": {},
+            "provider_run_log": [],
+        }
+
+
+class _StubQuality:
+    def build_report(self, merged):
+        return {
+            "field_quality": {
+                "price_data": {"confidence": 0.9, "freshness": "fresh"},
+                "fundamental_data": {"confidence": 0.8, "freshness": "fresh"},
+                "valuation_data": {"confidence": 0.8, "freshness": "fresh"},
+                "event_data": {"confidence": 0.7, "freshness": "fresh"},
+            }
+        }
+
+
+class _StubEvidence:
+    def build(self, merged):
+        return {"bundle_id": "test", "items": []}
+
+
+class _StubCache:
+    def store_run(self, merged):
+        self.stored = merged
+
+
+class TestPipelineEvidenceFields:
+
+    def test_aggregator_writes_evidence_fields(self, monkeypatch):
+        import services.data.aggregator.research_data_aggregator as aggregator_module
+        from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
+
+        monkeypatch.setattr(aggregator_module, "validate_protocol", lambda *args: None)
+
+        aggregator = ResearchDataAggregator()
+        aggregator.symbol_resolver = _StubResolver()
+        aggregator.fundamental_service = _StubService({
+            "fundamental_data": {
+                "roe": 0.2,
+                "gross_margin": 0.5,
+                "net_profit_growth": 0.1,
+            }
+        })
+        aggregator.valuation_service = _StubService({
+            "valuation_data": {
+                "pe_ttm": 20,
+                "pb_mrq": 3,
+                "ps_ttm": 5,
+                "pe_percentile": 0.4,
+                "pb_percentile": 0.5,
+                "ps_percentile": 0.6,
+                "industry_pe_percentile": 0.3,
+                "industry_pb_percentile": 0.4,
+                "industry_ps_percentile": 0.5,
+            }
+        })
+        aggregator.event_service = _StubService({
+            "event_data": {"major_event": "无重大事件"}
+        })
+        aggregator.quality_service = _StubQuality()
+        aggregator.evidence_builder = _StubEvidence()
+        aggregator.cache = _StubCache()
+
+        result = aggregator.enrich({
+            "symbol": "600519.SH",
+            "name": "测试标的",
+            "asset_type": "stock",
+            "as_of": "2026-05-01",
+            "price_data": {
+                "close": 1688,
+                "change_20d": 0.05,
+                "change_60d": 0.08,
+                "avg_turnover_20d": 1000000,
+            },
+        })
+
+        assert "evidence_fields" in result
+        assert result["evidence_fields"]["price_data.close"]["value"] == 1688
+
+    def test_partial_result_preserves_evidence_fields(self):
+        from services.orchestrator.single_asset_research import _build_partial_result
+
+        asset_data = {
+            "symbol": "600519.SH",
+            "name": "测试标的",
+            "asset_type": "stock",
+            "as_of": "2026-05-01",
+            "price_data": {},
+            "evidence_fields": {"price_data.close": make_evidence_field(1688)},
+        }
+        score_result = {
+            "total_score": 70,
+            "rating": "B",
+            "action": "观察",
+            "score_breakdown": {},
+        }
+        result = _build_partial_result(asset_data, "mock", score_result)
+        assert result["evidence_fields"]["price_data.close"]["value"] == 1688

@@ -10,10 +10,12 @@
 - admin 可以查看或管理全部。
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 
+import pytest
+
+from apps.api.task_manager.manager import WatchlistManager
 from apps.api.task_manager.store import WatchlistStore
 
 
@@ -136,20 +138,32 @@ class TestItemIsolation:
             store.add_item("600519.SH", "stock", fb["id"], owner_username="alice")
 
     def test_alice_cannot_bind_bobs_tag(self, store):
-        """alice 不能给自己的 item 绑定 bob 的标签。
-
-        注意：当前 store 层 set_item_tags 不做 owner 校验，
-        校验在 router/manager 层。这里测试 store 层的基本行为。
-        """
+        """alice 不能给自己的 item 绑定 bob 的标签。"""
         fa = store.create_folder("fa", owner_username="alice")
         item = store.add_item("600519.SH", "stock", fa["id"], owner_username="alice")
         tag_bob = store.create_tag("bob-tag", owner_username="bob")
 
-        # store 层 set_item_tags 目前不做 owner 校验
-        # 实际校验在 router 层通过检查 tag owner 实现
-        store.set_item_tags(item["id"], [tag_bob["id"]])
-        updated = store.get_item(item["id"])
-        assert len(updated["tags"]) == 1
+        with pytest.raises(KeyError, match="标签不存在"):
+            store.set_item_tags(item["id"], [tag_bob["id"]], owner_username="alice")
+
+    def test_alice_cannot_update_item_to_bobs_folder(self, store):
+        """alice 不能把已有 item 移动到 bob 的文件夹。"""
+        fa = store.create_folder("fa", owner_username="alice")
+        fb = store.create_folder("fb", owner_username="bob")
+        item = store.add_item("600519.SH", "stock", fa["id"], owner_username="alice")
+
+        with pytest.raises(KeyError, match="文件夹不存在"):
+            store.update_item(item["id"], owner_username="alice", folder_id=fb["id"])
+
+    def test_manager_update_validates_tag_owner(self, store):
+        """manager 更新 tag_ids 时也必须校验 tag owner。"""
+        manager = WatchlistManager(store=store)
+        fa = store.create_folder("fa", owner_username="alice")
+        item = store.add_item("600519.SH", "stock", fa["id"], owner_username="alice")
+        tag_bob = store.create_tag("bob-tag", owner_username="bob")
+
+        with pytest.raises(KeyError, match="标签不存在"):
+            manager.update_item(item["id"], username="alice", tag_ids=[tag_bob["id"]])
 
     def test_same_owner_duplicate_symbol_raises(self, store):
         """同一 owner 不能添加重复 symbol。"""
@@ -248,6 +262,14 @@ class TestMigration:
             store.create_folder("新文件夹", owner_username="alice")
             alice_folders = store.list_folders(owner_username="alice")
             assert len(alice_folders) == 1
+
+            # 旧库的 UNIQUE(symbol/name) 应被迁移为 owner 维度唯一
+            fa = store.create_folder("fa", owner_username="alice")
+            fb = store.create_folder("fb", owner_username="bob")
+            store.add_item("600519.SH", "stock", fa["id"], owner_username="alice")
+            store.add_item("600519.SH", "stock", fb["id"], owner_username="bob")
+            store.create_tag("消费", owner_username="alice")
+            store.create_tag("消费", owner_username="bob")
 
         finally:
             try:

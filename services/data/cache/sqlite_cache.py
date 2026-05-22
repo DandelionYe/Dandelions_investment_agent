@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-
 DEFAULT_CACHE_PATH = Path("storage/cache/research_data.sqlite")
 
 
@@ -202,6 +201,7 @@ class ResearchDataCache:
             "source_metadata": asset_data.get("source_metadata", {}),
             "data_quality": asset_data.get("data_quality", {}),
             "evidence_bundle": asset_data.get("evidence_bundle", {}),
+            "evidence_fields": asset_data.get("evidence_fields", {}),
         }
         conn.execute(
             """

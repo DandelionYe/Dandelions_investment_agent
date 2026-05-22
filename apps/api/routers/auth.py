@@ -2,34 +2,32 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from jose import jwt as jose_jwt
 
-from apps.api.schemas.auth import (
-    LoginRequest,
-    TokenResponse,
-    RefreshRequest,
-    UserResponse,
-    RegisterRequest,
-    UserUpdateRequest,
-)
+from apps.api.auth.dependencies import get_current_user, require_admin
 from apps.api.auth.security import (
+    JWT_ALGORITHM,
+    JWT_SECRET,
+    TokenRevocationUnavailableError,
     create_access_token,
     create_refresh_token,
     decode_token,
-    revoke_token_by_jti,
     hash_password,
+    revoke_token_by_jti,
     verify_password,
-    JWT_SECRET,
-    JWT_ALGORITHM,
-    TokenRevocationUnavailableError,
 )
-from fastapi import Request
-
-from apps.api.auth.dependencies import get_current_user, require_admin
-from apps.api.task_manager.store import get_user_store
 from apps.api.limiter import limiter
-from jose import jwt as jose_jwt
+from apps.api.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+    UserUpdateRequest,
+)
+from apps.api.task_manager.store import get_user_store
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -190,14 +188,19 @@ async def update_user(user_id: str, req: UserUpdateRequest,
             created_at=target["created_at"],
         )
 
-    # 防止禁用最后一个 enabled admin
-    if req.enabled is False and target.get("role") == "admin" and target.get("enabled"):
+    # 防止禁用或降级最后一个 enabled admin
+    removes_enabled_admin = (
+        target.get("role") == "admin"
+        and target.get("enabled")
+        and (req.enabled is False or req.role == "user")
+    )
+    if removes_enabled_admin:
         admin_users = [u for u in store.list_users()
                        if u.get("role") == "admin" and u.get("enabled")]
         if len(admin_users) <= 1:
             raise HTTPException(
                 status_code=409,
-                detail="不能禁用最后一个管理员账户",
+                detail="不能移除最后一个管理员账户",
             )
 
     updated = store.update_user(user_id, **kwargs)

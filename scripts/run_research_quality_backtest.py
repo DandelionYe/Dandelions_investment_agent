@@ -55,12 +55,17 @@ def main():
                     f"失败: {summary['failed']}, 通过率: {summary['pass_rate']:.1%}")
     md_lines.append("")
     md_lines.append("## 场景汇总")
-    md_lines.append("| 样本 | 场景 | 评分 | 评级 | 建议 | 结果 |")
-    md_lines.append("|---|---|---:|---|---|---|")
+    md_lines.append("| 样本 | 场景 | 评分 | 评级 | 建议 | 20日前瞻 | 60日前瞻 | 结果 |")
+    md_lines.append("|---|---|---:|---|---|---:|---:|---|")
     for s in summary["scenario_summary"]:
         status = "PASS" if s["all_passed"] else "FAIL"
+        f20 = s.get("forward_return_20d")
+        f60 = s.get("forward_return_60d")
+        f20_display = "" if f20 is None else f"{f20:.2%}"
+        f60_display = "" if f60 is None else f"{f60:.2%}"
         md_lines.append(f"| {s['sample_id']} | {s['scenario']} | {s['score']} | "
-                        f"{s['rating']} | {s['action']} | {status} |")
+                        f"{s['rating']} | {s['action']} | {f20_display} | "
+                        f"{f60_display} | {status} |")
     md_lines.append("")
     md_lines.append("## 维度统计")
     md_lines.append("| 维度 | 最小 | 最大 | 平均 |")

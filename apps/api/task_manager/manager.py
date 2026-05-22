@@ -13,9 +13,14 @@ try:
 except ImportError:
     from backports.zoneinfo import ZoneInfo  # type: ignore
 
-from apps.api.task_manager.store import get_task_store, get_watchlist_store, TaskStore, WatchlistStore
-from apps.api.schemas.research import ResearchRequest, utc_now_iso, new_task_id
+from apps.api.schemas.research import ResearchRequest, new_task_id, utc_now_iso
 from apps.api.schemas.task import TaskStatus
+from apps.api.task_manager.store import (
+    TaskStore,
+    WatchlistStore,
+    get_task_store,
+    get_watchlist_store,
+)
 
 
 class TaskQueueUnavailableError(RuntimeError):
@@ -304,7 +309,7 @@ class WatchlistManager:
         return self.store.list_items(folder_id, tag_id, enabled, page, page_size,
                                      owner_username=username)
 
-    def update_item(self, item_id: str, **kwargs) -> dict:
+    def update_item(self, item_id: str, username: str | None = None, **kwargs) -> dict:
         if "schedule_config" in kwargs:
             sc = kwargs["schedule_config"]
             if isinstance(sc, dict) and sc.get("mode") == "cron":
@@ -314,8 +319,8 @@ class WatchlistManager:
                 kwargs["next_scan_at"] = None
         if "tag_ids" in kwargs:
             tag_ids = kwargs.pop("tag_ids")
-            self.store.set_item_tags(item_id, tag_ids)
-        return self.store.update_item(item_id, **kwargs)
+            self.store.set_item_tags(item_id, tag_ids, owner_username=username)
+        return self.store.update_item(item_id, owner_username=username, **kwargs)
 
     def remove_item(self, item_id: str) -> None:
         self.store.remove_item(item_id)

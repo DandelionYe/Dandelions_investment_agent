@@ -195,6 +195,10 @@ def compact_research_result_for_llm(research_result: dict[str, Any]) -> dict[str
     if isinstance(bundle, dict):
         result["evidence_bundle"] = _trim_evidence(bundle)
 
+    evidence_fields = research_result.get("evidence_fields")
+    if isinstance(evidence_fields, dict):
+        result["evidence_fields"] = evidence_fields
+
     # data_quality: keep a compact version
     dq = research_result.get("data_quality")
     if isinstance(dq, dict):

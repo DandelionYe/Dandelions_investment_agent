@@ -7,12 +7,16 @@
 - 不能禁用最后一个 enabled admin。
 """
 
-import pytest
+import asyncio
 import tempfile
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
+
+from apps.api.auth.security import hash_password
+from apps.api.schemas.auth import UserUpdateRequest
 from apps.api.task_manager.store import UserStore
-from apps.api.auth.security import hash_password, verify_password
 
 
 @pytest.fixture
@@ -57,7 +61,7 @@ class TestUserStoreRBAC:
 
     def test_cannot_disable_last_admin(self, store):
         """不能禁用最后一个 enabled admin（应用层逻辑）。"""
-        admin = store.create_user("admin", hash_password("pass"), role="admin")
+        store.create_user("admin", hash_password("pass"), role="admin")
         # 只有一个 admin
         admin_users = [u for u in store.list_users()
                        if u.get("role") == "admin" and u.get("enabled")]
@@ -66,6 +70,23 @@ class TestUserStoreRBAC:
         # 应用层应阻止禁用最后一个 admin
         # 这里测试 store 层的数据，实际阻止在 router 层
         # store 层本身不做这个校验
+
+    def test_router_cannot_downgrade_last_admin(self, store, monkeypatch):
+        """管理员接口不能把最后一个 enabled admin 降级为普通用户。"""
+        from apps.api.routers import auth as auth_router
+
+        admin = store.create_user("admin", hash_password("pass"), role="admin")
+        monkeypatch.setattr(auth_router, "get_user_store", lambda: store)
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(
+                auth_router.update_user(
+                    admin["id"],
+                    UserUpdateRequest(role="user"),
+                    user={"role": "admin", "username": "admin"},
+                )
+            )
+        assert exc.value.status_code == 409
 
     def test_multiple_admins_can_disable_one(self, store):
         """有多个 admin 时，可以禁用其中一个。"""

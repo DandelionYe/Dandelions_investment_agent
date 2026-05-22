@@ -52,8 +52,11 @@
       },
       "expected": {
         "min_score": 70,
-        "forbidden_actions": ["回避", "谨慎观察"]
+        "forbidden_actions": ["回避", "谨慎观察"],
+        "min_forward_return_60d": 0.05
       },
+      "forward_return_20d": 0.06,
+      "forward_return_60d": 0.12,
       "notes": "高质量低估值标的，评分应较高，不应强制回避"
     },
     {
@@ -160,8 +163,11 @@
         }
       },
       "expected": {
-        "max_action": "观察"
+        "max_action": "观察",
+        "max_forward_return_60d": 0.0
       },
+      "forward_return_20d": -0.06,
+      "forward_return_60d": -0.14,
       "notes": "大回撤高波动标的，risk_control应明显降低，决策保护器应限制激进建议"
     },
     {

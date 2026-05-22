@@ -1,20 +1,19 @@
 import uuid
 from datetime import date
 
-from services.data.mock_provider import get_mock_asset_data
-from services.data.akshare_provider import get_akshare_asset_data
-from services.data.qmt_provider import get_qmt_asset_data
+from services.agents.debate_agent import generate_debate_result
 from services.data.aggregator.research_data_aggregator import ResearchDataAggregator
+from services.data.akshare_provider import get_akshare_asset_data
+from services.data.mock_provider import get_mock_asset_data
 from services.data.provider_contracts import (
     ProviderUnavailableError,
     get_provider_error_type,
 )
-from services.research.scoring_engine import score_asset
-from services.agents.debate_agent import generate_debate_result
+from services.data.qmt_provider import get_qmt_asset_data
 from services.llm.json_guard import LLMJsonError
-from services.research.decision_guard import apply_decision_guard
 from services.protocols.validation import validate_protocol
-
+from services.research.decision_guard import apply_decision_guard
+from services.research.scoring_engine import score_asset
 
 NO_LLM_TEMPLATE_WARNING = (
     "本报告为无 LLM 模式生成，观点部分为规则/模板化输出，"
@@ -87,6 +86,7 @@ def _build_partial_result(asset_data: dict, data_source: str, score_result: dict
         "etf_data": asset_data.get("etf_data", {}),
         "data_quality": asset_data.get("data_quality", {}),
         "evidence_bundle": asset_data.get("evidence_bundle", {}),
+        "evidence_fields": asset_data.get("evidence_fields", {}),
         "provider_run_log": asset_data.get("provider_run_log", []),
         "score": score_result["total_score"],
         "rating": score_result["rating"],

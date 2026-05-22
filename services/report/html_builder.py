@@ -54,6 +54,7 @@ def build_html_report(markdown_text: str, title: str = "投研报告", theme=Non
 def save_html_report(
     markdown_path: str,
     output_dir: str = "storage/reports",
+    theme=None,
 ) -> str:
     """
     从 Markdown 文件生成 HTML 文件。
@@ -63,7 +64,7 @@ def save_html_report(
     markdown_text = markdown_file.read_text(encoding="utf-8")
 
     title = markdown_file.stem.replace("_report", "") + " 投研报告"
-    html = build_html_report(markdown_text, title=title)
+    html = build_html_report(markdown_text, title=title, theme=theme)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 

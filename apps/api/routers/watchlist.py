@@ -6,26 +6,25 @@
 - 普通用户访问他人资源返回 404（避免暴露资源存在性）。
 """
 
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth.dependencies import get_current_user
 from apps.api.auth.rbac import is_admin, scope_username
-
 from apps.api.schemas.watchlist import (
-    WatchlistFolderCreate,
-    WatchlistFolderUpdate,
-    WatchlistFolderResponse,
-    WatchlistItemCreate,
-    WatchlistItemUpdate,
-    WatchlistItemResponse,
-    WatchlistItemListResponse,
-    WatchlistTagCreate,
-    WatchlistTagUpdate,
-    WatchlistTagResponse,
-    ScanRequest,
     ScanAcceptResponse,
-    ScanProgressResponse,
     ScanHistoryResponse,
+    ScanProgressResponse,
+    ScanRequest,
+    WatchlistFolderCreate,
+    WatchlistFolderResponse,
+    WatchlistFolderUpdate,
+    WatchlistItemCreate,
+    WatchlistItemListResponse,
+    WatchlistItemResponse,
+    WatchlistItemUpdate,
+    WatchlistTagCreate,
+    WatchlistTagResponse,
+    WatchlistTagUpdate,
 )
 from apps.api.task_manager.manager import WatchlistManager
 
@@ -191,7 +190,8 @@ async def update_item(item_id: str, req: WatchlistItemUpdate, user: dict = Depen
         kwargs = {k: v for k, v in req.model_dump().items() if v is not None}
         if "schedule_config" in kwargs and hasattr(kwargs["schedule_config"], "model_dump"):
             kwargs["schedule_config"] = kwargs["schedule_config"].model_dump()
-        return _manager().update_item(item_id, **kwargs)
+        owner = None if is_admin(user) else user["username"]
+        return _manager().update_item(item_id, username=owner, **kwargs)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
