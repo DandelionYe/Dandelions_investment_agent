@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "description": "Real data quality regression samples for valuation/fallback/source-chain checks.",
+  "fields_under_test": [
+    "pe_ttm",
+    "pb_mrq",
+    "ps_ttm",
+    "dividend_yield",
+    "pe_percentile",
+    "pb_percentile",
+    "ps_percentile",
+    "industry_pe_percentile",
+    "industry_pb_percentile",
+    "industry_ps_percentile"
+  ],
+  "samples": [
+    {
+      "id": "large_cap_complete_cache",
+      "symbol": "600519.SH",
+      "category": "large_cap_complete_cache",
+      "description": "Large-cap stock expected to have relatively complete QMT/CSMAR data.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "eva_share_capital_fallback",
+      "symbol": "600410.SH",
+      "category": "eva_share_capital_fallback",
+      "description": "Stock where QMT TotalVolume is often zero; EVA_Structure fallback expected.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare", "share_capital_fallback"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "csmar_daily_derived_fallback",
+      "symbol": "000001.SZ",
+      "category": "csmar_daily_derived_fallback",
+      "description": "Stock expected to have CSMAR daily-derived snapshot data for dividend_yield and percentiles.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "edge_case_negative_or_missing_fundamental",
+      "symbol": "600759.SH",
+      "category": "edge_case_negative_or_missing_fundamental",
+      "description": "Stock with potentially missing or negative fundamentals; tests missing_reason propagation.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable", "missing_market_cap"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "missing_close", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable", "missing_market_cap"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe", "missing_net_profit_ttm", "missing_total_volume", "share_capital_fallback_unavailable", "missing_market_cap", "field_not_supported"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps", "missing_bps", "missing_close", "field_not_supported"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm", "missing_revenue_ttm", "missing_total_volume", "share_capital_fallback_unavailable", "missing_market_cap", "field_not_supported"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare", "mock_placeholder"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "industry_peer_insufficient_or_preflight_failed",
+      "symbol": "688551.SH",
+      "category": "industry_peer_insufficient_or_preflight_failed",
+      "description": "Smaller stock where industry peer pool may be insufficient or preflight fails.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs", "unknown"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare", "mock_placeholder"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "telecom_large_cap",
+      "symbol": "601728.SH",
+      "category": "large_cap_complete_cache",
+      "description": "China Telecom - large-cap stock with potentially complete QMT cache and EVA fallback.",
+      "requires": ["qmt"],
+      "expected": {
+        "fields": {
+          "pe_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_net_profit_ttm", "loss_making_or_invalid_pe", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "pb_mrq": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_bps", "invalid_bps", "provider_unavailable"]
+          },
+          "ps_ttm": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_revenue_ttm", "invalid_revenue_ttm", "provider_unavailable", "missing_total_volume", "share_capital_fallback_unavailable"]
+          },
+          "dividend_yield": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["missing_dividend_yield_source", "stale_local_csmar_daily_derived", "provider_disabled"]
+          },
+          "pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "loss_making_or_invalid_pe"]
+          },
+          "pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_bps"]
+          },
+          "ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["insufficient_history_samples", "provider_unavailable", "invalid_revenue_ttm"]
+          },
+          "industry_pe_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_pb_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          },
+          "industry_ps_percentile": {
+            "state": "present_or_missing",
+            "allowed_missing_reasons": ["peer_cache_preflight_failed", "missing_peer_close", "missing_peer_finance", "missing_peer_share_capital", "insufficient_peer_samples", "target_not_in_peer_inputs"]
+          }
+        },
+        "valuation_source": {
+          "contains_any": ["qmt_derived", "csmar_daily_derived", "local_csmar_eva_structure", "akshare"]
+        },
+        "calculation_method": {
+          "contains_any": ["derived_from_qmt_price_share_capital_and_financials"]
+        },
+        "provider_log": [
+          {
+            "dataset": "valuation_data",
+            "status_any": ["success", "fallback_placeholder"]
+          }
+        ]
+      }
+    }
+  ]
+}

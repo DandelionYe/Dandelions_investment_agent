@@ -7,6 +7,7 @@ markers = [
     "live: tests that require locally running services",
     "qmt: tests that require a local QMT/xtquant environment",
     "network: tests that require external network data sources",
+    "data_quality: data quality regression tests against live QMT",
 ]
 
 [tool.ruff]
