@@ -11,6 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROD_SCRIPTS = PROJECT_ROOT / "scripts" / "prod"
 DOCS = PROJECT_ROOT / "docs"
+GITIGNORE = PROJECT_ROOT / ".gitignore"
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,38 @@ class TestStartScript:
         text = self._read()
         assert "redis" in text.lower() or "Redis" in text
 
+    def test_redis_check_uses_configured_broker_url(self):
+        text = self._read()
+        assert "CELERY_BROKER_URL" in text
+        assert "DANDELIONS_REDIS_CHECK_URL" in text
+        assert "redis://127.0.0.1:6379/0" not in text
+
+    def test_uses_runtime_prod_dir(self):
+        text = self._read()
+        assert "storage\\runtime\\prod" in text
+
+    def test_starts_real_process_not_powershell_wrapper(self):
+        text = self._read()
+        assert 'Start-Process -FilePath $FilePath' in text
+        assert 'Start-Process -FilePath "powershell.exe"' not in text
+        assert "Tee-Object" not in text
+
+    def test_redirects_stdout_and_stderr(self):
+        text = self._read()
+        assert "RedirectStandardOutput" in text
+        assert "RedirectStandardError" in text
+
+    def test_writes_service_metadata(self):
+        text = self._read()
+        assert "$Name.json" in text
+        assert "start_time_utc" in text
+        assert "project_root" in text
+
+    def test_existing_pid_is_verified_before_auto_stop(self):
+        text = self._read()
+        assert "Test-ManagedProcessMatchesMetadata" in text
+        assert "Refusing to stop it automatically" in text
+
     def test_no_global_process_kill(self):
         text = self._read()
         # Should not contain broad process killing
@@ -152,6 +185,7 @@ class TestCleanupScript:
     def test_path_validation(self):
         text = self._read()
         assert "ProjectRoot" in text or "project_root" in text.lower()
+        assert "DirectorySeparatorChar" in text
 
     def test_does_not_delete_env(self):
         text = self._read()
@@ -224,6 +258,18 @@ class TestStopScript:
         text = self._read()
         assert ".pid" in text
 
+    def test_validates_metadata_before_stopping(self):
+        text = self._read()
+        assert "$name.json" in text
+        assert "Test-ManagedProcessMatchesMetadata" in text
+        assert "AllowLegacyPid" in text
+
+    def test_stops_process_tree_by_pid(self):
+        text = self._read()
+        assert "Get-CimInstance Win32_Process" in text
+        assert "ParentProcessId=$Pid" in text
+        assert "Stop-Process -Id $Pid" in text
+
 
 # ---------------------------------------------------------------------------
 # 5. Backup script — covers must-backup paths
@@ -260,6 +306,11 @@ class TestBackupScript:
     def test_generates_manifest(self):
         text = self._read()
         assert "manifest" in text.lower()
+
+    def test_preserves_project_relative_layout(self):
+        text = self._read()
+        assert 'Join-Path $BackupDir $target.Source' in text
+        assert "-replace '\\\\', '_'" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +388,17 @@ class TestStatusScript:
         text = self.SCRIPT.read_text(encoding="utf-8")
         assert "redis" in text.lower() or "Redis" in text
 
+    def test_supports_custom_ports(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        assert "[int]$ApiPort" in text
+        assert "[int]$StreamlitPort" in text
+        assert "http://127.0.0.1:$ApiPort/api/v1/health" in text
+
+    def test_redis_check_uses_configured_broker_url(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        assert "CELERY_BROKER_URL" in text
+        assert "redis://127.0.0.1:6379/0" not in text
+
 
 # ---------------------------------------------------------------------------
 # 8. Health check script exists
@@ -358,6 +420,32 @@ class TestHealthCheckScript:
         text = self.SCRIPT.read_text(encoding="utf-8")
         assert "redis" in text.lower() or "Redis" in text
 
+    def test_redis_check_uses_configured_broker_url(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        assert "CELERY_BROKER_URL" in text
+        assert "redis://127.0.0.1:6379/0" not in text
+
     def test_checks_api(self):
         text = self.SCRIPT.read_text(encoding="utf-8")
         assert "health" in text.lower() or "api" in text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 9. Git ignore rules keep production templates tracked and runtime data ignored
+# ---------------------------------------------------------------------------
+
+
+class TestGitIgnoreProductionOps:
+    def _read(self) -> str:
+        return GITIGNORE.read_text(encoding="utf-8")
+
+    def test_env_production_template_is_not_ignored(self):
+        text = self._read()
+        assert ".env.*" in text
+        assert "!.env.production.example" in text
+
+    def test_runtime_and_backup_dirs_are_ignored(self):
+        text = self._read()
+        assert "storage/runtime/" in text
+        assert "storage/prod/" in text
+        assert "backups/" in text

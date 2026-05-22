@@ -34,7 +34,15 @@ function Test-PathInsideProject {
     param([string]$Path)
     $resolved = (Resolve-Path -LiteralPath $Path -ErrorAction SilentlyContinue)
     if (-not $resolved) { return $false }
-    return $resolved.Path.StartsWith($ProjectRoot, [StringComparison]::OrdinalIgnoreCase)
+
+    $root = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\', '/')
+    $candidate = [System.IO.Path]::GetFullPath($resolved.Path)
+    if ($candidate.Equals($root, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    $rootWithSeparator = $root + [System.IO.Path]::DirectorySeparatorChar
+    return $candidate.StartsWith($rootWithSeparator, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Remove-SafeItem {
@@ -124,8 +132,14 @@ if (Test-Path -LiteralPath $logsDir) {
 
 # --- Stale PID files ---
 Write-Status "--- Stale PID files ---"
-$prodDir = Join-Path $ProjectRoot "storage\prod"
-if (Test-Path -LiteralPath $prodDir) {
+$runtimeDirs = @(
+    (Join-Path $ProjectRoot "storage\runtime\prod"),
+    (Join-Path $ProjectRoot "storage\prod")
+)
+foreach ($prodDir in $runtimeDirs) {
+    if (-not (Test-Path -LiteralPath $prodDir)) {
+        continue
+    }
     $pidFiles = Get-ChildItem -LiteralPath $prodDir -File -Filter "*.pid" -ErrorAction SilentlyContinue
     foreach ($pf in $pidFiles) {
         $pidStr = (Get-Content -LiteralPath $pf.FullName -ErrorAction SilentlyContinue).Trim()

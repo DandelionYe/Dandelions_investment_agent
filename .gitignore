@@ -2,13 +2,16 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 __pycache__/
 storage/reports/
 storage/cache/
 storage/logs/
 storage/artifacts/
 storage/runtime/
+storage/prod/
 storage/*.db
+backups/
 *.pyc
 .pytest_cache/
 .pytest_cache_ci/

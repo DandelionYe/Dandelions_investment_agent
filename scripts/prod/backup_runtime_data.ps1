@@ -34,7 +34,8 @@ Write-Status ""
 # Create backup directory
 New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
 
-# Define backup targets
+# Define backup targets. Destination paths preserve the project-relative layout
+# so a restore can copy the backup directory back to the project root.
 $mustBackup = @(
     @{ Source = ".env";                                        Label = "Environment config" },
     @{ Source = "storage\tasks.db";                            Label = "Task database" },
@@ -58,16 +59,17 @@ $totalSkipped = 0
 
 foreach ($target in $mustBackup) {
     $src = Join-Path $ProjectRoot $target.Source
-    $dstName = $target.Source -replace '\\', '_'
-    $dstName = $dstName -replace '^\.\.?', ''
-    $dstName = $dstName.TrimStart('_')
-    if ([string]::IsNullOrWhiteSpace($dstName)) { $dstName = Split-Path $target.Source -Leaf }
-    $dst = Join-Path $BackupDir $dstName
+    $dst = Join-Path $BackupDir $target.Source
+    $dstParent = Split-Path -Parent $dst
+    if ($dstParent) {
+        New-Item -ItemType Directory -Force -Path $dstParent | Out-Null
+    }
 
     $item = @{
-        "source" = $target.Source
-        "label"  = $target.Label
-        "status" = "unknown"
+        "source"      = $target.Source
+        "destination" = $target.Source
+        "label"       = $target.Label
+        "status"      = "unknown"
     }
 
     if (Test-Path -LiteralPath $src) {
@@ -105,14 +107,16 @@ if ($IncludeLogs) {
     if (Test-Path -LiteralPath $logsDir) {
         $logFiles = Get-ChildItem -LiteralPath $logsDir -File -ErrorAction SilentlyContinue
         if ($logFiles) {
-            $logsDst = Join-Path $BackupDir "logs_prod"
+            $logsDst = Join-Path $BackupDir "storage\logs\prod"
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logsDst) | Out-Null
             Copy-Item -LiteralPath $logsDir -Destination $logsDst -Recurse -Force
             Write-Status "  [copied] Production logs"
             $manifest["items"] += @{
-                "source" = "storage\logs\prod"
-                "label"  = "Production logs"
-                "status" = "copied"
-                "files"  = ($logFiles | Measure-Object).Count
+                "source"      = "storage\logs\prod"
+                "destination" = "storage\logs\prod"
+                "label"       = "Production logs"
+                "status"      = "copied"
+                "files"       = ($logFiles | Measure-Object).Count
             }
             $totalCopied++
         }

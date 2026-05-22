@@ -1,5 +1,5 @@
 # =============================================================================
-# Dandelions Investment Agent — Production Health Check
+# Dandelions Investment Agent - Production Health Check
 # =============================================================================
 # Designed for scheduled tasks or manual verification.
 # Returns exit code 0 on success, non-zero on failure.
@@ -19,7 +19,38 @@ $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$RuntimeDir = Join-Path $ProjectRoot "storage\prod"
+$RuntimeDir = Join-Path $ProjectRoot "storage\runtime\prod"
+
+function Get-DotEnvValue {
+    param(
+        [string]$Content,
+        [string]$Name
+    )
+
+    $pattern = "(?m)^\s*$([regex]::Escape($Name))\s*=\s*(.*)\s*$"
+    $match = [regex]::Match($Content, $pattern)
+    if (-not $match.Success) {
+        return $null
+    }
+
+    $value = $match.Groups[1].Value.Trim()
+    if ($value.StartsWith('"') -and $value.EndsWith('"')) {
+        return $value.Substring(1, $value.Length - 2)
+    }
+    if ($value.StartsWith("'") -and $value.EndsWith("'")) {
+        return $value.Substring(1, $value.Length - 2)
+    }
+    return $value
+}
+
+function Get-RedisUrl {
+    $envFile = Join-Path $ProjectRoot ".env"
+    if (-not (Test-Path -LiteralPath $envFile)) {
+        return $null
+    }
+    $envContent = Get-Content -LiteralPath $envFile -Raw -ErrorAction SilentlyContinue
+    return Get-DotEnvValue -Content $envContent -Name "CELERY_BROKER_URL"
+}
 
 function Test-TcpPort {
     param([string]$HostName, [int]$Port, [int]$TimeoutMs = 2000)
@@ -37,17 +68,27 @@ function Test-TcpPort {
 }
 
 function Test-RedisPing {
+    param([string]$RedisUrl)
+
+    if (-not $RedisUrl) { return $false }
     $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
     if (-not (Test-Path -LiteralPath $Python)) { return $false }
-    $result = & $Python -c "import redis; r=redis.from_url('redis://127.0.0.1:6379/0', socket_connect_timeout=2, socket_timeout=2); print(r.ping()); r.close()" 2>&1
-    return ($LASTEXITCODE -eq 0 -and ($result | Out-String) -match "True")
+
+    $script = "import os, redis; url=os.environ['DANDELIONS_REDIS_CHECK_URL']; r=redis.from_url(url, socket_connect_timeout=2, socket_timeout=2); print(r.ping()); r.close()"
+    $env:DANDELIONS_REDIS_CHECK_URL = $RedisUrl
+    try {
+        $result = & $Python -c $script 2>&1
+        return ($LASTEXITCODE -eq 0 -and ($result | Out-String) -match "True")
+    } finally {
+        Remove-Item Env:\DANDELIONS_REDIS_CHECK_URL -ErrorAction SilentlyContinue
+    }
 }
 
 function Test-ServiceAlive {
     param([string]$Name)
     $pidFile = Join-Path $RuntimeDir "$Name.pid"
     if (-not (Test-Path -LiteralPath $pidFile)) { return $false }
-    $pidStr = (Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue).Trim()
+    $pidStr = (Get-Content -LiteralPath $pidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
     if ([string]::IsNullOrWhiteSpace($pidStr)) { return $false }
     $proc = Get-Process -Id ([int]$pidStr) -ErrorAction SilentlyContinue
     return ($null -ne $proc)
@@ -56,12 +97,11 @@ function Test-ServiceAlive {
 $checks = @()
 $allOk = $true
 
-# 1. Redis
-$redisOk = Test-RedisPing
-$checks += @{ Name = "Redis"; Ok = $redisOk; Detail = "127.0.0.1:6379" }
+$redisUrl = Get-RedisUrl
+$redisOk = Test-RedisPing -RedisUrl $redisUrl
+$checks += @{ Name = "Redis"; Ok = $redisOk; Detail = "from CELERY_BROKER_URL" }
 if (-not $redisOk) { $allOk = $false }
 
-# 2. API health endpoint
 $apiOk = $false
 $apiDetail = ""
 if (Test-TcpPort -HostName "127.0.0.1" -Port $ApiPort) {
@@ -79,22 +119,18 @@ if (Test-TcpPort -HostName "127.0.0.1" -Port $ApiPort) {
 $checks += @{ Name = "API"; Ok = $apiOk; Detail = $apiDetail }
 if (-not $apiOk) { $allOk = $false }
 
-# 3. Celery worker
 $workerOk = Test-ServiceAlive -Name "worker"
 $checks += @{ Name = "Celery Worker"; Ok = $workerOk; Detail = if ($workerOk) { "running" } else { "not running" } }
 if (-not $workerOk) { $allOk = $false }
 
-# 4. Celery Beat
 $beatOk = Test-ServiceAlive -Name "beat"
 $checks += @{ Name = "Celery Beat"; Ok = $beatOk; Detail = if ($beatOk) { "running" } else { "not running" } }
 if (-not $beatOk) { $allOk = $false }
 
-# 5. Streamlit
 $streamlitOk = Test-TcpPort -HostName "127.0.0.1" -Port $StreamlitPort
 $checks += @{ Name = "Streamlit"; Ok = $streamlitOk; Detail = if ($streamlitOk) { "port $StreamlitPort listening" } else { "port $StreamlitPort not listening" } }
 if (-not $streamlitOk) { $allOk = $false }
 
-# Output
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 Write-Host "[$timestamp] Dandelions Health Check" -ForegroundColor Cyan
 foreach ($c in $checks) {
