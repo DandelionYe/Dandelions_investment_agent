@@ -386,6 +386,7 @@ class TestGetQmtAssetDataTickOverlay:
         fake = _fake_xtdata_kline(df, tick_data=tick_raw)
         _patch_xtdata(monkeypatch, fake)
         monkeypatch.setattr(qmt_mod, "_load_qmt_instrument_detail", lambda s: {})
+        monkeypatch.setenv("QMT_PRICE_AKSHARE_FALLBACK", "false")
 
         result = get_qmt_asset_data("600519.SH")
         pd_ = result["price_data"]
@@ -420,6 +421,7 @@ class TestGetQmtAssetDataTickOverlay:
         fake = _fake_xtdata_kline(df, tick_data=tick_raw)
         _patch_xtdata(monkeypatch, fake)
         monkeypatch.setattr(qmt_mod, "_load_qmt_instrument_detail", lambda s: {})
+        monkeypatch.setenv("QMT_PRICE_AKSHARE_FALLBACK", "false")
 
         result = get_qmt_asset_data("600519.SH")
         pd_ = result["price_data"]
@@ -485,6 +487,7 @@ class TestGetQmtAssetDataTickOverlay:
             qmt_mod, "load_qmt_settings",
             lambda: _settings(use_full_tick_for_stale=False),
         )
+        monkeypatch.setenv("QMT_PRICE_AKSHARE_FALLBACK", "false")
 
         result = get_qmt_asset_data("600519.SH")
         qs = result["source_metadata"]["qmt_status"]

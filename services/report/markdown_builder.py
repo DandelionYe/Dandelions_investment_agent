@@ -12,6 +12,9 @@ from services.data.data_quality import (
     localize_data_source,
     localize_data_vendor,
     localize_ma_position,
+    localize_price_history_source,
+    localize_price_source,
+    localize_price_status,
     localize_risk_level,
 )
 
@@ -175,6 +178,69 @@ def _build_industry_valuation_table(valuation_data: dict) -> str:
     return "\n".join(rows)
 
 
+def _build_price_freshness_warning(price_data: dict) -> str | None:
+    """Build a staleness warning blockquote for the price section.
+
+    Returns ``None`` when price data is not stale.
+    """
+    is_stale = price_data.get("price_is_stale")
+    if not isinstance(is_stale, bool) or not is_stale:
+        return None
+
+    trade_date = price_data.get("latest_trade_date") or "未知"
+    return (
+        f"> **行情数据可能过期**：最新行情日期为 {trade_date}，"
+        f"报告日期为 {_today_str()}。"
+        f"价格、均线、涨跌幅、回撤和波动率可能不代表最新交易日。"
+    )
+
+
+def _today_str() -> str:
+    from datetime import date
+
+    return str(date.today())
+
+
+def _build_price_chain_summary(qmt_status: dict) -> str:
+    """Build a one-line price chain summary from qmt_status."""
+    if not qmt_status:
+        return ""
+
+    download_attempted = qmt_status.get("download_attempted", False)
+    tick_applied = qmt_status.get("full_tick_applied", False)
+    akshare_attempted = qmt_status.get("akshare_price_fallback_attempted", False)
+    akshare_applied = qmt_status.get("akshare_price_fallback_applied", False)
+
+    parts = ["QMT 日 K"]
+
+    if download_attempted:
+        reason = qmt_status.get("download_reason", "")
+        if reason == "stale":
+            parts.append("stale 重下载")
+
+    if tick_applied:
+        parts.append("full tick 临时 bar")
+    elif qmt_status.get("full_tick_attempted") and not tick_applied:
+        parts.append("full tick 未修复")
+
+    if akshare_applied:
+        parts.append("AKShare fallback")
+    elif akshare_attempted and not akshare_applied:
+        reason = qmt_status.get("akshare_price_fallback_reason", "")
+        parts.append(f"AKShare fallback 未成功（{reason}）")
+
+    return " -> ".join(parts)
+
+
+def _filter_stale_warnings(data_warnings: list[str]) -> list[str]:
+    """Remove stale-related warnings that are now covered by the freshness section."""
+    stale_keywords = ["行情可能过期", "日 K 行情可能过期", "行情仍可能过期", "行情仍过期"]
+    return [
+        w for w in data_warnings
+        if not any(kw in w for kw in stale_keywords)
+    ]
+
+
 def build_markdown_report(result: dict) -> str:
     """
     把研究结果转换成 Markdown 报告。
@@ -254,6 +320,27 @@ def build_markdown_report(result: dict) -> str:
             f"> **模式提示**：{item}" for item in analysis_warnings
         ) + "\n\n"
 
+    # --- Price freshness display ---
+    freshness_warning = _build_price_freshness_warning(price_data)
+    qmt_status = result.get("source_metadata", {}).get("qmt_status", {})
+    price_chain = _build_price_chain_summary(qmt_status)
+
+    latest_trade_date_display = price_data.get("latest_trade_date") or "暂无"
+    price_source_display = localize_price_source(price_data.get("latest_price_source"))
+    price_status_display = localize_price_status(price_data.get("price_is_stale"))
+    price_history_display = localize_price_history_source(price_data.get("price_history_source"))
+
+    # Filter stale warnings from data_warnings to avoid duplication
+    filtered_data_warnings = _filter_stale_warnings(result.get("data_warnings", []))
+    if filtered_data_warnings:
+        provider_warnings_section = (
+            "### 数据来源警告\n\n"
+            + _as_bullets(filtered_data_warnings)
+            + "\n"
+        )
+    else:
+        provider_warnings_section = ""
+
     markdown = f"""# {result.get("name", "未知标的")}（{result.get("symbol", "UNKNOWN")}）投研报告
 
 ## 一、基本信息
@@ -281,10 +368,16 @@ def build_markdown_report(result: dict) -> str:
 
 ## 三、数据来源与行情摘要
 
+{freshness_warning if freshness_warning else ""}
+
 | 指标 | 数值 |
 |---|---:|
 | 数据来源 | {data_source} |
 | 行情供应商 | {data_vendor} |
+| 行情日期 | {latest_trade_date_display} |
+| 价格来源 | {price_source_display} |
+| 价格历史序列 | {price_history_display} |
+| 行情状态 | {price_status_display} |
 | 最新收盘价 | {format_number(price_data.get("close"))} |
 | 近20日涨跌幅 | {format_percent(price_data.get("change_20d"))} |
 | 近60日涨跌幅 | {format_percent(price_data.get("change_60d"))} |
@@ -294,6 +387,9 @@ def build_markdown_report(result: dict) -> str:
 | 近60日年化波动率 | {format_percent(price_data.get("volatility_60d"))} |
 | 近20日平均成交额/成交量原始值 | {format_money_like_value(price_data.get("avg_turnover_20d"), data_vendor_raw)} |
 
+价格链路：{price_chain if price_chain else "暂无"}
+
+{provider_warnings_section}
 ### 3.1 数据质量提示
 
 {_as_bullets(data_quality_notes)}

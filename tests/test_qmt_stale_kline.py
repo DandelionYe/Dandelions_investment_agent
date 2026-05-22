@@ -326,6 +326,8 @@ class TestGetQmtAssetDataStaleFields:
         fake = _fake_xtdata([stale_df, stale_df])
         _patch_xtdata(monkeypatch, fake)
         monkeypatch.setattr(qmt_mod, "_load_qmt_instrument_detail", lambda s: {})
+        # Disable AKShare fallback to test QMT-only stale warning
+        monkeypatch.setenv("QMT_PRICE_AKSHARE_FALLBACK", "false")
 
         result = get_qmt_asset_data("600519.SH")
 

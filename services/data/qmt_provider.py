@@ -138,11 +138,13 @@ def _query_qmt_daily_history(
 
 
 def _extract_latest_trade_date(df: pd.DataFrame) -> date | None:
-    """Extract the latest trade date from a QMT daily history DataFrame.
+    """Extract the latest trade date from a daily history DataFrame.
 
-    Tries ``time`` column first, then the DataFrame index.  Only considers rows
-    where ``close`` is non-NaN so that a trailing placeholder row does not skew
-    the result.
+    Supports both QMT and AKShare column naming conventions.
+
+    Tries date-like columns first (``time``, ``日期``, ``date``, ``trade_date``),
+    then the DataFrame index.  Only considers rows where ``close`` is non-NaN so
+    that a trailing placeholder row does not skew the result.
     """
     if df is None or df.empty:
         return None
@@ -155,11 +157,11 @@ def _extract_latest_trade_date(df: pd.DataFrame) -> date | None:
     if valid.empty:
         return None
 
-    # --- attempt 1: "time" column ---
-    time_col = _find_column(df, ["time"])
-    if time_col and time_col in valid.columns:
+    # --- attempt 1: date-like column ---
+    date_col = _find_column(df, ["time", "日期", "date", "trade_date"])
+    if date_col and date_col in valid.columns:
         try:
-            raw = valid[time_col].iloc[-1]
+            raw = valid[date_col].iloc[-1]
             dt = _parse_timestamp_like(raw)
             if dt is not None:
                 return dt
@@ -594,6 +596,175 @@ def _find_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
+def _try_akshare_price_fallback(
+    symbol: str,
+    asset_type: str,
+    qmt_latest_date: date | None,
+    max_stale_days: int,
+) -> tuple[dict | None, dict]:
+    """Attempt to build price_data from AKShare when QMT is stale.
+
+    Returns ``(price_data, metadata)`` where *price_data* is ``None`` when the
+    fallback is not applied.  *metadata* always contains the qmt_status keys for
+    the AKShare fallback attempt.
+    """
+    from services.data import akshare_provider
+
+    fallback_meta: dict[str, Any] = {
+        "akshare_price_fallback_enabled": True,
+        "akshare_price_fallback_attempted": True,
+        "akshare_price_fallback_success": None,
+        "akshare_price_fallback_applied": False,
+        "akshare_price_fallback_reason": None,
+        "akshare_price_latest_trade_date": None,
+        "akshare_price_vendor": None,
+    }
+    run_log_entry: dict[str, Any] = {
+        "provider": "akshare",
+        "dataset": "price_data",
+        "symbol": symbol,
+        "status": "failed",
+        "rows": None,
+        "latest_trade_date": None,
+        "applied": False,
+        "reason": None,
+        "error": None,
+        "error_type": None,
+        "as_of": str(date.today()),
+    }
+
+    try:
+        ak_result = akshare_provider.get_akshare_asset_data(symbol)
+    except Exception as exc:
+        fallback_meta["akshare_price_fallback_success"] = False
+        fallback_meta["akshare_price_fallback_reason"] = "akshare_unavailable"
+        run_log_entry["reason"] = "akshare_unavailable"
+        run_log_entry["error"] = str(exc)[:200]
+        run_log_entry["error_type"] = type(exc).__name__
+        return None, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+    ak_price_data = ak_result.get("price_data")
+    if not ak_price_data:
+        fallback_meta["akshare_price_fallback_success"] = False
+        fallback_meta["akshare_price_fallback_reason"] = "akshare_unavailable"
+        run_log_entry["reason"] = "akshare_unavailable"
+        return None, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+    fallback_meta["akshare_price_fallback_success"] = True
+
+    ak_latest_str = ak_price_data.get("latest_trade_date")
+    ak_latest: date | None = None
+    if ak_latest_str:
+        try:
+            ak_latest = date.fromisoformat(ak_latest_str)
+        except (ValueError, TypeError):
+            pass
+    if ak_latest is None:
+        # Try extracting from the raw AKShare frame
+        ak_df = ak_result.get("_raw_df")
+        if ak_df is not None:
+            ak_latest = _extract_latest_trade_date(ak_df)
+
+    fallback_meta["akshare_price_latest_trade_date"] = (
+        str(ak_latest) if ak_latest else None
+    )
+    fallback_meta["akshare_price_vendor"] = ak_price_data.get("data_vendor", "unknown")
+    if ak_latest is not None:
+        ak_price_data["latest_trade_date"] = str(ak_latest)
+
+    run_log_entry["rows"] = ak_price_data.get("history_close")
+    if isinstance(run_log_entry["rows"], list):
+        run_log_entry["rows"] = len(run_log_entry["rows"])
+    run_log_entry["latest_trade_date"] = str(ak_latest) if ak_latest else None
+
+    if ak_latest is None:
+        fallback_meta["akshare_price_fallback_reason"] = "akshare_date_unparseable"
+        run_log_entry["reason"] = "akshare_date_unparseable"
+        return None, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+    # Conservative strategy: only apply when AKShare is not stale
+    ak_is_stale = _is_qmt_history_stale(ak_latest, date.today(), max_stale_days)
+    if ak_is_stale:
+        fallback_meta["akshare_price_fallback_reason"] = "akshare_stale"
+        run_log_entry["reason"] = "akshare_stale"
+        return None, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+    # Only apply when AKShare is strictly newer than QMT
+    if qmt_latest_date is not None and ak_latest <= qmt_latest_date:
+        fallback_meta["akshare_price_fallback_reason"] = "akshare_not_newer_than_qmt"
+        run_log_entry["reason"] = "akshare_not_newer_than_qmt"
+        return None, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+    # AKShare is fresh and newer — adopt it
+    ak_price_data["latest_price_source"] = "akshare_price_history_fallback"
+    ak_price_data["price_history_source"] = "akshare"
+    ak_price_data["price_uses_intraday_tick"] = False
+    ak_price_data["price_is_stale"] = False
+
+    fallback_meta["akshare_price_fallback_applied"] = True
+    fallback_meta["akshare_price_fallback_reason"] = "applied"
+    run_log_entry["status"] = "success"
+    run_log_entry["applied"] = True
+    run_log_entry["reason"] = "applied"
+
+    return ak_price_data, {**fallback_meta, "_akshare_run_log": run_log_entry}
+
+
+def _build_provider_run_log(
+    symbol: str,
+    qmt_status: dict,
+    price_data: dict,
+    akshare_run_log_entry: dict | None,
+) -> list[dict]:
+    """Build the provider_run_log list for get_qmt_asset_data."""
+    qmt_log = {
+        "provider": "qmt",
+        "dataset": "price_data",
+        "symbol": symbol,
+        "status": "success",
+        "rows": qmt_status.get("row_count"),
+        "latest_trade_date": qmt_status.get("latest_trade_date"),
+        "price_stale": price_data.get("price_is_stale"),
+        "download_attempted": qmt_status.get("download_attempted"),
+        "download_reason": qmt_status.get("download_reason"),
+        "download_success": qmt_status.get("download_success"),
+        "full_tick_attempted": qmt_status.get("full_tick_attempted"),
+        "full_tick_applied": qmt_status.get("full_tick_applied"),
+        "full_tick_trade_date": qmt_status.get("full_tick_trade_date"),
+        "latest_price_source": price_data.get("latest_price_source"),
+        "akshare_price_fallback_attempted": qmt_status.get("akshare_price_fallback_attempted"),
+        "akshare_price_fallback_applied": qmt_status.get("akshare_price_fallback_applied"),
+        "akshare_price_latest_trade_date": qmt_status.get("akshare_price_latest_trade_date"),
+        "error": None,
+        "error_type": None,
+        "as_of": str(date.today()),
+    }
+    logs = [qmt_log]
+    if akshare_run_log_entry is not None:
+        logs.append(akshare_run_log_entry)
+    return logs
+
+
+def _build_effective_price_source_metadata(price_data: dict, qmt_status: dict) -> dict:
+    if price_data.get("price_history_source") == "akshare":
+        vendor = (
+            qmt_status.get("akshare_price_vendor")
+            or price_data.get("data_vendor")
+            or "unknown"
+        )
+        return build_price_source_metadata(
+            source="akshare",
+            confidence=0.7,
+            vendor=str(vendor),
+        )
+
+    return build_price_source_metadata(
+        source="qmt",
+        confidence=0.95,
+        vendor="qmt",
+    )
+
+
 def get_qmt_asset_data(symbol: str) -> dict:
     """
     Primary data provider for production research.
@@ -686,22 +857,65 @@ def get_qmt_asset_data(symbol: str) -> dict:
     price_data["latest_price_source"] = (
         "qmt_full_tick_overlay" if tick_applied else "qmt_kline"
     )
+    price_data["price_history_source"] = "qmt"
+
+    # --- Layer 3: AKShare price history fallback ---
+    akshare_fallback_enabled = _env_bool("QMT_PRICE_AKSHARE_FALLBACK", True)
+    akshare_fallback_meta: dict[str, Any] = {
+        "akshare_price_fallback_enabled": akshare_fallback_enabled,
+        "akshare_price_fallback_attempted": False,
+        "akshare_price_fallback_success": None,
+        "akshare_price_fallback_applied": False,
+        "akshare_price_fallback_reason": "disabled" if not akshare_fallback_enabled else None,
+        "akshare_price_latest_trade_date": None,
+        "akshare_price_vendor": None,
+    }
+    akshare_run_log_entry: dict[str, Any] | None = None
+
+    if price_data["price_is_stale"] and akshare_fallback_enabled:
+        qmt_latest = _extract_latest_trade_date(df)
+        fallback_pd, fallback_meta = _try_akshare_price_fallback(
+            symbol=symbol,
+            asset_type=asset_type,
+            qmt_latest_date=qmt_latest,
+            max_stale_days=settings.max_stale_days,
+        )
+        akshare_run_log_entry = fallback_meta.pop("_akshare_run_log", None)
+        akshare_fallback_meta.update(fallback_meta)
+
+        if fallback_pd is not None:
+            price_data = fallback_pd
+    elif not akshare_fallback_enabled:
+        pass  # already set reason=disabled above
+
+    # Merge AKShare fallback metadata into qmt_status
+    qmt_status.update(akshare_fallback_meta)
 
     # Stale warnings if the final sequence remains stale.
     if price_data["price_is_stale"]:
-        latest_str = price_data["latest_trade_date"]
-        if latest_str:
+        if akshare_fallback_meta["akshare_price_fallback_applied"]:
             data_warnings.append(
-                f"QMT 日 K 行情可能过期：最后交易日为 {latest_str}，"
-                f"当前日期为 {date.today()}。"
+                "QMT 日 K 行情仍可能过期，已使用 AKShare 行情历史重算价格指标。"
+            )
+        elif akshare_fallback_enabled and akshare_fallback_meta["akshare_price_fallback_attempted"]:
+            reason = akshare_fallback_meta.get("akshare_price_fallback_reason", "unknown")
+            data_warnings.append(
+                f"QMT 日 K 行情仍过期，AKShare 行情 fallback 未应用（{reason}）。"
             )
         else:
-            data_warnings.append(
-                "无法识别 QMT 日 K 最新交易日，已按可能过期处理。"
-            )
+            latest_str = price_data["latest_trade_date"]
+            if latest_str:
+                data_warnings.append(
+                    f"QMT 日 K 行情可能过期：最后交易日为 {latest_str}，"
+                    f"当前日期为 {date.today()}。"
+                )
+            else:
+                data_warnings.append(
+                    "无法识别 QMT 日 K 最新交易日，已按可能过期处理。"
+                )
 
     # Tick success informational warning
-    if tick_applied:
+    if tick_applied and not akshare_fallback_meta["akshare_price_fallback_applied"]:
         if price_data["price_is_stale"]:
             data_warnings.append(
                 "已使用 QMT full tick 更新 K 线末尾 bar，但最新交易日仍可能过期。"
@@ -736,11 +950,7 @@ def get_qmt_asset_data(symbol: str) -> dict:
             "pre_close": detail.get("PreClose") or detail.get("pre_close"),
         },
         "source_metadata": {
-            "price_data": build_price_source_metadata(
-                source="qmt",
-                confidence=0.95,
-                vendor="qmt",
-            ),
+            "price_data": _build_effective_price_source_metadata(price_data, qmt_status),
             "qmt_status": qmt_status,
             "basic_info": {
                 "source": "qmt",
@@ -748,25 +958,10 @@ def get_qmt_asset_data(symbol: str) -> dict:
                 "as_of": str(date.today()),
             },
         },
-        "provider_run_log": [
-            {
-                "provider": "qmt",
-                "dataset": "price_data",
-                "symbol": symbol,
-                "status": "success",
-                "rows": qmt_status.get("row_count"),
-                "latest_trade_date": qmt_status.get("latest_trade_date"),
-                "price_stale": price_data.get("price_is_stale"),
-                "download_attempted": qmt_status.get("download_attempted"),
-                "download_reason": qmt_status.get("download_reason"),
-                "download_success": qmt_status.get("download_success"),
-                "full_tick_attempted": qmt_status.get("full_tick_attempted"),
-                "full_tick_applied": qmt_status.get("full_tick_applied"),
-                "full_tick_trade_date": qmt_status.get("full_tick_trade_date"),
-                "latest_price_source": price_data.get("latest_price_source"),
-                "error": None,
-                "error_type": None,
-                "as_of": str(date.today()),
-            }
-        ],
+        "provider_run_log": _build_provider_run_log(
+            symbol=symbol,
+            qmt_status=qmt_status,
+            price_data=price_data,
+            akshare_run_log_entry=akshare_run_log_entry,
+        ),
     }

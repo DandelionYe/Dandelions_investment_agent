@@ -37,6 +37,11 @@ _PRICE_KEYS = frozenset({
     "volatility_60d",
     "avg_turnover_20d",
     "data_vendor",
+    "latest_trade_date",
+    "price_is_stale",
+    "latest_price_source",
+    "price_history_source",
+    "price_uses_intraday_tick",
 })
 
 _FUNDAMENTAL_KEYS = frozenset({

@@ -62,6 +62,50 @@ def localize_data_vendor(value: Any) -> str:
     return mapping.get(str(value).lower(), to_display_text(value))
 
 
+def localize_price_source(value: Any) -> str:
+    """
+    价格来源中文化。
+    """
+    mapping = {
+        "qmt_kline": "QMT 日 K",
+        "qmt_full_tick_overlay": "QMT full tick 临时 bar",
+        "akshare_price_history_fallback": "AKShare 行情 fallback",
+    }
+
+    if _is_empty(value):
+        return "未知"
+
+    return mapping.get(str(value), "未知")
+
+
+def localize_price_history_source(value: Any) -> str:
+    """
+    价格历史序列来源中文化。
+    """
+    mapping = {
+        "qmt": "QMT",
+        "akshare": "AKShare",
+    }
+
+    if _is_empty(value):
+        return "未知"
+
+    return mapping.get(str(value), "未知")
+
+
+def localize_price_status(is_stale: Any) -> str:
+    """
+    行情状态中文化。
+    """
+    if isinstance(is_stale, bool):
+        return "可能过期" if is_stale else "正常"
+
+    if _is_empty(is_stale):
+        return "未知"
+
+    return "可能过期" if str(is_stale).lower() in {"true", "1"} else "正常"
+
+
 def localize_ma_position(value: Any) -> str:
     """
     均线位置中文化。

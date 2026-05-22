@@ -1,10 +1,6 @@
-from datetime import date, timedelta
+import numbers
+from datetime import date, datetime, timedelta
 
-from services.network.proxy_policy import disable_proxy_for_current_process
-
-disable_proxy_for_current_process()
-
-import akshare as ak
 import pandas as pd
 
 from services.data.market_data_utils import (
@@ -14,6 +10,66 @@ from services.data.market_data_utils import (
     normalize_symbol,
     to_prefixed_symbol,
 )
+from services.network.proxy_policy import disable_proxy_for_current_process
+
+disable_proxy_for_current_process()
+
+import akshare as ak  # noqa: E402  # Proxy policy must be applied before importing akshare.
+
+
+def _find_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    lower_columns = {str(column).lower(): column for column in df.columns}
+    for candidate in candidates:
+        if candidate.lower() in lower_columns:
+            return lower_columns[candidate.lower()]
+    return None
+
+
+def _parse_trade_date(value) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, numbers.Integral):
+        raw_int = int(value)
+        if 1990_01_01 <= raw_int <= 2099_12_31:
+            try:
+                return datetime.strptime(str(raw_int), "%Y%m%d").date()
+            except ValueError:
+                return None
+    if isinstance(value, str):
+        value = value.strip()
+        for fmt in ("%Y-%m-%d", "%Y%m%d"):
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                continue
+    try:
+        timestamp = pd.Timestamp(value)
+        if timestamp is not pd.NaT:
+            return timestamp.date()
+    except Exception:
+        return None
+    return None
+
+
+def _extract_latest_trade_date(df: pd.DataFrame, close_col: str) -> date | None:
+    if df.empty or close_col not in df.columns:
+        return None
+
+    valid = df[df[close_col].notna()]
+    if valid.empty:
+        return None
+
+    date_col = _find_column(df, ["time", "\u65e5\u671f", "date", "trade_date"])
+    if date_col and date_col in valid.columns:
+        parsed = _parse_trade_date(valid[date_col].iloc[-1])
+        if parsed is not None:
+            return parsed
+
+    return _parse_trade_date(valid.index[-1])
 
 
 def _load_price_history(symbol: str, asset_type: str) -> pd.DataFrame:
@@ -130,6 +186,13 @@ def get_akshare_asset_data(symbol: str) -> dict:
         amount_col=amount_col,
         data_vendor=data_vendor,
     )
+    latest_trade_date = _extract_latest_trade_date(df, close_col)
+    price_data["latest_trade_date"] = (
+        str(latest_trade_date) if latest_trade_date else None
+    )
+    price_data["latest_price_source"] = "akshare"
+    price_data["price_history_source"] = "akshare"
+    price_data["price_uses_intraday_tick"] = False
 
     name = f"{normalize_symbol(symbol)} ETF" if asset_type == "etf" else symbol
 
@@ -154,6 +217,7 @@ def get_akshare_asset_data(symbol: str) -> dict:
                 "symbol": symbol,
                 "status": "success",
                 "rows": len(df),
+                "latest_trade_date": str(latest_trade_date) if latest_trade_date else None,
                 "error": None,
                 "error_type": None,
                 "as_of": str(date.today()),
