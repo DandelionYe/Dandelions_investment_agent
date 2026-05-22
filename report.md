@@ -139,17 +139,23 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 
 我建议后续按这几阶段推进：
 
-**P2 第二阶段：真实历史回测落地** ✅
+**P2 第二阶段：真实历史回测落地** 进行中
 
 已完成：
 
-1. 52 个基于公开行情模式的真实历史快照样本，覆盖 13 个场景标签（大盘蓝筹、中小盘、亏损/PE 无效、缺失基本面、行业样本不足、极端下跌、财报窗口、ETF、高估值、低估值、高波动、防御型、北交所）。
-2. 所有样本包含完整的 forward_metrics（20/60/120 日收益、相对收益、最大回撤）。
-3. `historical_quality_backtest.py` 模块提供 load/validate/evaluate/run/summarize/assert 函数。
-4. `build_historical_research_samples.py` 构建脚本，支持 `--use-qmt` opt-in 真实数据、`--overwrite` 覆盖 fixture。
-5. `run_historical_research_quality_backtest.py` 运行脚本，输出结构化 JSON 和详细 Markdown 质量报告。
-6. 8 个可配置验收阈值（样本数、高风险激进违规率、placeholder/critical 保护器命中率、行业分位有效率、评分分桶集中度、评级/动作分桶数）。
-7. 62 项测试覆盖 schema 校验、评分范围、维度完整性、保护器行为、场景覆盖、阈值校验、永真验收防御。
+1. 100 个真实 QMT 价格样本已生成，价格来源为 `qmt_xtdata`，覆盖 2021-2025，13 个边界股票全部纳入，`688646.SH` 标记为 `out_of_scope_exception`。
+2. 所有 QMT 样本包含完整的 `forward_metrics`：20/60/120 日收益、沪深300基准收益、相对收益、最大回撤。
+3. `historical_sample_builder.py` 实现 MiniQMT 历史行情构建、主板 scope 过滤、边界股票处理和样本级 provenance。
+4. `build_historical_research_samples.py` 支持 `--use-qmt --require-qmt --asset-scope mainboard-a`，已有 fixture 时不会在 require-qmt 模式下假成功。
+5. `run_historical_research_quality_backtest.py` 区分严格 Phase 2B 验收和 `--allow-price-only` smoke 验收，默认严格验收会暴露缺口。
+6. 验收阈值新增基本面/估值/行业来源覆盖率、完整研究输入覆盖率、placeholder/critical 实际样本数，避免无样本时命中率虚高。
+7. 离线测试覆盖 schema、benchmark return、样本级 source、out-of-scope 例外、strict-vs-price-only 验收。
+
+未完成：
+
+- 当前 100 个样本的 `fundamental`、`valuation`、`industry` 来源仍为 `missing`，`data_complete_coverage = 0%`，因此只能算 QMT price-only 样本池。
+- 严格 Phase 2B 验收仍会失败：缺少 critical 样本、行业分位、基本面/估值/行业来源覆盖率、完整研究输入覆盖率，评级/动作分桶也不足。
+- 下一步应接入 QMT financial、CSMAR/EVA 和行业库的 as_of 数据，或明确本地数据缺失的可验收边界。
 
 **P2 第三阶段：Evidence Schema 全链路化**
 目标：从“新增 `evidence_fields`”升级为“所有关键字段都有可信证据链”。

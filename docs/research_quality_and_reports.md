@@ -7,7 +7,7 @@ P2 分为多个阶段推进：
 | 阶段 | 目标 | 状态 |
 |------|------|------|
 | Phase 1 | 8 个离线构造样本 + 报告模板 + evidence schema + 新闻质量 | ✅ 已完成 |
-| Phase 2 | 50+ 真实历史样本池 + 可重复质量报告 + 验收阈值 | ✅ 已完成 |
+| Phase 2 | 50+ 真实历史样本池 + 可重复质量报告 + 验收阈值 | 进行中：QMT 价格样本池已落地，完整研究输入待接入 |
 | Phase 3 | 全链路 evidence schema | 待规划 |
 | Phase 4 | 报告产品化 | 待规划 |
 | Phase 5 | 真实新闻长期监控 | 待规划 |
@@ -210,178 +210,136 @@ python -m pytest tests/test_valuation_percentile.py tests/test_web_news_provider
 
 ---
 
-## P2 Phase 2：真实历史回测落地
+## P2 Phase 2A：手动快照历史回测（已完成）
 
 ### 概述
 
-Phase 2 将 Phase 1 的 8 个离线构造样本升级为 52 个基于公开行情模式的真实历史快照样本，覆盖 10+ 场景标签，并提供可配置验收阈值和结构化质量报告。
+Phase 2A 将 Phase 1 的 8 个离线构造样本升级为 52 个基于公开行情模式的真实历史快照样本，覆盖 13 个场景标签，并提供可配置验收阈值和结构化质量报告。
 
-### 与 Phase 1 的区别
+**已知限制**：样本来源为 `manual_snapshot`，forward_metrics 为合理估计值，行业分位基于平均水平。
 
-| 维度 | Phase 1 | Phase 2 |
-|------|---------|---------|
-| 样本数 | 8 | 52 |
-| 样本来源 | 手工构造 | 基于公开行情模式的固定快照 |
-| 场景覆盖 | 8 个场景 | 13 个场景标签 |
-| forward metrics | 部分样本有 | 所有样本都有 20/60/120 日收益和回撤 |
-| 验收阈值 | 通过/失败二元 | 8 个可配置阈值指标 |
-| 质量报告 | 基础表格 | 场景覆盖矩阵、分桶分析、维度统计 |
+---
+
+## P2 Phase 2B：真实 QMT 历史样本池（进行中）
+
+### 概述
+
+Phase 2B 将样本来源从 `manual_snapshot` 升级为真实 QMT 历史行情数据。通过 `--use-qmt --require-qmt` 参数，从 MiniQMT 获取真实日 K 线，精确计算 20/60/120 交易日前瞻收益、相对沪深300收益、最大回撤。
+
+当前状态：已生成 100 个 `qmt_xtdata` 价格样本，13 个边界股票全部纳入，`688646.SH` 标记为 `out_of_scope_exception`。但基本面、估值和行业来源仍为 `missing`，因此这是 `QMT price-only` 样本池，不能视为完整 Phase 2B 验收完成。默认严格验收会失败并列出缺口；只有显式传入 `--allow-price-only` 时才作为价格链路 smoke 检查通过。
+
+### 与 Phase 2A 的区别
+
+| 维度 | Phase 2A | Phase 2B |
+|------|----------|----------|
+| 价格来源 | manual_snapshot | qmt_xtdata |
+| forward_metrics | 合理估计值 | 从真实行情精确计算 |
+| 基准对比 | 无 | 相对沪深300 (000300.SH) |
+| 数据来源证明 | 无 | source_metadata 完整 provenance |
+| 资产范围 | 混合 | 沪深主板 A 股 + 边界例外 |
+| 基本面/估值 | 手工构造 | 从 provider/cache 获取或标记 missing |
 
 ### 运行方式
 
 ```bash
-# 构建样本（默认 dry-run，不覆盖 fixture）
-python scripts/build_historical_research_samples.py
+# 构建真实 QMT 样本（需要 MiniQMT 运行）
+python scripts/build_historical_research_samples.py \
+    --use-qmt --require-qmt \
+    --asset-scope mainboard-a \
+    --start-year 2021 --end-year 2026 \
+    --benchmark 000300.SH \
+    --min-samples 50 \
+    --overwrite
 
-# 覆盖 fixture
-python scripts/build_historical_research_samples.py --overwrite
-
-# 尝试 QMT 真实数据（opt-in）
-python scripts/build_historical_research_samples.py --use-qmt --overwrite
-
-# 运行历史回测
+# 严格 Phase 2B 验收：缺少基本面/估值/行业时应失败
 python scripts/run_historical_research_quality_backtest.py
 
-# 自定义阈值
-python scripts/run_historical_research_quality_backtest.py --thresholds path/to/thresholds.json
-
-# 探索模式（阈值失败不返回 exit code 1）
-python scripts/run_historical_research_quality_backtest.py --no-fail-on-threshold
+# 仅验证 QMT 价格链路 smoke，不代表 Phase 2B 完成
+python scripts/run_historical_research_quality_backtest.py --allow-price-only
 ```
 
-输出：
-- `storage/artifacts/research_quality/historical_backtest_summary.json`
-- `storage/artifacts/research_quality/historical_backtest_report.md`
+### 新增 CLI 参数
 
-### 样本 Fixture Schema
+| 参数 | 说明 |
+|------|------|
+| `--require-qmt` | QMT 不可用时 exit 1，不回退 manual_snapshot |
+| `--asset-scope mainboard-a` | 只选沪深主板 A 股 |
+| `--start-year N` | as_of 起始年份 |
+| `--end-year N` | as_of 结束年份 |
+| `--benchmark SYMBOL` | 基准指数（默认 000300.SH） |
+| `--boundary-symbols` | 边界样本股票列表（逗号分隔） |
+
+### 主板过滤规则
+
+| 交易所 | 前缀 | 说明 |
+|--------|------|------|
+| SH 主板 | 600, 601, 603, 605 | 上交所主板 |
+| SZ 主板 | 000, 001, 002 | 深交所主板 |
+| 排除 | 300/301 | 创业板 |
+| 排除 | 688/689 | 科创板 |
+| 排除 | BJ | 北交所 |
+| 排除 | ETF codes | ETF |
+| 例外 | 688646.SH | 用户指定边界例外，标记 out_of_scope_exception |
+
+### 边界样本股票（13只）
+
+603778.SH, 600410.SH, 000008.SZ, 000029.SZ, 000002.SZ, 000158.SZ, 000488.SZ, 000547.SZ, 002816.SZ, 002485.SZ, 002496.SZ, 688646.SH, 000711.SZ
+
+### 数据来源 Provenance
+
+每个样本的 `source_metadata` 记录数据来源：
 
 ```json
 {
-  "version": 1,
-  "generated_at": "ISO datetime",
-  "source": {
-    "price": "manual_snapshot",
-    "fundamental": "manual_snapshot",
-    "valuation": "manual_snapshot",
-    "industry": "manual_snapshot"
-  },
-  "samples": [
-    {
-      "sample_id": "string",
-      "symbol": "600519.SH",
-      "name": "贵州茅台",
-      "asset_type": "stock|etf",
-      "as_of": "YYYY-MM-DD",
-      "scenario_tags": ["stock", "large_cap", "earnings_window"],
-      "industry": {
-        "level": "SW1|SW2|unknown",
-        "name": "string|null",
-        "peer_count": 0,
-        "valid_peer_count_pe": 0,
-        "valid_peer_count_pb": 0,
-        "valid_peer_count_ps": 0
-      },
-      "input_result": {
-        "asset_type": "stock",
-        "price_data": { "..." },
-        "fundamental_data": { "..." },
-        "valuation_data": { "..." },
-        "event_data": { "..." },
-        "source_metadata": {},
-        "data_quality": { "..." }
-      },
-      "forward_metrics": {
-        "return_20d": 0.0,
-        "return_60d": 0.0,
-        "return_120d": 0.0,
-        "relative_return_20d": 0.0,
-        "relative_return_60d": 0.0,
-        "relative_return_120d": 0.0,
-        "max_drawdown_20d": 0.0,
-        "max_drawdown_60d": 0.0,
-        "max_drawdown_120d": 0.0
-      },
-      "expected": { "..." },
-      "quality": {
-        "is_real_historical_sample": true,
-        "data_complete": true,
-        "known_limitations": []
-      }
-    }
-  ]
+  "price_source": "qmt_xtdata",
+  "fundamental_source": "qmt_financial|missing",
+  "valuation_source": "derived|missing",
+  "industry_source": "qmt_industry|missing",
+  "as_of": "2023-06-30",
+  "symbol": "600519.SH"
 }
 ```
 
-### 场景覆盖矩阵
+### 验收阈值（Phase 2B 扩展）
 
-| 场景标签 | 说明 | 样本数 |
-|---------|------|-------|
-| stock | 股票样本 | 45 |
-| etf | ETF 样本 | 7 |
-| large_cap | 大盘蓝筹 | 20+ |
-| small_or_mid_cap | 中小盘 | 10+ |
-| earnings_window | 财报窗口 | 8 |
-| low_valuation | 低估值 | 5+ |
-| bear_market | 熊市 | 6+ |
-| extreme_drawdown | 极端下跌 | 5+ |
-| high_volatility | 高波动 | 5+ |
-| loss_making_or_invalid_pe | 亏损/PE无效 | 3 |
-| missing_fundamental | 缺失基本面 | 3 |
-| industry_insufficient_peers | 行业样本不足 | 4 |
-| defensive | 防御型 | 2+ |
+在 Phase 2A 基础上新增：
 
-### 验收阈值
+- `min_price_source_coverage`: 价格来源为 QMT 的样本占比（真实模式默认 1.0）
+- `min_fundamental_source_coverage`: 基本面来源覆盖率，严格模式默认 0.60
+- `min_valuation_source_coverage`: 估值来源覆盖率，严格模式默认 0.60
+- `min_industry_source_coverage`: 行业来源覆盖率，严格模式默认 0.60
+- `min_data_complete_coverage`: 完整研究输入覆盖率，严格模式默认 0.50
+- `min_placeholder_sample_count` / `min_critical_sample_count`: 没有对应样本时不再把保护器命中率记为 100%
 
-```python
-DEFAULT_ACCEPTANCE_THRESHOLDS = {
-    "min_samples": 50,
-    "max_aggressive_action_rate_for_high_risk": 0.0,
-    "min_placeholder_guard_hit_rate": 1.0,
-    "min_critical_guard_hit_rate": 1.0,
-    "min_industry_percentile_valid_rate": 0.60,
-    "max_single_score_bucket_ratio": 0.70,
-    "min_rating_bucket_count": 3,
-    "min_action_bucket_count": 3,
-}
-```
+### 验收标准
 
-**阈值说明：**
-
-- `min_samples`: 最少样本数，确保统计显著性。
-- `max_aggressive_action_rate_for_high_risk`: 高风险场景下激进建议违规率必须为 0。
-- `min_placeholder_guard_hit_rate`: placeholder 数据必须被保护器限制。
-- `min_critical_guard_hit_rate`: critical 事件必须被保护器强制回避。
-- `min_industry_percentile_valid_rate`: 至少 60% 的非行业样本不足样本有有效行业分位。
-- `max_single_score_bucket_ratio`: 单一评分分桶占比不超过 70%，防止评分集中。
-- `min_rating_bucket_count`: 至少覆盖 3 种评级。
-- `min_action_bucket_count`: 至少覆盖 3 种动作。
+- 真实 QMT 样本 >= 50
+- 价格来源 qmt_xtdata 覆盖率 = 100%
+- 20/60/120 日 `benchmark_return_*`、`relative_return_*`、`max_drawdown_*` 均存在
+- manual_snapshot 样本不计入真实样本数
+- 基本面/估值/行业来源覆盖率达到严格阈值；全 missing 只能算 price-only
+- 高风险激进建议违规率 = 0
+- placeholder/critical 必须有实际样本，保护器命中率达标；无样本时为不可验收
+- 单一评分分桶占比 <= 70%
+- 评级/动作分桶数 >= 3
 
 ### 测试
 
 ```bash
-# Phase 2 新增测试
+# 离线单元测试（不依赖 QMT）
+python -m pytest tests/test_historical_sample_builder.py -q
 python -m pytest tests/test_historical_quality_backtest.py -q
 python -m pytest tests/test_historical_samples_contract.py -q
 
-# Phase 1 测试（不应被破坏）
-python -m pytest tests/test_research_quality_backtest.py -q
-python -m pytest tests/test_evidence_schema_contract.py -q
-python -m pytest tests/test_report_template_config.py -q
+# QMT 集成测试（需要 MiniQMT）
+set RUN_HISTORICAL_QMT_BACKTEST=1
+python -m pytest tests/test_historical_qmt_integration.py -q
 ```
 
 ### 已知限制
 
-- 当前 52 个样本基于公开行情模式的手动快照，非 QMT 真实数据。
-- `forward_metrics` 为基于历史走势的合理估计值，非精确计算。
-- 行业分位数据基于行业平均水平，非逐只计算。
-- 部分北交所样本行业分位不可用（样本不足）。
-- 如需真实 QMT 数据，使用 `--use-qmt` 参数（需 MiniQMT 运行）。
-
-### 后续事项
-
-- 接入真实 QMT 历史数据替换手动快照。
-- 增加 120 日 forward return 分析。
-- 建立季度回归机制，检测评分漂移。
-- 扩展样本覆盖：更多北交所、港股通、行业 ETF。
-- 真实网络新闻 provider 长期稳定性监控。
-- 行业轮动场景下的估值分位漂移检测。
+- 当前 100 个 QMT 样本的价格和 forward metrics 已可验收，但基本面/估值/行业数据仍为 missing，严格 Phase 2B 未完成。
+- 基本面/估值/行业数据依赖已有 provider 和缓存，缺失时必须暴露覆盖率，不得用 price-only 结果标记完成。
+- 2026 年部分 as_of 可能无法获得完整 120 交易日 forward 数据，标记 coverage_gap。
+- 688646.SH 作为科创板边界例外，不计入主板覆盖比例。
+- 行业分位数据需要 CSMAR/EVA 本地库支持，不可用时准确暴露缺口。

@@ -19,6 +19,7 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -1435,35 +1436,6 @@ def _generate_manual_samples() -> list[dict]:
     return samples
 
 
-def try_build_from_qmt(
-    symbols: list[str],
-    as_of_start: str,
-    as_of_end: str,
-    max_samples: int,
-) -> list[dict] | None:
-    """尝试从 QMT 构建真实历史样本。
-
-    Returns
-    -------
-    list[dict] | None
-        成功返回样本列表，QMT 不可用时返回 None。
-    """
-    try:
-        from xtquant import xtdata  # type: ignore[import-untyped]
-    except ImportError:
-        return None
-
-    try:
-        # 测试 QMT 连接
-        xtdata.get_market_data_ex([], period="1d", count=1)
-    except Exception:
-        return None
-
-    # TODO: 实现真实 QMT 数据采集逻辑
-    # 这里留作后续扩展，当前版本使用手动快照
-    return None
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="构建历史回测样本池")
     parser.add_argument("--output", default="tests/fixtures/research_quality_historical_samples.json",
@@ -1475,34 +1447,97 @@ def main() -> int:
     parser.add_argument("--as-of-end", default="2024-12-31", help="样本结束日期")
     parser.add_argument("--symbols", default=None, help="股票列表文件或逗号分隔")
     parser.add_argument("--use-qmt", action="store_true", help="尝试从 QMT 获取真实数据")
+    parser.add_argument("--require-qmt", action="store_true",
+                        help="要求 QMT 可用，不可用时 exit 1（不回退 manual_snapshot）")
+    parser.add_argument("--asset-scope", default=None,
+                        help="资产范围过滤，如 mainboard-a")
+    parser.add_argument("--start-year", type=int, default=2021,
+                        help="样本 as_of 起始年份")
+    parser.add_argument("--end-year", type=int, default=2026,
+                        help="样本 as_of 结束年份")
+    parser.add_argument("--benchmark", default="000300.SH",
+                        help="基准指数 symbol，用于计算相对收益")
+    parser.add_argument("--boundary-symbols", default=None,
+                        help="边界样本股票列表，逗号分隔（覆盖默认）")
     args = parser.parse_args()
 
     output_path = PROJECT_ROOT / args.output
 
     # 检查是否已有 fixture
     if output_path.exists() and not args.overwrite:
+        if args.use_qmt and args.require_qmt:
+            print(
+                "Error: --use-qmt --require-qmt must rebuild the fixture; "
+                "pass --overwrite or choose a different --output.",
+                file=sys.stderr,
+            )
+            return 2
         print(f"Fixture 已存在: {output_path}")
         print("使用 --overwrite 覆盖")
         return 0
 
+    # 解析 symbols
+    symbol_list: list[str] | None = None
+    if args.symbols:
+        if Path(args.symbols).exists():
+            symbol_list = Path(args.symbols).read_text().strip().split("\n")
+        else:
+            symbol_list = [s.strip() for s in args.symbols.split(",")]
+
+    # 解析 boundary symbols
+    boundary: list[str] | None = None
+    if args.boundary_symbols:
+        boundary = [s.strip() for s in args.boundary_symbols.split(",")]
+
     # 尝试 QMT 模式
     samples = None
-    if args.use_qmt:
-        symbols = []
-        if args.symbols:
-            if Path(args.symbols).exists():
-                symbols = Path(args.symbols).read_text().strip().split("\n")
-            else:
-                symbols = [s.strip() for s in args.symbols.split(",")]
+    source_info: dict[str, str] = {
+        "price": "manual_snapshot",
+        "fundamental": "manual_snapshot",
+        "valuation": "manual_snapshot",
+        "industry": "manual_snapshot",
+    }
+    build_metadata: dict[str, Any] = {}
 
-        samples = try_build_from_qmt(symbols, args.as_of_start, args.as_of_end,
-                                      args.max_samples)
-        if samples is None:
+    if args.use_qmt:
+        from services.research.historical_sample_builder import try_build_from_qmt
+
+        as_of_dates = None  # 使用默认生成
+
+        result = try_build_from_qmt(
+            symbols=symbol_list,
+            as_of_dates=as_of_dates,
+            benchmark_symbol=args.benchmark,
+            start_year=args.start_year,
+            end_year=args.end_year,
+            max_samples=args.max_samples,
+            boundary_symbols=boundary,
+            asset_scope=args.asset_scope,
+        )
+
+        if result is not None:
+            samples = result["samples"]
+            source_info = result["source"]
+            build_metadata["included"] = result.get("included", [])
+            build_metadata["skipped"] = result.get("skipped", [])
+            print(f"QMT 构建成功: {len(samples)} 个样本")
+            if result.get("skipped"):
+                print(f"  跳过 {len(result['skipped'])} 个 symbol")
+        else:
+            if args.require_qmt:
+                print("错误：--require-qmt 但 QMT 不可用", file=sys.stderr)
+                return 1
             print("QMT 不可用，回退到手动快照模式")
             print("提示：如需真实数据，请确保 MiniQMT 已启动且 xtquant 可用")
 
     # 使用手动快照
     if samples is None:
+        if args.require_qmt and args.use_qmt:
+            # 已经在上面处理了
+            pass
+        elif args.require_qmt:
+            print("错误：--require-qmt 但未指定 --use-qmt", file=sys.stderr)
+            return 1
         samples = _generate_manual_samples()
 
     # 截断到 max_samples
@@ -1512,19 +1547,21 @@ def main() -> int:
     # 验证最少样本数
     if len(samples) < args.min_samples:
         print(f"警告：样本数 {len(samples)} 少于要求的 {args.min_samples}")
+        if args.require_qmt:
+            return 1
 
     # 构建输出
-    output = {
+    output: dict[str, Any] = {
         "version": 1,
         "generated_at": datetime.now(tz=None).isoformat() + "Z",
-        "source": {
-            "price": "manual_snapshot",
-            "fundamental": "manual_snapshot",
-            "valuation": "manual_snapshot",
-            "industry": "manual_snapshot",
-        },
+        "source": source_info,
         "samples": samples,
     }
+
+    if build_metadata:
+        output["build_metadata"] = build_metadata
+    if args.asset_scope:
+        output.setdefault("build_metadata", {})["asset_scope"] = args.asset_scope
 
     # 写入
     output_path.parent.mkdir(parents=True, exist_ok=True)

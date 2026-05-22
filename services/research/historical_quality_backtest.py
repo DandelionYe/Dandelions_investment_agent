@@ -30,10 +30,53 @@ DEFAULT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
     "max_aggressive_action_rate_for_high_risk": 0.0,
     "min_placeholder_guard_hit_rate": 1.0,
     "min_critical_guard_hit_rate": 1.0,
+    "min_placeholder_sample_count": 0,
+    "min_critical_sample_count": 0,
     "min_industry_percentile_valid_rate": 0.60,
     "max_single_score_bucket_ratio": 0.70,
     "min_rating_bucket_count": 3,
     "min_action_bucket_count": 3,
+    "min_price_source_coverage": 0.0,  # 0 = 不要求，1.0 = 全部必须 qmt_xtdata
+    "min_fundamental_source_coverage": 0.0,
+    "min_valuation_source_coverage": 0.0,
+    "min_industry_source_coverage": 0.0,
+    "min_data_complete_coverage": 0.0,
+}
+
+# Phase 2B strict acceptance: full research-quality samples, not price-only smoke.
+REAL_QMT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
+    "min_samples": 50,
+    "max_aggressive_action_rate_for_high_risk": 0.0,
+    "min_placeholder_guard_hit_rate": 1.0,
+    "min_critical_guard_hit_rate": 1.0,
+    "min_placeholder_sample_count": 1,
+    "min_critical_sample_count": 1,
+    "min_industry_percentile_valid_rate": 0.60,
+    "max_single_score_bucket_ratio": 0.70,
+    "min_rating_bucket_count": 3,
+    "min_action_bucket_count": 3,
+    "min_price_source_coverage": 1.0,
+    "min_fundamental_source_coverage": 0.60,
+    "min_valuation_source_coverage": 0.60,
+    "min_industry_source_coverage": 0.60,
+    "min_data_complete_coverage": 0.50,
+    "skip_required_tag_check": True,
+}
+
+# QMT price-chain smoke acceptance. Do not use this to mark Phase 2B complete.
+PRICE_ONLY_QMT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
+    "min_samples": 50,
+    "max_aggressive_action_rate_for_high_risk": 0.0,
+    "min_placeholder_guard_hit_rate": 1.0,
+    "min_placeholder_sample_count": 1,
+    "min_critical_guard_hit_rate": 0.0,
+    "min_critical_sample_count": 0,
+    "min_industry_percentile_valid_rate": 0.0,
+    "max_single_score_bucket_ratio": 1.0,
+    "min_rating_bucket_count": 1,
+    "min_action_bucket_count": 1,
+    "min_price_source_coverage": 1.0,
+    "skip_required_tag_check": True,
 }
 
 # ── 必需场景标签（验收必须覆盖） ───────────────────────────────
@@ -88,8 +131,12 @@ _REQUIRED_PRICE_KEYS = {"change_20d", "change_60d", "ma20_position",
                         "ma60_position", "avg_turnover_20d",
                         "max_drawdown_60d", "volatility_60d"}
 
-_REQUIRED_FORWARD_KEYS = {"return_20d", "return_60d",
-                          "max_drawdown_20d", "max_drawdown_60d"}
+_REQUIRED_FORWARD_KEYS = {
+    "return_20d", "return_60d", "return_120d",
+    "benchmark_return_20d", "benchmark_return_60d", "benchmark_return_120d",
+    "relative_return_20d", "relative_return_60d", "relative_return_120d",
+    "max_drawdown_20d", "max_drawdown_60d", "max_drawdown_120d",
+}
 
 _REQUIRED_QUALITY_KEYS = {"is_real_historical_sample", "data_complete"}
 
@@ -140,13 +187,14 @@ def validate_historical_sample(sample: dict) -> list[str]:
     if not isinstance(q, dict):
         errors.append("quality 必须是 dict")
     else:
-        for k in _REQUIRED_QUALITY_KEYS:
-            if k not in q:
-                errors.append(f"quality 缺少: {k}")
+        if "is_real_historical_sample" not in q:
+            errors.append("quality 缺少: is_real_historical_sample")
         if q.get("is_real_historical_sample") is not True:
             errors.append("quality.is_real_historical_sample 必须为 true")
-        if q.get("data_complete") is not True:
-            errors.append("quality.data_complete 必须为 true")
+        # data_complete 不再强制为 True：真实 QMT 样本可能缺少基本面/估值数据，
+        # 但价格和 forward metrics 是真实的
+        if "data_complete" not in q:
+            errors.append("quality 缺少: data_complete")
 
     # expected 结构
     exp = sample.get("expected", {})
@@ -178,6 +226,9 @@ def run_historical_backtest(samples: list[dict]) -> dict:
             r["symbol"] = samples[i].get("symbol", "")
             r["as_of"] = samples[i].get("as_of", "")
             r["input_result"] = samples[i].get("input_result", {})
+            r["quality"] = samples[i].get("quality", {})
+            r["source"] = samples[i].get("source", {})
+            r["out_of_scope_exception"] = samples[i].get("out_of_scope_exception", False)
 
     return raw
 
@@ -192,6 +243,7 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
     # ── 基础场景汇总 ──
     scenario_summary = []
     for r in results:
+        fm = r.get("forward_metrics", {})
         scenario_summary.append({
             "sample_id": r.get("sample_id", ""),
             "scenario": r.get("scenario", ""),
@@ -201,8 +253,16 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
             "score": r.get("score"),
             "rating": r.get("rating"),
             "action": r.get("action"),
-            "forward_return_20d": r.get("forward_return_20d"),
-            "forward_return_60d": r.get("forward_return_60d"),
+            "forward_return_20d": fm.get("return_20d"),
+            "forward_return_60d": fm.get("return_60d"),
+            "forward_return_120d": fm.get("return_120d"),
+            "benchmark_return_20d": fm.get("benchmark_return_20d"),
+            "benchmark_return_60d": fm.get("benchmark_return_60d"),
+            "benchmark_return_120d": fm.get("benchmark_return_120d"),
+            "relative_return_20d": fm.get("relative_return_20d"),
+            "relative_return_60d": fm.get("relative_return_60d"),
+            "relative_return_120d": fm.get("relative_return_120d"),
+            "data_complete": r.get("quality", {}).get("data_complete"),
             "all_passed": r.get("all_passed", False),
             "failed_checks": [
                 c["name"] for c in r.get("checks", []) if not c["passed"]
@@ -265,11 +325,19 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
     placeholder_guarded = 0
     for r in results:
         tags = set(r.get("scenario_tags", []))
-        if "placeholder_data" in tags or "blocking_data_quality" in tags:
+        ir = r.get("input_result", {})
+        dq = ir.get("data_quality", {}) if isinstance(ir, dict) else {}
+        has_placeholder = (
+            "placeholder_data" in tags
+            or "blocking_data_quality" in tags
+            or bool(dq.get("has_placeholder"))
+            or bool(dq.get("blocking_issues"))
+        )
+        if has_placeholder:
             placeholder_total += 1
             guard = r.get("decision_guard", {})
             max_action = guard.get("max_allowed_action", "")
-            if ACTION_LEVEL.get(max_action, 99) <= ACTION_LEVEL.get("观察", 2):
+            if ACTION_LEVEL.get(max_action, 99) <= 2:
                 placeholder_guarded += 1
 
     # ── critical 保护器命中率 ──
@@ -277,10 +345,22 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
     critical_guarded = 0
     for r in results:
         tags = set(r.get("scenario_tags", []))
-        if "critical_event" in tags:
+        ir = r.get("input_result", {})
+        event_data = ir.get("event_data", {}) if isinstance(ir, dict) else {}
+        event_summary = event_data.get("event_summary", {}) if isinstance(event_data, dict) else {}
+        has_critical = (
+            "critical_event" in tags
+            or int(event_summary.get("critical_count", 0) or 0) > 0
+        )
+        if has_critical:
             critical_total += 1
-            action = r.get("action", "")
-            if action == "回避":
+            guard = r.get("decision_guard", {})
+            final_action = guard.get("final_action", r.get("action", ""))
+            max_action = guard.get("max_allowed_action", "")
+            if min(
+                ACTION_LEVEL.get(final_action, 99),
+                ACTION_LEVEL.get(max_action, 99),
+            ) <= 0:
                 critical_guarded += 1
 
     # ── 行业分位有效率 ──
@@ -302,7 +382,7 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         if has_valid:
             industry_valid += 1
 
-    # ── forward return 分桶表现 ──
+    # ── forward return 分桶表现（含 120d） ──
     forward_buckets: dict[str, dict] = {}
     for r in results:
         score = r.get("score")
@@ -311,22 +391,158 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         bucket = _score_bucket(score)
         if bucket not in forward_buckets:
             forward_buckets[bucket] = {
-                "count": 0, "avg_return_20d": 0.0,
-                "avg_return_60d": 0.0, "avg_max_drawdown_20d": 0.0,
+                "count": 0,
+                "avg_return_20d": 0.0, "avg_return_60d": 0.0,
+                "avg_return_120d": 0.0,
+                "avg_benchmark_return_20d": 0.0,
+                "avg_benchmark_return_60d": 0.0,
+                "avg_benchmark_return_120d": 0.0,
+                "avg_relative_return_20d": 0.0,
+                "avg_relative_return_60d": 0.0,
+                "avg_relative_return_120d": 0.0,
+                "avg_max_drawdown_20d": 0.0,
+                "avg_max_drawdown_60d": 0.0,
+                "avg_max_drawdown_120d": 0.0,
             }
         b = forward_buckets[bucket]
         b["count"] += 1
         fm = r.get("forward_metrics", {})
-        b["avg_return_20d"] += fm.get("return_20d", 0.0)
-        b["avg_return_60d"] += fm.get("return_60d", 0.0)
-        b["avg_max_drawdown_20d"] += fm.get("max_drawdown_20d", 0.0)
+        b["avg_return_20d"] += fm.get("return_20d", 0.0) or 0.0
+        b["avg_return_60d"] += fm.get("return_60d", 0.0) or 0.0
+        b["avg_return_120d"] += fm.get("return_120d", 0.0) or 0.0
+        b["avg_benchmark_return_20d"] += fm.get("benchmark_return_20d", 0.0) or 0.0
+        b["avg_benchmark_return_60d"] += fm.get("benchmark_return_60d", 0.0) or 0.0
+        b["avg_benchmark_return_120d"] += fm.get("benchmark_return_120d", 0.0) or 0.0
+        b["avg_relative_return_20d"] += fm.get("relative_return_20d", 0.0) or 0.0
+        b["avg_relative_return_60d"] += fm.get("relative_return_60d", 0.0) or 0.0
+        b["avg_relative_return_120d"] += fm.get("relative_return_120d", 0.0) or 0.0
+        b["avg_max_drawdown_20d"] += fm.get("max_drawdown_20d", 0.0) or 0.0
+        b["avg_max_drawdown_60d"] += fm.get("max_drawdown_60d", 0.0) or 0.0
+        b["avg_max_drawdown_120d"] += fm.get("max_drawdown_120d", 0.0) or 0.0
 
     for bucket in forward_buckets.values():
         n = bucket["count"]
         if n > 0:
-            bucket["avg_return_20d"] = round(bucket["avg_return_20d"] / n, 4)
-            bucket["avg_return_60d"] = round(bucket["avg_return_60d"] / n, 4)
-            bucket["avg_max_drawdown_20d"] = round(bucket["avg_max_drawdown_20d"] / n, 4)
+            for key in bucket:
+                if key != "count":
+                    bucket[key] = round(bucket[key] / n, 4)
+
+    # ── max drawdown by action bucket ──
+    drawdown_by_action: dict[str, dict] = {}
+    for r in results:
+        action = r.get("action", "unknown")
+        if action not in drawdown_by_action:
+            drawdown_by_action[action] = {
+                "count": 0, "avg_max_drawdown_20d": 0.0,
+                "avg_max_drawdown_60d": 0.0, "avg_max_drawdown_120d": 0.0,
+            }
+        d = drawdown_by_action[action]
+        d["count"] += 1
+        fm = r.get("forward_metrics", {})
+        d["avg_max_drawdown_20d"] += fm.get("max_drawdown_20d", 0.0) or 0.0
+        d["avg_max_drawdown_60d"] += fm.get("max_drawdown_60d", 0.0) or 0.0
+        d["avg_max_drawdown_120d"] += fm.get("max_drawdown_120d", 0.0) or 0.0
+    for d in drawdown_by_action.values():
+        n = d["count"]
+        if n > 0:
+            d["avg_max_drawdown_20d"] = round(d["avg_max_drawdown_20d"] / n, 4)
+            d["avg_max_drawdown_60d"] = round(d["avg_max_drawdown_60d"] / n, 4)
+            d["avg_max_drawdown_120d"] = round(d["avg_max_drawdown_120d"] / n, 4)
+
+    # ── max drawdown by rating bucket ──
+    drawdown_by_rating: dict[str, dict] = {}
+    for r in results:
+        rating = r.get("rating", "unknown")
+        if rating not in drawdown_by_rating:
+            drawdown_by_rating[rating] = {
+                "count": 0, "avg_max_drawdown_20d": 0.0,
+                "avg_max_drawdown_60d": 0.0, "avg_max_drawdown_120d": 0.0,
+            }
+        d = drawdown_by_rating[rating]
+        d["count"] += 1
+        fm = r.get("forward_metrics", {})
+        d["avg_max_drawdown_20d"] += fm.get("max_drawdown_20d", 0.0) or 0.0
+        d["avg_max_drawdown_60d"] += fm.get("max_drawdown_60d", 0.0) or 0.0
+        d["avg_max_drawdown_120d"] += fm.get("max_drawdown_120d", 0.0) or 0.0
+    for d in drawdown_by_rating.values():
+        n = d["count"]
+        if n > 0:
+            d["avg_max_drawdown_20d"] = round(d["avg_max_drawdown_20d"] / n, 4)
+            d["avg_max_drawdown_60d"] = round(d["avg_max_drawdown_60d"] / n, 4)
+            d["avg_max_drawdown_120d"] = round(d["avg_max_drawdown_120d"] / n, 4)
+
+    # ── year coverage ──
+    year_coverage: dict[str, int] = Counter()
+    for r in results:
+        as_of = r.get("as_of", "")
+        if len(as_of) >= 4:
+            year_coverage[as_of[:4]] += 1
+
+    # ── industry coverage ──
+    # 行业信息可能在原始 sample 的 industry 字段中，此处用 tag 近似统计
+
+    # ── market cap coverage ──
+    market_cap_large = 0
+    market_cap_mid_small = 0
+    for r in results:
+        tags = set(r.get("scenario_tags", []))
+        if "large_cap" in tags:
+            market_cap_large += 1
+        elif "small_or_mid_cap" in tags:
+            market_cap_mid_small += 1
+
+    # ── price source coverage ──
+    price_source_qmt = 0
+    price_source_other = 0
+    fundamental_available = 0
+    valuation_available = 0
+    industry_available = 0
+    for r in results:
+        ir = r.get("input_result", {})
+        if isinstance(ir, dict):
+            sm = ir.get("source_metadata", {})
+            if isinstance(sm, dict) and sm.get("price_source") == "qmt_xtdata":
+                price_source_qmt += 1
+            else:
+                price_source_other += 1
+            if isinstance(sm, dict) and sm.get("fundamental_source") not in (None, "", "missing"):
+                fundamental_available += 1
+            if isinstance(sm, dict) and sm.get("valuation_source") not in (None, "", "missing"):
+                valuation_available += 1
+            if isinstance(sm, dict) and sm.get("industry_source") not in (None, "", "missing"):
+                industry_available += 1
+        else:
+            price_source_other += 1
+
+    total_with_source = price_source_qmt + price_source_other
+    price_source_coverage = (
+        price_source_qmt / total_with_source if total_with_source > 0 else 0.0
+    )
+    fundamental_source_coverage = (
+        fundamental_available / total if total > 0 else 0.0
+    )
+    valuation_source_coverage = (
+        valuation_available / total if total > 0 else 0.0
+    )
+    industry_source_coverage = (
+        industry_available / total if total > 0 else 0.0
+    )
+
+    # ── data gap summary ──
+    coverage_gap_count = 0
+    data_complete_count = 0
+    for r in results:
+        ir = r.get("input_result", {})
+        q = r.get("quality", {})
+        if isinstance(q, dict) and q.get("data_complete") is True:
+            data_complete_count += 1
+            continue
+        if isinstance(ir, dict):
+            dq = ir.get("data_quality", {})
+            if isinstance(dq, dict) and dq.get("blocking_issues"):
+                coverage_gap_count += 1
+            else:
+                data_complete_count += 1
 
     # ── 最大分桶占比 ──
     max_bucket_count = max(score_dist.values()) if score_dist else 0
@@ -347,12 +563,14 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         "high_risk_aggressive_violation_rate": round(
             high_risk_aggressive_count / high_risk_count, 4
         ) if high_risk_count > 0 else 0.0,
+        "placeholder_sample_count": placeholder_total,
+        "critical_sample_count": critical_total,
         "placeholder_guard_hit_rate": round(
             placeholder_guarded / placeholder_total, 4
-        ) if placeholder_total > 0 else 1.0,
+        ) if placeholder_total > 0 else None,
         "critical_guard_hit_rate": round(
             critical_guarded / critical_total, 4
-        ) if critical_total > 0 else 1.0,
+        ) if critical_total > 0 else None,
         "industry_percentile_valid_rate": round(
             industry_valid / industry_total, 4
         ) if industry_total > 0 else 0.0,
@@ -360,6 +578,24 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         "rating_bucket_count": len(rating_dist),
         "action_bucket_count": len(action_dist),
         "forward_return_by_score_bucket": forward_buckets,
+        "max_drawdown_by_action_bucket": drawdown_by_action,
+        "max_drawdown_by_rating_bucket": drawdown_by_rating,
+        "year_coverage": dict(year_coverage),
+        "market_cap_coverage": {
+            "large_cap": market_cap_large,
+            "small_or_mid_cap": market_cap_mid_small,
+        },
+        "price_source_coverage": round(price_source_coverage, 4),
+        "fundamental_source_coverage": round(fundamental_source_coverage, 4),
+        "valuation_source_coverage": round(valuation_source_coverage, 4),
+        "industry_source_coverage": round(industry_source_coverage, 4),
+        "data_gap_summary": {
+            "total_with_blocking_issues": coverage_gap_count,
+            "data_complete_count": data_complete_count,
+            "data_complete_coverage": round(
+                data_complete_count / total, 4
+            ) if total > 0 else 0.0,
+        },
     }
 
 
@@ -382,6 +618,20 @@ def assert_historical_backtest_acceptance(
             f"样本数不足: {summary['total']} < {t['min_samples']}"
         )
 
+    if summary.get("placeholder_sample_count", 0) < t.get("min_placeholder_sample_count", 0):
+        failures.append(
+            "placeholder/blocked-data sample count too low: "
+            f"{summary.get('placeholder_sample_count', 0)} < "
+            f"{t.get('min_placeholder_sample_count', 0)}"
+        )
+
+    if summary.get("critical_sample_count", 0) < t.get("min_critical_sample_count", 0):
+        failures.append(
+            "critical sample count too low: "
+            f"{summary.get('critical_sample_count', 0)} < "
+            f"{t.get('min_critical_sample_count', 0)}"
+        )
+
     if summary["high_risk_aggressive_violation_rate"] > t["max_aggressive_action_rate_for_high_risk"]:
         failures.append(
             f"高风险激进建议违规率: "
@@ -389,17 +639,23 @@ def assert_historical_backtest_acceptance(
             f"{t['max_aggressive_action_rate_for_high_risk']}"
         )
 
-    if summary["placeholder_guard_hit_rate"] < t["min_placeholder_guard_hit_rate"]:
+    placeholder_rate = summary.get("placeholder_guard_hit_rate")
+    if placeholder_rate is None and t["min_placeholder_guard_hit_rate"] > 0:
+        failures.append("placeholder 保护器命中率不可计算：没有对应样本")
+    elif placeholder_rate is not None and placeholder_rate < t["min_placeholder_guard_hit_rate"]:
         failures.append(
             f"placeholder 保护器命中率: "
-            f"{summary['placeholder_guard_hit_rate']} < "
+            f"{placeholder_rate} < "
             f"{t['min_placeholder_guard_hit_rate']}"
         )
 
-    if summary["critical_guard_hit_rate"] < t["min_critical_guard_hit_rate"]:
+    critical_rate = summary.get("critical_guard_hit_rate")
+    if critical_rate is None and t["min_critical_guard_hit_rate"] > 0:
+        failures.append("critical 保护器命中率不可计算：没有对应样本")
+    elif critical_rate is not None and critical_rate < t["min_critical_guard_hit_rate"]:
         failures.append(
             f"critical 保护器命中率: "
-            f"{summary['critical_guard_hit_rate']} < "
+            f"{critical_rate} < "
             f"{t['min_critical_guard_hit_rate']}"
         )
 
@@ -429,11 +685,39 @@ def assert_historical_backtest_acceptance(
             f"{summary['action_bucket_count']} < {t['min_action_bucket_count']}"
         )
 
-    # 检查场景覆盖
-    coverage = summary.get("scenario_coverage", {})
-    missing_tags = REQUIRED_SCENARIO_TAGS - set(coverage.keys())
-    if missing_tags:
-        failures.append(f"缺少必需场景标签: {sorted(missing_tags)}")
+    # 检查场景覆盖（可跳过）
+    if not t.get("skip_required_tag_check"):
+        coverage = summary.get("scenario_coverage", {})
+        missing_tags = REQUIRED_SCENARIO_TAGS - set(coverage.keys())
+        if missing_tags:
+            failures.append(f"缺少必需场景标签: {sorted(missing_tags)}")
+
+    # 检查价格来源覆盖率
+    min_psc = t.get("min_price_source_coverage", 0.0)
+    if min_psc > 0:
+        actual_psc = summary.get("price_source_coverage", 0.0)
+        if actual_psc < min_psc:
+            failures.append(
+                f"价格来源覆盖率: "
+                f"{actual_psc} < {min_psc}"
+            )
+
+    for metric, threshold_key, label in [
+        ("fundamental_source_coverage", "min_fundamental_source_coverage", "基本面来源覆盖率"),
+        ("valuation_source_coverage", "min_valuation_source_coverage", "估值来源覆盖率"),
+        ("industry_source_coverage", "min_industry_source_coverage", "行业来源覆盖率"),
+    ]:
+        minimum = t.get(threshold_key, 0.0)
+        actual = summary.get(metric, 0.0)
+        if minimum > 0 and actual < minimum:
+            failures.append(f"{label}: {actual} < {minimum}")
+
+    min_complete = t.get("min_data_complete_coverage", 0.0)
+    actual_complete = summary.get("data_gap_summary", {}).get(
+        "data_complete_coverage", 0.0
+    )
+    if min_complete > 0 and actual_complete < min_complete:
+        failures.append(f"完整研究输入覆盖率: {actual_complete} < {min_complete}")
 
     if failures:
         failed_ids = [
