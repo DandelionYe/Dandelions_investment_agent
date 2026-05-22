@@ -79,6 +79,14 @@ class TestFieldRuleValidation:
         with pytest.raises(AssertionError, match="NaN"):
             assert_result_matches_sample(result, sample)
 
+    def test_present_numeric_field_string_fails(self):
+        sample = _make_sample(
+            fields={"pe_ttm": {"state": "present", "allowed_missing_reasons": []}},
+        )
+        result = _make_result(valuation_data={"pe_ttm": "not-a-number"})
+        with pytest.raises(AssertionError, match="expected numeric"):
+            assert_result_matches_sample(result, sample)
+
     def test_missing_field_with_allowed_reason_passes(self):
         sample = _make_sample(
             fields={
@@ -173,6 +181,16 @@ class TestValuationSourceValidation:
         with pytest.raises(AssertionError, match="valuation_source mismatch"):
             assert_result_matches_sample(result, sample)
 
+    def test_contains_all_source_requires_every_fragment(self):
+        sample = _make_sample(
+            valuation_source={"contains_all": ["qmt_derived", "local_csmar_eva_structure"]},
+        )
+        result = _make_result(
+            source_metadata={"valuation_data": {"source": "qmt_derived"}},
+        )
+        with pytest.raises(AssertionError, match="valuation_source mismatch"):
+            assert_result_matches_sample(result, sample)
+
 
 # ---------------------------------------------------------------------------
 # provider_log validation
@@ -223,6 +241,91 @@ class TestProviderLogValidation:
             ],
         )
         assert_result_matches_sample(result, sample)
+
+    def test_provider_log_fields_applied_rule_passes(self):
+        sample = _make_sample(
+            provider_log=[
+                {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "status_any": ["success"],
+                    "fields_applied_contains_any": ["total_volume"],
+                }
+            ],
+        )
+        result = _make_result(
+            provider_run_log=[
+                {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "status": "success",
+                    "fields_applied": ["total_volume", "market_cap"],
+                }
+            ],
+        )
+        assert_result_matches_sample(result, sample)
+
+    def test_provider_log_fields_applied_rule_fails(self):
+        sample = _make_sample(
+            provider_log=[
+                {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "status_any": ["success"],
+                    "fields_applied_contains_any": ["total_volume"],
+                }
+            ],
+        )
+        result = _make_result(
+            provider_run_log=[
+                {
+                    "provider": "local_csmar_eva_structure",
+                    "dataset": "eva_structure_latest",
+                    "status": "success",
+                    "fields_applied": [],
+                }
+            ],
+        )
+        with pytest.raises(AssertionError, match="provider_run_log"):
+            assert_result_matches_sample(result, sample)
+
+
+# ---------------------------------------------------------------------------
+# result_checks validation
+# ---------------------------------------------------------------------------
+
+
+class TestResultChecks:
+    def test_result_check_passes(self):
+        sample = _make_sample(
+            result_checks=[
+                {
+                    "path": "valuation_data.dividend_yield_source",
+                    "equals_any": ["local_csmar_daily_derived"],
+                }
+            ],
+        )
+        result = _make_result(
+            valuation_data={
+                "dividend_yield_source": "local_csmar_daily_derived",
+            },
+        )
+        assert_result_matches_sample(result, sample)
+
+    def test_result_check_fails(self):
+        sample = _make_sample(
+            result_checks=[
+                {
+                    "path": "valuation_data.dividend_yield_source",
+                    "equals_any": ["local_csmar_daily_derived"],
+                }
+            ],
+        )
+        result = _make_result(
+            valuation_data={"dividend_yield_source": "akshare"},
+        )
+        with pytest.raises(AssertionError, match="result_check mismatch"):
+            assert_result_matches_sample(result, sample)
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +422,55 @@ class TestSpecValidationEdgeCases:
         with pytest.raises(ValueError, match="contains_any"):
             validate_sample_spec(spec)
 
+    def test_eva_category_requires_eva_provider_log(self):
+        spec = {
+            "version": 1,
+            "samples": [
+                {
+                    "id": "eva",
+                    "symbol": "600410.SH",
+                    "category": "eva_share_capital_fallback",
+                    "expected": {
+                        "fields": {},
+                        "valuation_source": {"contains_any": ["qmt_derived"]},
+                        "provider_log": [
+                            {"dataset": "valuation_data", "status_any": ["success"]}
+                        ],
+                    },
+                }
+            ],
+        }
+        with pytest.raises(ValueError, match="local_csmar_eva_structure"):
+            validate_sample_spec(spec)
+
+    def test_dataset_any_provider_log_spec_is_valid(self):
+        spec = {
+            "version": 1,
+            "samples": [
+                {
+                    "id": "csmar",
+                    "symbol": "000001.SZ",
+                    "category": "csmar_daily_derived_fallback",
+                    "expected": {
+                        "fields": {},
+                        "valuation_source": {"contains_any": ["csmar_daily_derived"]},
+                        "provider_log": [
+                            {
+                                "provider": "local_csmar_daily_derived",
+                                "dataset_any": [
+                                    "csmar_daily_derived_snapshots",
+                                    "latest_non_null_metrics",
+                                    "monthly_snapshots",
+                                ],
+                                "status_any": ["success"],
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        validate_sample_spec(spec)
+
 
 # ---------------------------------------------------------------------------
 # Helpers to build synthetic samples/results
@@ -330,6 +482,7 @@ def _make_sample(
     valuation_source: dict | None = None,
     calculation_method: dict | None = None,
     provider_log: list | None = None,
+    result_checks: list | None = None,
 ) -> dict:
     return {
         "id": "test_sample",
@@ -343,6 +496,7 @@ def _make_sample(
             "provider_log": provider_log or [
                 {"dataset": "valuation_data", "status_any": ["success"]}
             ],
+            "result_checks": result_checks or [],
         },
     }
 

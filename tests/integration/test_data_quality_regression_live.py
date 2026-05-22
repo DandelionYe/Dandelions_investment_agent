@@ -17,6 +17,7 @@ from tests.helpers.data_quality_regression import (
     assert_result_matches_sample,
     load_sample_spec,
     summarize_result,
+    validate_sample_spec,
 )
 
 pytestmark = [
@@ -35,6 +36,7 @@ def _skip_if_not_enabled() -> None:
 
 # Load spec once at module level for parametrize
 _spec = load_sample_spec()
+validate_sample_spec(_spec)
 _samples = _spec["samples"]
 
 
@@ -89,5 +91,9 @@ def _print_failure_summary(summary: dict, result: dict) -> None:
         print(f"  PROVIDER_LOG ({len(log)} entries):")
         for entry in log[:10]:
             print(f"    - {entry.get('dataset')}: {entry.get('status')} ({entry.get('provider', '?')})")
+
+    for check in summary.get("result_checks", []):
+        if not check.get("pass", True):
+            print(f"  RESULT_CHECK {check['path']}: actual={check.get('actual')!r}")
 
     print()

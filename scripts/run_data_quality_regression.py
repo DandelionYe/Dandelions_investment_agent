@@ -27,6 +27,7 @@ from tests.helpers.data_quality_regression import (  # noqa: E402
     assert_result_matches_sample,
     load_sample_spec,
     summarize_result,
+    validate_sample_spec,
 )
 
 _ARTIFACT_DIR = _REPO_ROOT / "storage" / "artifacts" / "data_quality_regression"
@@ -34,6 +35,7 @@ _ARTIFACT_DIR = _REPO_ROOT / "storage" / "artifacts" / "data_quality_regression"
 
 def main() -> int:
     spec = load_sample_spec()
+    validate_sample_spec(spec)
     samples = spec["samples"]
     print(f"Loaded {len(samples)} regression samples (version {spec['version']})")
 
@@ -140,6 +142,11 @@ def _render_markdown(payload: dict) -> str:
                 lines.append(f"- **source**: {s['valuation_source'].get('actual', '')}")
             if not s.get("provider_log", {}).get("pass", True):
                 lines.append("- **provider_log**: no matching entry found")
+            for check in s.get("result_checks", []):
+                if not check.get("pass", True):
+                    lines.append(
+                        f"- **{check['path']}**: actual={check.get('actual')}"
+                    )
             lines.append("")
 
     return "\n".join(lines)
