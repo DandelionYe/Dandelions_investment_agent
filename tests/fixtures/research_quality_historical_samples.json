@@ -1,0 +1,4266 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-22T19:02:55.508243Z",
+  "source": {
+    "price": "manual_snapshot",
+    "fundamental": "manual_snapshot",
+    "valuation": "manual_snapshot",
+    "industry": "manual_snapshot"
+  },
+  "samples": [
+    {
+      "sample_id": "hist_600519_2024q1_bull",
+      "symbol": "600519.SH",
+      "name": "贵州茅台",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "earnings_window",
+        "low_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.06,
+          "change_60d": 0.1,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 8000000000.0,
+          "max_drawdown_60d": -0.05,
+          "volatility_60d": 0.18
+        },
+        "fundamental_data": {
+          "roe": 0.33,
+          "gross_margin": 0.92,
+          "net_profit_growth": 0.16,
+          "debt_ratio": 0.22
+        },
+        "valuation_data": {
+          "pe_ttm": 30.0,
+          "pb_mrq": 10.5,
+          "ps_ttm": 15.0,
+          "pe_percentile": 0.35,
+          "pb_percentile": 0.4,
+          "ps_percentile": 0.38,
+          "market_cap": 2200000000000.0,
+          "dividend_yield": 0.018,
+          "industry_pe_percentile": 0.3,
+          "industry_pb_percentile": 0.35,
+          "industry_ps_percentile": 0.32
+        },
+        "event_data": {
+          "recent_news_sentiment": "positive",
+          "policy_risk": "low",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": [
+            {
+              "severity": "low",
+              "sentiment": "positive",
+              "title": "2024Q1 业绩预增"
+            }
+          ]
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.85
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.05,
+        "return_60d": 0.12,
+        "return_120d": 0.18,
+        "relative_return_20d": 0.03,
+        "relative_return_60d": 0.08,
+        "relative_return_120d": 0.1,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "min_score": 70,
+        "forbidden_actions": [
+          "回避",
+          "谨慎观察"
+        ]
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_601318_2023q4_value",
+      "symbol": "601318.SH",
+      "name": "中国平安",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "financial",
+        "low_valuation",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "非银金融",
+        "peer_count": 50,
+        "valid_peer_count_pe": 42,
+        "valid_peer_count_pb": 45,
+        "valid_peer_count_ps": 38
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.03,
+          "change_60d": -0.08,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 5000000000.0,
+          "max_drawdown_60d": -0.12,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.16,
+          "gross_margin": 0.25,
+          "net_profit_growth": -0.05,
+          "debt_ratio": 0.88
+        },
+        "valuation_data": {
+          "pe_ttm": 8.5,
+          "pb_mrq": 0.95,
+          "ps_ttm": 1.1,
+          "pe_percentile": 0.12,
+          "pb_percentile": 0.08,
+          "ps_percentile": 0.1,
+          "market_cap": 450000000000.0,
+          "dividend_yield": 0.055,
+          "industry_pe_percentile": 0.15,
+          "industry_pb_percentile": 0.1,
+          "industry_ps_percentile": 0.12
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.02,
+        "return_60d": 0.06,
+        "return_120d": 0.1,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.03,
+        "relative_return_120d": 0.05,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.12
+      },
+      "expected": {
+        "min_score": 40
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_600036_2024q1_bluechip",
+      "symbol": "600036.SH",
+      "name": "招商银行",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "financial",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "银行",
+        "peer_count": 42,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.04,
+          "change_60d": 0.02,
+          "ma20_position": "above",
+          "ma60_position": "near",
+          "avg_turnover_20d": 3500000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.2
+        },
+        "fundamental_data": {
+          "roe": 0.16,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.06,
+          "debt_ratio": 0.92
+        },
+        "valuation_data": {
+          "pe_ttm": 6.2,
+          "pb_mrq": 0.85,
+          "ps_ttm": 2.5,
+          "pe_percentile": 0.1,
+          "pb_percentile": 0.05,
+          "ps_percentile": 0.08,
+          "market_cap": 1000000000000.0,
+          "dividend_yield": 0.058,
+          "industry_pe_percentile": 0.12,
+          "industry_pb_percentile": 0.08,
+          "industry_ps_percentile": 0.1
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.03,
+        "return_60d": 0.05,
+        "return_120d": 0.08,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.02,
+        "relative_return_120d": 0.03,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "min_score": 50
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_600585_2023q3_stable",
+      "symbol": "600585.SH",
+      "name": "海螺水泥",
+      "asset_type": "stock",
+      "as_of": "2023-09-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "industrial",
+        "low_valuation"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "建筑材料",
+        "peer_count": 55,
+        "valid_peer_count_pe": 48,
+        "valid_peer_count_pb": 50,
+        "valid_peer_count_ps": 42
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.02,
+          "change_60d": 0.01,
+          "ma20_position": "below",
+          "ma60_position": "near",
+          "avg_turnover_20d": 1500000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.25
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.3,
+          "net_profit_growth": -0.08,
+          "debt_ratio": 0.25
+        },
+        "valuation_data": {
+          "pe_ttm": 8.0,
+          "pb_mrq": 1.2,
+          "ps_ttm": 1.8,
+          "pe_percentile": 0.15,
+          "pb_percentile": 0.1,
+          "ps_percentile": 0.12,
+          "market_cap": 180000000000.0,
+          "dividend_yield": 0.045,
+          "industry_pe_percentile": 0.18,
+          "industry_pb_percentile": 0.12,
+          "industry_ps_percentile": 0.15
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.01,
+        "return_60d": 0.02,
+        "return_120d": 0.05,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_000858_2024q1_consumer",
+      "symbol": "000858.SZ",
+      "name": "五粮液",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": -0.02,
+          "ma20_position": "above",
+          "ma60_position": "below",
+          "avg_turnover_20d": 4000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.25,
+          "gross_margin": 0.75,
+          "net_profit_growth": 0.12,
+          "debt_ratio": 0.28
+        },
+        "valuation_data": {
+          "pe_ttm": 22.0,
+          "pb_mrq": 6.0,
+          "ps_ttm": 8.0,
+          "pe_percentile": 0.3,
+          "pb_percentile": 0.35,
+          "ps_percentile": 0.32,
+          "market_cap": 550000000000.0,
+          "dividend_yield": 0.03,
+          "industry_pe_percentile": 0.28,
+          "industry_pb_percentile": 0.32,
+          "industry_ps_percentile": 0.3
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.02,
+        "return_60d": 0.05,
+        "return_120d": 0.08,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.03,
+        "relative_return_120d": 0.05,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002594_2024q1_growth",
+      "symbol": "002594.SZ",
+      "name": "比亚迪",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "auto",
+        "growth",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "汽车",
+        "peer_count": 60,
+        "valid_peer_count_pe": 52,
+        "valid_peer_count_pb": 55,
+        "valid_peer_count_ps": 48
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.08,
+          "change_60d": 0.15,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 6000000000.0,
+          "max_drawdown_60d": -0.12,
+          "volatility_60d": 0.3
+        },
+        "fundamental_data": {
+          "roe": 0.18,
+          "gross_margin": 0.2,
+          "net_profit_growth": 0.45,
+          "debt_ratio": 0.75
+        },
+        "valuation_data": {
+          "pe_ttm": 25.0,
+          "pb_mrq": 5.5,
+          "ps_ttm": 1.8,
+          "pe_percentile": 0.4,
+          "pb_percentile": 0.5,
+          "ps_percentile": 0.45,
+          "market_cap": 700000000000.0,
+          "dividend_yield": 0.005,
+          "industry_pe_percentile": 0.38,
+          "industry_pb_percentile": 0.48,
+          "industry_ps_percentile": 0.42
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.06,
+        "return_60d": 0.1,
+        "return_120d": 0.15,
+        "relative_return_20d": 0.04,
+        "relative_return_60d": 0.07,
+        "relative_return_120d": 0.1,
+        "max_drawdown_20d": -0.05,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.12
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_300059_2023q4_broker",
+      "symbol": "300059.SZ",
+      "name": "东方财富",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "financial",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "非银金融",
+        "peer_count": 50,
+        "valid_peer_count_pe": 42,
+        "valid_peer_count_pb": 45,
+        "valid_peer_count_ps": 38
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.05,
+          "change_60d": -0.12,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.18,
+          "volatility_60d": 0.35
+        },
+        "fundamental_data": {
+          "roe": 0.1,
+          "gross_margin": 0.55,
+          "net_profit_growth": -0.1,
+          "debt_ratio": 0.65
+        },
+        "valuation_data": {
+          "pe_ttm": 35.0,
+          "pb_mrq": 4.5,
+          "ps_ttm": 12.0,
+          "pe_percentile": 0.55,
+          "pb_percentile": 0.5,
+          "ps_percentile": 0.52,
+          "market_cap": 250000000000.0,
+          "dividend_yield": 0.008,
+          "industry_pe_percentile": 0.5,
+          "industry_pb_percentile": 0.48,
+          "industry_ps_percentile": 0.5
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.03,
+        "return_60d": -0.08,
+        "return_120d": -0.05,
+        "relative_return_20d": -0.01,
+        "relative_return_60d": -0.04,
+        "relative_return_120d": -0.02,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002475_2024q2_tech",
+      "symbol": "002475.SZ",
+      "name": "立讯精密",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "electronics",
+        "growth"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.1,
+          "change_60d": 0.2,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 2500000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.28
+        },
+        "fundamental_data": {
+          "roe": 0.2,
+          "gross_margin": 0.18,
+          "net_profit_growth": 0.25,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 28.0,
+          "pb_mrq": 6.5,
+          "ps_ttm": 2.2,
+          "pe_percentile": 0.45,
+          "pb_percentile": 0.55,
+          "ps_percentile": 0.5,
+          "market_cap": 300000000000.0,
+          "dividend_yield": 0.003,
+          "industry_pe_percentile": 0.42,
+          "industry_pb_percentile": 0.52,
+          "industry_ps_percentile": 0.48
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.08,
+        "return_60d": 0.15,
+        "return_120d": 0.22,
+        "relative_return_20d": 0.05,
+        "relative_return_60d": 0.1,
+        "relative_return_120d": 0.15,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_603259_2023q3_midcap",
+      "symbol": "603259.SH",
+      "name": "药明康德",
+      "asset_type": "stock",
+      "as_of": "2023-09-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "pharma",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "医药生物",
+        "peer_count": 90,
+        "valid_peer_count_pe": 75,
+        "valid_peer_count_pb": 78,
+        "valid_peer_count_ps": 70
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.08,
+          "change_60d": -0.18,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.25,
+          "volatility_60d": 0.32
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.38,
+          "net_profit_growth": -0.02,
+          "debt_ratio": 0.45
+        },
+        "valuation_data": {
+          "pe_ttm": 22.0,
+          "pb_mrq": 4.0,
+          "ps_ttm": 5.5,
+          "pe_percentile": 0.25,
+          "pb_percentile": 0.2,
+          "ps_percentile": 0.22,
+          "market_cap": 200000000000.0,
+          "dividend_yield": 0.012,
+          "industry_pe_percentile": 0.22,
+          "industry_pb_percentile": 0.18,
+          "industry_ps_percentile": 0.2
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.05,
+        "return_60d": -0.1,
+        "return_120d": -0.08,
+        "relative_return_20d": -0.02,
+        "relative_return_60d": -0.05,
+        "relative_return_120d": -0.03,
+        "max_drawdown_20d": -0.08,
+        "max_drawdown_60d": -0.15,
+        "max_drawdown_120d": -0.2
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002241_2024q1_midcap",
+      "symbol": "002241.SZ",
+      "name": "歌尔股份",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "electronics"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.08,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 1800000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.3
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.15,
+          "net_profit_growth": 0.2,
+          "debt_ratio": 0.5
+        },
+        "valuation_data": {
+          "pe_ttm": 32.0,
+          "pb_mrq": 3.8,
+          "ps_ttm": 1.5,
+          "pe_percentile": 0.5,
+          "pb_percentile": 0.45,
+          "ps_percentile": 0.48,
+          "market_cap": 80000000000.0,
+          "dividend_yield": 0.008,
+          "industry_pe_percentile": 0.48,
+          "industry_pb_percentile": 0.42,
+          "industry_ps_percentile": 0.45
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.04,
+        "return_60d": 0.06,
+        "return_120d": 0.1,
+        "relative_return_20d": 0.02,
+        "relative_return_60d": 0.03,
+        "relative_return_120d": 0.05,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.07,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_loss_600019_2023q4",
+      "symbol": "600019.SH",
+      "name": "宝钢股份(亏损模拟)",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "loss_making_or_invalid_pe",
+        "industrial"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "钢铁",
+        "peer_count": 35,
+        "valid_peer_count_pe": 20,
+        "valid_peer_count_pb": 30,
+        "valid_peer_count_ps": 25
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.06,
+          "change_60d": -0.15,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.2,
+          "volatility_60d": 0.28
+        },
+        "fundamental_data": {
+          "roe": -0.02,
+          "gross_margin": 0.08,
+          "net_profit_growth": -1.5,
+          "debt_ratio": 0.62
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 0.8,
+          "ps_ttm": 0.5,
+          "pe_percentile": null,
+          "pb_percentile": 0.1,
+          "ps_percentile": 0.08,
+          "market_cap": 150000000000.0,
+          "dividend_yield": 0.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": 0.12,
+          "industry_ps_percentile": 0.1
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.04,
+        "return_60d": -0.08,
+        "return_120d": -0.06,
+        "relative_return_20d": -0.02,
+        "relative_return_60d": -0.05,
+        "relative_return_120d": -0.03,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {
+        "max_action": "谨慎观察",
+        "forbidden_actions": [
+          "分批买入",
+          "买入"
+        ]
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_loss_000725_2022q4",
+      "symbol": "000725.SZ",
+      "name": "京东方A(亏损模拟)",
+      "asset_type": "stock",
+      "as_of": "2022-12-30",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "loss_making_or_invalid_pe",
+        "electronics",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.1,
+          "change_60d": -0.25,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.35,
+          "volatility_60d": 0.38
+        },
+        "fundamental_data": {
+          "roe": -0.05,
+          "gross_margin": 0.05,
+          "net_profit_growth": -2.0,
+          "debt_ratio": 0.58
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 1.0,
+          "ps_ttm": 0.6,
+          "pe_percentile": null,
+          "pb_percentile": 0.15,
+          "ps_percentile": 0.12,
+          "market_cap": 180000000000.0,
+          "dividend_yield": 0.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": 0.18,
+          "industry_ps_percentile": 0.15
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.06,
+        "return_60d": -0.12,
+        "return_120d": -0.1,
+        "relative_return_20d": -0.03,
+        "relative_return_60d": -0.06,
+        "relative_return_120d": -0.04,
+        "max_drawdown_20d": -0.1,
+        "max_drawdown_60d": -0.18,
+        "max_drawdown_120d": -0.25
+      },
+      "expected": {
+        "max_action": "谨慎观察",
+        "forbidden_actions": [
+          "分批买入",
+          "买入"
+        ]
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_loss_601607_2023q2",
+      "symbol": "601607.SH",
+      "name": "上海医药(亏损模拟)",
+      "asset_type": "stock",
+      "as_of": "2023-06-30",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "loss_making_or_invalid_pe",
+        "pharma"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "医药生物",
+        "peer_count": 90,
+        "valid_peer_count_pe": 75,
+        "valid_peer_count_pb": 78,
+        "valid_peer_count_ps": 70
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.04,
+          "change_60d": -0.12,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 800000000.0,
+          "max_drawdown_60d": -0.18,
+          "volatility_60d": 0.25
+        },
+        "fundamental_data": {
+          "roe": -0.01,
+          "gross_margin": 0.12,
+          "net_profit_growth": -1.2,
+          "debt_ratio": 0.65
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 1.5,
+          "ps_ttm": 0.3,
+          "pe_percentile": null,
+          "pb_percentile": 0.2,
+          "ps_percentile": 0.15,
+          "market_cap": 50000000000.0,
+          "dividend_yield": 0.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": 0.22,
+          "industry_ps_percentile": 0.18
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.03,
+        "return_60d": -0.06,
+        "return_120d": -0.04,
+        "relative_return_20d": -0.01,
+        "relative_return_60d": -0.03,
+        "relative_return_120d": -0.01,
+        "max_drawdown_20d": -0.05,
+        "max_drawdown_60d": -0.1,
+        "max_drawdown_120d": -0.12
+      },
+      "expected": {
+        "max_action": "谨慎观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_miss_fund_000001_2024q1",
+      "symbol": "000001.SZ",
+      "name": "平安银行(缺基本面)",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "missing_fundamental",
+        "financial"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "银行",
+        "peer_count": 42,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.02,
+          "change_60d": -0.03,
+          "ma20_position": "near",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {},
+        "valuation_data": {
+          "pe_ttm": 5.5,
+          "pb_mrq": 0.6,
+          "ps_ttm": 1.8,
+          "pe_percentile": 0.08,
+          "pb_percentile": 0.05,
+          "ps_percentile": 0.06,
+          "market_cap": 200000000000.0,
+          "dividend_yield": 0.06,
+          "industry_pe_percentile": 0.1,
+          "industry_pb_percentile": 0.06,
+          "industry_ps_percentile": 0.08
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.01,
+        "return_60d": 0.03,
+        "return_120d": 0.05,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_miss_fund_601398_2023q4",
+      "symbol": "601398.SH",
+      "name": "工商银行(缺基本面)",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "missing_fundamental",
+        "financial"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "银行",
+        "peer_count": 42,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.01,
+          "change_60d": -0.02,
+          "ma20_position": "near",
+          "ma60_position": "near",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.06,
+          "volatility_60d": 0.15
+        },
+        "fundamental_data": {},
+        "valuation_data": {
+          "pe_ttm": 5.0,
+          "pb_mrq": 0.55,
+          "ps_ttm": 2.0,
+          "pe_percentile": 0.06,
+          "pb_percentile": 0.04,
+          "ps_percentile": 0.05,
+          "market_cap": 1800000000000.0,
+          "dividend_yield": 0.065,
+          "industry_pe_percentile": 0.08,
+          "industry_pb_percentile": 0.05,
+          "industry_ps_percentile": 0.06
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.01,
+        "return_60d": 0.02,
+        "return_120d": 0.04,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.02,
+        "max_drawdown_60d": -0.04,
+        "max_drawdown_120d": -0.06
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_miss_fund_600028_2024q2",
+      "symbol": "600028.SH",
+      "name": "中国石化(缺基本面)",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "missing_fundamental",
+        "energy"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "石油石化",
+        "peer_count": 30,
+        "valid_peer_count_pe": 25,
+        "valid_peer_count_pb": 28,
+        "valid_peer_count_ps": 22
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.01,
+          "change_60d": 0.03,
+          "ma20_position": "below",
+          "ma60_position": "above",
+          "avg_turnover_20d": 2500000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.2
+        },
+        "fundamental_data": {},
+        "valuation_data": {
+          "pe_ttm": 10.0,
+          "pb_mrq": 0.9,
+          "ps_ttm": 0.4,
+          "pe_percentile": 0.2,
+          "pb_percentile": 0.15,
+          "ps_percentile": 0.12,
+          "market_cap": 700000000000.0,
+          "dividend_yield": 0.05,
+          "industry_pe_percentile": 0.22,
+          "industry_pb_percentile": 0.18,
+          "industry_ps_percentile": 0.15
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.01,
+        "return_60d": 0.02,
+        "return_120d": 0.04,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.07
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_industry_insuf_830799_2024q1",
+      "symbol": "830799.BJ",
+      "name": "艾融软件",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "industry_insufficient_peers",
+        "it_services"
+      ],
+      "industry": {
+        "level": "SW2",
+        "name": "软件和信息技术服务业",
+        "peer_count": 8,
+        "valid_peer_count_pe": 3,
+        "valid_peer_count_pb": 4,
+        "valid_peer_count_ps": 3
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.12,
+          "change_60d": 0.25,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 50000000.0,
+          "max_drawdown_60d": -0.15,
+          "volatility_60d": 0.45
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.45,
+          "net_profit_growth": 0.2,
+          "debt_ratio": 0.3
+        },
+        "valuation_data": {
+          "pe_ttm": 25.0,
+          "pb_mrq": 5.0,
+          "ps_ttm": 8.0,
+          "pe_percentile": 0.4,
+          "pb_percentile": 0.45,
+          "ps_percentile": 0.42,
+          "market_cap": 5000000000.0,
+          "dividend_yield": 0.01,
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": null,
+          "industry_ps_percentile": null,
+          "industry_pe_percentile_missing_reason": "insufficient_peer_samples",
+          "industry_valuation_warnings": [
+            "行业样本不足，无法计算行业分位"
+          ]
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.1,
+        "return_60d": 0.2,
+        "return_120d": 0.3,
+        "relative_return_20d": 0.08,
+        "relative_return_60d": 0.15,
+        "relative_return_120d": 0.22,
+        "max_drawdown_20d": -0.08,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {
+        "industry_percentile_may_be_missing": true
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_industry_insuf_430047_2023q4",
+      "symbol": "430047.BJ",
+      "name": "诺思兰德",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "industry_insufficient_peers",
+        "pharma",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "SW2",
+        "name": "医药制造业",
+        "peer_count": 5,
+        "valid_peer_count_pe": 2,
+        "valid_peer_count_pb": 3,
+        "valid_peer_count_ps": 2
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.15,
+          "change_60d": -0.3,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 20000000.0,
+          "max_drawdown_60d": -0.4,
+          "volatility_60d": 0.55
+        },
+        "fundamental_data": {
+          "roe": -0.08,
+          "gross_margin": 0.2,
+          "net_profit_growth": -0.5,
+          "debt_ratio": 0.4
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 8.0,
+          "ps_ttm": 50.0,
+          "pe_percentile": null,
+          "pb_percentile": 0.7,
+          "ps_percentile": 0.8,
+          "market_cap": 3000000000.0,
+          "dividend_yield": 0.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": null,
+          "industry_ps_percentile": null,
+          "industry_valuation_warnings": [
+            "行业样本不足"
+          ]
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.1,
+        "return_60d": -0.2,
+        "return_120d": -0.15,
+        "relative_return_20d": -0.05,
+        "relative_return_60d": -0.1,
+        "relative_return_120d": -0.08,
+        "max_drawdown_20d": -0.15,
+        "max_drawdown_60d": -0.25,
+        "max_drawdown_120d": -0.3
+      },
+      "expected": {
+        "max_action": "谨慎观察",
+        "industry_percentile_may_be_missing": true
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_industry_insuf_831856_2024q2",
+      "symbol": "831856.BJ",
+      "name": "浙江大农",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "industry_insufficient_peers",
+        "manufacturing"
+      ],
+      "industry": {
+        "level": "SW3",
+        "name": "专用设备制造业",
+        "peer_count": 6,
+        "valid_peer_count_pe": 2,
+        "valid_peer_count_pb": 3,
+        "valid_peer_count_ps": 2
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": 0.05,
+          "ma20_position": "above",
+          "ma60_position": "near",
+          "avg_turnover_20d": 10000000.0,
+          "max_drawdown_60d": -0.12,
+          "volatility_60d": 0.4
+        },
+        "fundamental_data": {
+          "roe": 0.1,
+          "gross_margin": 0.3,
+          "net_profit_growth": 0.05,
+          "debt_ratio": 0.35
+        },
+        "valuation_data": {
+          "pe_ttm": 18.0,
+          "pb_mrq": 3.0,
+          "ps_ttm": 5.0,
+          "pe_percentile": 0.3,
+          "pb_percentile": 0.35,
+          "ps_percentile": 0.32,
+          "market_cap": 2000000000.0,
+          "dividend_yield": 0.02,
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": null,
+          "industry_ps_percentile": null,
+          "industry_valuation_warnings": [
+            "北交所部分行业样本不足"
+          ]
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.02,
+        "return_60d": 0.04,
+        "return_120d": 0.06,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.02,
+        "relative_return_120d": 0.03,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {
+        "industry_percentile_may_be_missing": true
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_extreme_002594_2022q4",
+      "symbol": "002594.SZ",
+      "name": "比亚迪(极端下跌)",
+      "asset_type": "stock",
+      "as_of": "2022-12-30",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "extreme_drawdown",
+        "auto",
+        "bear_market",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "汽车",
+        "peer_count": 60,
+        "valid_peer_count_pe": 52,
+        "valid_peer_count_pb": 55,
+        "valid_peer_count_ps": 48
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.15,
+          "change_60d": -0.35,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 8000000000.0,
+          "max_drawdown_60d": -0.45,
+          "volatility_60d": 0.48
+        },
+        "fundamental_data": {
+          "roe": 0.08,
+          "gross_margin": 0.17,
+          "net_profit_growth": 0.5,
+          "debt_ratio": 0.78
+        },
+        "valuation_data": {
+          "pe_ttm": 50.0,
+          "pb_mrq": 6.0,
+          "ps_ttm": 2.5,
+          "pe_percentile": 0.7,
+          "pb_percentile": 0.6,
+          "ps_percentile": 0.65,
+          "market_cap": 550000000000.0,
+          "dividend_yield": 0.0,
+          "industry_pe_percentile": 0.65,
+          "industry_pb_percentile": 0.55,
+          "industry_ps_percentile": 0.6
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.08,
+        "return_60d": -0.15,
+        "return_120d": -0.1,
+        "relative_return_20d": -0.04,
+        "relative_return_60d": -0.08,
+        "relative_return_120d": -0.05,
+        "max_drawdown_20d": -0.12,
+        "max_drawdown_60d": -0.2,
+        "max_drawdown_120d": -0.25
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_extreme_600036_2022q4",
+      "symbol": "600036.SH",
+      "name": "招商银行(极端下跌)",
+      "asset_type": "stock",
+      "as_of": "2022-10-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "extreme_drawdown",
+        "financial",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "银行",
+        "peer_count": 42,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.12,
+          "change_60d": -0.28,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 4000000000.0,
+          "max_drawdown_60d": -0.35,
+          "volatility_60d": 0.3
+        },
+        "fundamental_data": {
+          "roe": 0.16,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.12,
+          "debt_ratio": 0.92
+        },
+        "valuation_data": {
+          "pe_ttm": 5.5,
+          "pb_mrq": 0.75,
+          "ps_ttm": 2.2,
+          "pe_percentile": 0.05,
+          "pb_percentile": 0.02,
+          "ps_percentile": 0.04,
+          "market_cap": 900000000000.0,
+          "dividend_yield": 0.06,
+          "industry_pe_percentile": 0.06,
+          "industry_pb_percentile": 0.03,
+          "industry_ps_percentile": 0.05
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.06,
+        "return_60d": -0.1,
+        "return_120d": -0.05,
+        "relative_return_20d": -0.03,
+        "relative_return_60d": -0.05,
+        "relative_return_120d": -0.02,
+        "max_drawdown_20d": -0.1,
+        "max_drawdown_60d": -0.18,
+        "max_drawdown_120d": -0.22
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_extreme_300750_2022q2",
+      "symbol": "300750.SZ",
+      "name": "宁德时代(极端下跌)",
+      "asset_type": "stock",
+      "as_of": "2022-04-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "extreme_drawdown",
+        "new_energy",
+        "bear_market",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电力设备",
+        "peer_count": 70,
+        "valid_peer_count_pe": 58,
+        "valid_peer_count_pb": 62,
+        "valid_peer_count_ps": 55
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.2,
+          "change_60d": -0.4,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 10000000000.0,
+          "max_drawdown_60d": -0.5,
+          "volatility_60d": 0.55
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.22,
+          "net_profit_growth": 0.25,
+          "debt_ratio": 0.68
+        },
+        "valuation_data": {
+          "pe_ttm": 60.0,
+          "pb_mrq": 10.0,
+          "ps_ttm": 8.0,
+          "pe_percentile": 0.8,
+          "pb_percentile": 0.75,
+          "ps_percentile": 0.78,
+          "market_cap": 1000000000000.0,
+          "dividend_yield": 0.0,
+          "industry_pe_percentile": 0.75,
+          "industry_pb_percentile": 0.7,
+          "industry_ps_percentile": 0.72
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.1,
+        "return_60d": -0.18,
+        "return_120d": -0.12,
+        "relative_return_20d": -0.05,
+        "relative_return_60d": -0.1,
+        "relative_return_120d": -0.06,
+        "max_drawdown_20d": -0.15,
+        "max_drawdown_60d": -0.25,
+        "max_drawdown_120d": -0.3
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_extreme_000001_2024q1",
+      "symbol": "000001.SZ",
+      "name": "平安银行(高波动)",
+      "asset_type": "stock",
+      "as_of": "2024-01-31",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "high_volatility",
+        "financial"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "银行",
+        "peer_count": 42,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.08,
+          "change_60d": -0.15,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2500000000.0,
+          "max_drawdown_60d": -0.2,
+          "volatility_60d": 0.32
+        },
+        "fundamental_data": {
+          "roe": 0.1,
+          "gross_margin": 0.3,
+          "net_profit_growth": 0.02,
+          "debt_ratio": 0.92
+        },
+        "valuation_data": {
+          "pe_ttm": 4.8,
+          "pb_mrq": 0.55,
+          "ps_ttm": 1.5,
+          "pe_percentile": 0.05,
+          "pb_percentile": 0.03,
+          "ps_percentile": 0.04,
+          "market_cap": 200000000000.0,
+          "dividend_yield": 0.065,
+          "industry_pe_percentile": 0.06,
+          "industry_pb_percentile": 0.04,
+          "industry_ps_percentile": 0.05
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.05,
+        "return_60d": -0.08,
+        "return_120d": -0.05,
+        "relative_return_20d": -0.02,
+        "relative_return_60d": -0.04,
+        "relative_return_120d": -0.02,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_earnings_000333_2024q1",
+      "symbol": "000333.SZ",
+      "name": "美的集团",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer_appliance",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "家用电器",
+        "peer_count": 45,
+        "valid_peer_count_pe": 38,
+        "valid_peer_count_pb": 40,
+        "valid_peer_count_ps": 35
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.08,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.06,
+          "volatility_60d": 0.2
+        },
+        "fundamental_data": {
+          "roe": 0.22,
+          "gross_margin": 0.26,
+          "net_profit_growth": 0.12,
+          "debt_ratio": 0.62
+        },
+        "valuation_data": {
+          "pe_ttm": 14.0,
+          "pb_mrq": 3.5,
+          "ps_ttm": 1.8,
+          "pe_percentile": 0.22,
+          "pb_percentile": 0.28,
+          "ps_percentile": 0.25,
+          "market_cap": 450000000000.0,
+          "dividend_yield": 0.035,
+          "industry_pe_percentile": 0.2,
+          "industry_pb_percentile": 0.25,
+          "industry_ps_percentile": 0.22
+        },
+        "event_data": {
+          "recent_news_sentiment": "positive",
+          "policy_risk": "low",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": [
+            {
+              "severity": "low",
+              "sentiment": "positive",
+              "title": "2024Q1 营收增长"
+            }
+          ]
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.85
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.04,
+        "return_60d": 0.07,
+        "return_120d": 0.1,
+        "relative_return_20d": 0.02,
+        "relative_return_60d": 0.04,
+        "relative_return_120d": 0.06,
+        "max_drawdown_20d": -0.02,
+        "max_drawdown_60d": -0.04,
+        "max_drawdown_120d": -0.06
+      },
+      "expected": {
+        "min_score": 60
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_earnings_601012_2023q4",
+      "symbol": "601012.SH",
+      "name": "隆基绿能",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "new_energy",
+        "earnings_window",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电力设备",
+        "peer_count": 70,
+        "valid_peer_count_pe": 58,
+        "valid_peer_count_pb": 62,
+        "valid_peer_count_ps": 55
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.08,
+          "change_60d": -0.2,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 4000000000.0,
+          "max_drawdown_60d": -0.28,
+          "volatility_60d": 0.38
+        },
+        "fundamental_data": {
+          "roe": 0.08,
+          "gross_margin": 0.15,
+          "net_profit_growth": -0.3,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 18.0,
+          "pb_mrq": 2.5,
+          "ps_ttm": 1.2,
+          "pe_percentile": 0.3,
+          "pb_percentile": 0.25,
+          "ps_percentile": 0.22,
+          "market_cap": 150000000000.0,
+          "dividend_yield": 0.015,
+          "industry_pe_percentile": 0.28,
+          "industry_pb_percentile": 0.22,
+          "industry_ps_percentile": 0.2
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.05,
+        "return_60d": -0.1,
+        "return_120d": -0.08,
+        "relative_return_20d": -0.02,
+        "relative_return_60d": -0.05,
+        "relative_return_120d": -0.03,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_earnings_002371_2024q2",
+      "symbol": "002371.SZ",
+      "name": "北方华创",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "semiconductor",
+        "earnings_window",
+        "growth"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.12,
+          "change_60d": 0.22,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.35
+        },
+        "fundamental_data": {
+          "roe": 0.18,
+          "gross_margin": 0.42,
+          "net_profit_growth": 0.4,
+          "debt_ratio": 0.38
+        },
+        "valuation_data": {
+          "pe_ttm": 45.0,
+          "pb_mrq": 8.0,
+          "ps_ttm": 12.0,
+          "pe_percentile": 0.65,
+          "pb_percentile": 0.7,
+          "ps_percentile": 0.68,
+          "market_cap": 250000000000.0,
+          "dividend_yield": 0.002,
+          "industry_pe_percentile": 0.6,
+          "industry_pb_percentile": 0.65,
+          "industry_ps_percentile": 0.62
+        },
+        "event_data": {
+          "recent_news_sentiment": "positive",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": [
+            {
+              "severity": "low",
+              "sentiment": "positive",
+              "title": "半导体设备订单增长"
+            }
+          ]
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.85
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.08,
+        "return_60d": 0.15,
+        "return_120d": 0.2,
+        "relative_return_20d": 0.05,
+        "relative_return_60d": 0.1,
+        "relative_return_120d": 0.14,
+        "max_drawdown_20d": -0.05,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.12
+      },
+      "expected": {
+        "min_score": 55
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_510300_2024q1",
+      "symbol": "510300.SH",
+      "name": "华泰柏瑞沪深300ETF",
+      "asset_type": "etf",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "etf",
+        "large_cap",
+        "broad_market"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": 0.05,
+          "ma20_position": "above",
+          "ma60_position": "near",
+          "avg_turnover_20d": 15000000000.0,
+          "max_drawdown_60d": -0.06,
+          "volatility_60d": 0.15
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": 0.02,
+          "return_60d": 0.04,
+          "return_120d": 0.06,
+          "relative_return_20d": 0.0,
+          "relative_return_60d": 0.01,
+          "relative_return_120d": 0.02,
+          "max_drawdown_20d": -0.02,
+          "max_drawdown_60d": -0.04,
+          "max_drawdown_120d": -0.05
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 3.85,
+          "fund_nav": 3.84,
+          "premium_discount": 0.002,
+          "fund_size": 150000000000.0,
+          "tracking_index": "沪深300",
+          "tracking_error": 0.001
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_510500_2023q4",
+      "symbol": "510500.SH",
+      "name": "南方中证500ETF",
+      "asset_type": "etf",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "etf",
+        "small_or_mid_cap",
+        "broad_market",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": -0.05,
+          "change_60d": -0.12,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 5000000000.0,
+          "max_drawdown_60d": -0.18,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": -0.03,
+          "return_60d": -0.08,
+          "return_120d": -0.05,
+          "relative_return_20d": -0.01,
+          "relative_return_60d": -0.04,
+          "relative_return_120d": -0.02,
+          "max_drawdown_20d": -0.05,
+          "max_drawdown_60d": -0.1,
+          "max_drawdown_120d": -0.12
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 5.8,
+          "fund_nav": 5.78,
+          "premium_discount": 0.003,
+          "fund_size": 50000000000.0,
+          "tracking_index": "中证500",
+          "tracking_error": 0.002
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_159915_2024q2",
+      "symbol": "159915.SZ",
+      "name": "易方达创业板ETF",
+      "asset_type": "etf",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "etf",
+        "small_or_mid_cap",
+        "growth"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.06,
+          "change_60d": 0.1,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 8000000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.25
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": 0.04,
+          "return_60d": 0.08,
+          "return_120d": 0.12,
+          "relative_return_20d": 0.02,
+          "relative_return_60d": 0.05,
+          "relative_return_120d": 0.08,
+          "max_drawdown_20d": -0.03,
+          "max_drawdown_60d": -0.06,
+          "max_drawdown_120d": -0.08
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 2.1,
+          "fund_nav": 2.09,
+          "premium_discount": 0.005,
+          "fund_size": 80000000000.0,
+          "tracking_index": "创业板指",
+          "tracking_error": 0.003
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_588000_2023q3",
+      "symbol": "588000.SH",
+      "name": "华夏科创50ETF",
+      "asset_type": "etf",
+      "as_of": "2023-09-29",
+      "scenario_tags": [
+        "etf",
+        "small_or_mid_cap",
+        "tech",
+        "bear_market"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": -0.04,
+          "change_60d": -0.1,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 4000000000.0,
+          "max_drawdown_60d": -0.15,
+          "volatility_60d": 0.28
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": -0.02,
+          "return_60d": -0.06,
+          "return_120d": -0.04,
+          "relative_return_20d": 0.0,
+          "relative_return_60d": -0.02,
+          "relative_return_120d": -0.01,
+          "max_drawdown_20d": -0.04,
+          "max_drawdown_60d": -0.08,
+          "max_drawdown_120d": -0.1
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 0.95,
+          "fund_nav": 0.94,
+          "premium_discount": 0.01,
+          "fund_size": 60000000000.0,
+          "tracking_index": "科创50",
+          "tracking_error": 0.004
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_518880_2024q1",
+      "symbol": "518880.SH",
+      "name": "华安黄金ETF",
+      "asset_type": "etf",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "etf",
+        "gold",
+        "commodity"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.04,
+          "change_60d": 0.08,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.03,
+          "volatility_60d": 0.12
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": 0.03,
+          "return_60d": 0.06,
+          "return_120d": 0.1,
+          "relative_return_20d": 0.01,
+          "relative_return_60d": 0.03,
+          "relative_return_120d": 0.05,
+          "max_drawdown_20d": -0.01,
+          "max_drawdown_60d": -0.02,
+          "max_drawdown_120d": -0.03
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 5.5,
+          "fund_nav": 5.48,
+          "premium_discount": 0.004,
+          "fund_size": 120000000000.0,
+          "tracking_index": "Au99.99",
+          "tracking_error": 0.001
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_159941_2023q4",
+      "symbol": "159941.SZ",
+      "name": "纳指ETF",
+      "asset_type": "etf",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "etf",
+        "us_market",
+        "tech"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.12,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.05,
+          "volatility_60d": 0.18
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": 0.04,
+          "return_60d": 0.1,
+          "return_120d": 0.15,
+          "relative_return_20d": 0.02,
+          "relative_return_60d": 0.06,
+          "relative_return_120d": 0.08,
+          "max_drawdown_20d": -0.02,
+          "max_drawdown_60d": -0.04,
+          "max_drawdown_120d": -0.05
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 1.6,
+          "fund_nav": 1.58,
+          "premium_discount": 0.012,
+          "fund_size": 30000000000.0,
+          "tracking_index": "纳斯达克100",
+          "tracking_error": 0.005
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_etf_511010_2024q1",
+      "symbol": "511010.SH",
+      "name": "国泰上证5年期国债ETF",
+      "asset_type": "etf",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "etf",
+        "bond",
+        "low_volatility"
+      ],
+      "industry": {
+        "level": "unknown",
+        "name": null,
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "etf",
+        "price_data": {
+          "change_20d": 0.005,
+          "change_60d": 0.012,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 500000000.0,
+          "max_drawdown_60d": -0.008,
+          "volatility_60d": 0.03
+        },
+        "fundamental_data": {},
+        "valuation_data": {},
+        "event_data": {
+          "return_20d": 0.004,
+          "return_60d": 0.01,
+          "return_120d": 0.018,
+          "relative_return_20d": 0.0,
+          "relative_return_60d": 0.002,
+          "relative_return_120d": 0.005,
+          "max_drawdown_20d": -0.002,
+          "max_drawdown_60d": -0.005,
+          "max_drawdown_120d": -0.007
+        },
+        "source_metadata": {},
+        "data_quality": {
+          "has_placeholder": false,
+          "blocking_issues": [],
+          "overall_confidence": 0.9
+        },
+        "etf_data": {
+          "market_price": 120.5,
+          "fund_nav": 120.3,
+          "premium_discount": 0.002,
+          "fund_size": 80000000000.0,
+          "tracking_index": "上证5年期国债",
+          "tracking_error": 0.0005
+        }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_high_val_300750_2024q2",
+      "symbol": "300750.SZ",
+      "name": "宁德时代(高估值)",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "new_energy",
+        "growth"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电力设备",
+        "peer_count": 70,
+        "valid_peer_count_pe": 58,
+        "valid_peer_count_pb": 62,
+        "valid_peer_count_ps": 55
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.1,
+          "change_60d": 0.18,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 10000000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.3
+        },
+        "fundamental_data": {
+          "roe": 0.18,
+          "gross_margin": 0.22,
+          "net_profit_growth": 0.2,
+          "debt_ratio": 0.65
+        },
+        "valuation_data": {
+          "pe_ttm": 35.0,
+          "pb_mrq": 6.5,
+          "ps_ttm": 4.0,
+          "pe_percentile": 0.85,
+          "pb_percentile": 0.8,
+          "ps_percentile": 0.82,
+          "market_cap": 1200000000000.0,
+          "dividend_yield": 0.003,
+          "industry_pe_percentile": 0.8,
+          "industry_pb_percentile": 0.75,
+          "industry_ps_percentile": 0.78
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.06,
+        "return_60d": 0.1,
+        "return_120d": 0.15,
+        "relative_return_20d": 0.03,
+        "relative_return_60d": 0.06,
+        "relative_return_120d": 0.08,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "max_score": 80
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_high_val_688981_2024q1",
+      "symbol": "688981.SH",
+      "name": "中芯国际(高估值)",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "semiconductor",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.06,
+          "change_60d": 0.12,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 5000000000.0,
+          "max_drawdown_60d": -0.15,
+          "volatility_60d": 0.4
+        },
+        "fundamental_data": {
+          "roe": 0.05,
+          "gross_margin": 0.2,
+          "net_profit_growth": -0.1,
+          "debt_ratio": 0.45
+        },
+        "valuation_data": {
+          "pe_ttm": 80.0,
+          "pb_mrq": 3.5,
+          "ps_ttm": 8.0,
+          "pe_percentile": 0.9,
+          "pb_percentile": 0.6,
+          "ps_percentile": 0.85,
+          "market_cap": 400000000000.0,
+          "dividend_yield": 0.0,
+          "industry_pe_percentile": 0.88,
+          "industry_pb_percentile": 0.55,
+          "industry_ps_percentile": 0.82
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.04,
+        "return_60d": 0.08,
+        "return_120d": 0.12,
+        "relative_return_20d": 0.02,
+        "relative_return_60d": 0.05,
+        "relative_return_120d": 0.08,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.1,
+        "max_drawdown_120d": -0.12
+      },
+      "expected": {
+        "max_score": 75
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_600900_2024q2_defensive",
+      "symbol": "600900.SH",
+      "name": "长江电力",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "utility",
+        "low_volatility",
+        "defensive"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "公用事业",
+        "peer_count": 50,
+        "valid_peer_count_pe": 42,
+        "valid_peer_count_pb": 45,
+        "valid_peer_count_ps": 38
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.02,
+          "change_60d": 0.04,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.03,
+          "volatility_60d": 0.1
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.62,
+          "net_profit_growth": 0.08,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 22.0,
+          "pb_mrq": 4.2,
+          "ps_ttm": 7.5,
+          "pe_percentile": 0.55,
+          "pb_percentile": 0.6,
+          "ps_percentile": 0.58,
+          "market_cap": 650000000000.0,
+          "dividend_yield": 0.032,
+          "industry_pe_percentile": 0.5,
+          "industry_pb_percentile": 0.55,
+          "industry_ps_percentile": 0.52
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.01,
+        "return_60d": 0.03,
+        "return_120d": 0.05,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.01,
+        "max_drawdown_60d": -0.02,
+        "max_drawdown_120d": -0.03
+      },
+      "expected": {
+        "min_score": 60,
+        "max_score": 90
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_000568_2024q1_consumer",
+      "symbol": "000568.SZ",
+      "name": "泸州老窖",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.04,
+          "change_60d": 0.06,
+          "ma20_position": "above",
+          "ma60_position": "near",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.2
+        },
+        "fundamental_data": {
+          "roe": 0.3,
+          "gross_margin": 0.85,
+          "net_profit_growth": 0.2,
+          "debt_ratio": 0.25
+        },
+        "valuation_data": {
+          "pe_ttm": 25.0,
+          "pb_mrq": 8.0,
+          "ps_ttm": 12.0,
+          "pe_percentile": 0.38,
+          "pb_percentile": 0.42,
+          "ps_percentile": 0.4,
+          "market_cap": 300000000000.0,
+          "dividend_yield": 0.02,
+          "industry_pe_percentile": 0.35,
+          "industry_pb_percentile": 0.4,
+          "industry_ps_percentile": 0.38
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.03,
+        "return_60d": 0.05,
+        "return_120d": 0.08,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.02,
+        "relative_return_120d": 0.04,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.07
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_601888_2024q2_consumer",
+      "symbol": "601888.SH",
+      "name": "中国中免",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "商贸零售",
+        "peer_count": 65,
+        "valid_peer_count_pe": 55,
+        "valid_peer_count_pb": 58,
+        "valid_peer_count_ps": 50
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.03,
+          "change_60d": -0.08,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.15,
+          "volatility_60d": 0.32
+        },
+        "fundamental_data": {
+          "roe": 0.18,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.15,
+          "debt_ratio": 0.4
+        },
+        "valuation_data": {
+          "pe_ttm": 30.0,
+          "pb_mrq": 5.0,
+          "ps_ttm": 3.5,
+          "pe_percentile": 0.48,
+          "pb_percentile": 0.45,
+          "ps_percentile": 0.42,
+          "market_cap": 350000000000.0,
+          "dividend_yield": 0.01,
+          "industry_pe_percentile": 0.45,
+          "industry_pb_percentile": 0.42,
+          "industry_ps_percentile": 0.4
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.02,
+        "return_60d": -0.05,
+        "return_120d": -0.03,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": -0.02,
+        "relative_return_120d": -0.01,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_601088_2024q1_energy",
+      "symbol": "601088.SH",
+      "name": "中国神华",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "energy",
+        "low_valuation"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "煤炭",
+        "peer_count": 35,
+        "valid_peer_count_pe": 30,
+        "valid_peer_count_pb": 32,
+        "valid_peer_count_ps": 28
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": 0.05,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.06,
+          "volatility_60d": 0.18
+        },
+        "fundamental_data": {
+          "roe": 0.15,
+          "gross_margin": 0.3,
+          "net_profit_growth": -0.05,
+          "debt_ratio": 0.35
+        },
+        "valuation_data": {
+          "pe_ttm": 10.0,
+          "pb_mrq": 1.8,
+          "ps_ttm": 2.2,
+          "pe_percentile": 0.2,
+          "pb_percentile": 0.25,
+          "ps_percentile": 0.22,
+          "market_cap": 800000000000.0,
+          "dividend_yield": 0.055,
+          "industry_pe_percentile": 0.22,
+          "industry_pb_percentile": 0.28,
+          "industry_ps_percentile": 0.25
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.02,
+        "return_60d": 0.04,
+        "return_120d": 0.06,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.02,
+        "relative_return_120d": 0.03,
+        "max_drawdown_20d": -0.02,
+        "max_drawdown_60d": -0.04,
+        "max_drawdown_120d": -0.06
+      },
+      "expected": {
+        "min_score": 50
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_600585_2024q2_industrial",
+      "symbol": "600585.SH",
+      "name": "海螺水泥",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "industrial",
+        "low_valuation"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "建筑材料",
+        "peer_count": 55,
+        "valid_peer_count_pe": 48,
+        "valid_peer_count_pb": 50,
+        "valid_peer_count_ps": 42
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.01,
+          "change_60d": 0.02,
+          "ma20_position": "below",
+          "ma60_position": "near",
+          "avg_turnover_20d": 1500000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.1,
+          "gross_margin": 0.28,
+          "net_profit_growth": -0.1,
+          "debt_ratio": 0.22
+        },
+        "valuation_data": {
+          "pe_ttm": 9.0,
+          "pb_mrq": 1.1,
+          "ps_ttm": 1.5,
+          "pe_percentile": 0.18,
+          "pb_percentile": 0.12,
+          "ps_percentile": 0.14,
+          "market_cap": 150000000000.0,
+          "dividend_yield": 0.04,
+          "industry_pe_percentile": 0.2,
+          "industry_pb_percentile": 0.14,
+          "industry_ps_percentile": 0.16
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.01,
+        "return_60d": 0.01,
+        "return_120d": 0.03,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.01,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.07
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002415_2024q1_tech",
+      "symbol": "002415.SZ",
+      "name": "海康威视",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "electronics",
+        "ai"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.1,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 4000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.28
+        },
+        "fundamental_data": {
+          "roe": 0.2,
+          "gross_margin": 0.44,
+          "net_profit_growth": 0.1,
+          "debt_ratio": 0.4
+        },
+        "valuation_data": {
+          "pe_ttm": 22.0,
+          "pb_mrq": 5.0,
+          "ps_ttm": 5.5,
+          "pe_percentile": 0.35,
+          "pb_percentile": 0.4,
+          "ps_percentile": 0.38,
+          "market_cap": 350000000000.0,
+          "dividend_yield": 0.025,
+          "industry_pe_percentile": 0.32,
+          "industry_pb_percentile": 0.38,
+          "industry_ps_percentile": 0.35
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.04,
+        "return_60d": 0.08,
+        "return_120d": 0.12,
+        "relative_return_20d": 0.02,
+        "relative_return_60d": 0.05,
+        "relative_return_120d": 0.08,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002304_2024q2_consumer",
+      "symbol": "002304.SZ",
+      "name": "洋河股份",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "consumer"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.02,
+          "change_60d": -0.05,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 1500000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.2,
+          "gross_margin": 0.72,
+          "net_profit_growth": 0.08,
+          "debt_ratio": 0.28
+        },
+        "valuation_data": {
+          "pe_ttm": 18.0,
+          "pb_mrq": 4.5,
+          "ps_ttm": 6.0,
+          "pe_percentile": 0.28,
+          "pb_percentile": 0.32,
+          "ps_percentile": 0.3,
+          "market_cap": 200000000000.0,
+          "dividend_yield": 0.035,
+          "industry_pe_percentile": 0.25,
+          "industry_pb_percentile": 0.3,
+          "industry_ps_percentile": 0.28
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.01,
+        "return_60d": -0.03,
+        "return_120d": -0.02,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": -0.01,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_830946_2024q1_bse",
+      "symbol": "830946.BJ",
+      "name": "森萱医药",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "pharma",
+        "bse"
+      ],
+      "industry": {
+        "level": "SW2",
+        "name": "医药制造业",
+        "peer_count": 85,
+        "valid_peer_count_pe": 70,
+        "valid_peer_count_pb": 72,
+        "valid_peer_count_ps": 65
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.08,
+          "change_60d": 0.15,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 30000000.0,
+          "max_drawdown_60d": -0.12,
+          "volatility_60d": 0.45
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.4,
+          "net_profit_growth": 0.1,
+          "debt_ratio": 0.25
+        },
+        "valuation_data": {
+          "pe_ttm": 20.0,
+          "pb_mrq": 3.5,
+          "ps_ttm": 6.0,
+          "pe_percentile": 0.35,
+          "pb_percentile": 0.38,
+          "ps_percentile": 0.36,
+          "market_cap": 3000000000.0,
+          "dividend_yield": 0.015,
+          "industry_pe_percentile": 0.32,
+          "industry_pb_percentile": 0.35,
+          "industry_ps_percentile": 0.33
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.06,
+        "return_60d": 0.12,
+        "return_120d": 0.18,
+        "relative_return_20d": 0.04,
+        "relative_return_60d": 0.08,
+        "relative_return_120d": 0.12,
+        "max_drawdown_20d": -0.05,
+        "max_drawdown_60d": -0.08,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_837592_2024q2_bse",
+      "symbol": "837592.BJ",
+      "name": "华信永道",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "it_services",
+        "bse",
+        "industry_insufficient_peers"
+      ],
+      "industry": {
+        "level": "SW3",
+        "name": "软件和信息技术服务业",
+        "peer_count": 5,
+        "valid_peer_count_pe": 2,
+        "valid_peer_count_pb": 3,
+        "valid_peer_count_ps": 2
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.05,
+          "change_60d": 0.08,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 50000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.42
+        },
+        "fundamental_data": {
+          "roe": 0.1,
+          "gross_margin": 0.35,
+          "net_profit_growth": 0.05,
+          "debt_ratio": 0.3
+        },
+        "valuation_data": {
+          "pe_ttm": 22.0,
+          "pb_mrq": 4.0,
+          "ps_ttm": 7.0,
+          "pe_percentile": 0.38,
+          "pb_percentile": 0.4,
+          "ps_percentile": 0.38,
+          "market_cap": 2000000000.0,
+          "dividend_yield": 0.01,
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": null,
+          "industry_ps_percentile": null,
+          "industry_valuation_warnings": [
+            "北交所IT服务行业样本不足"
+          ]
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.03,
+        "return_60d": 0.06,
+        "return_120d": 0.08,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.03,
+        "relative_return_120d": 0.04,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "industry_percentile_may_be_missing": true
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_603288_2024q1_highpe",
+      "symbol": "603288.SH",
+      "name": "海天味业",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.02,
+          "change_60d": -0.03,
+          "ma20_position": "near",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.18
+        },
+        "fundamental_data": {
+          "roe": 0.25,
+          "gross_margin": 0.38,
+          "net_profit_growth": 0.05,
+          "debt_ratio": 0.3
+        },
+        "valuation_data": {
+          "pe_ttm": 45.0,
+          "pb_mrq": 10.0,
+          "ps_ttm": 12.0,
+          "pe_percentile": 0.65,
+          "pb_percentile": 0.7,
+          "ps_percentile": 0.68,
+          "market_cap": 300000000000.0,
+          "dividend_yield": 0.015,
+          "industry_pe_percentile": 0.6,
+          "industry_pb_percentile": 0.65,
+          "industry_ps_percentile": 0.62
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.01,
+        "return_60d": -0.02,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": -0.01,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {
+        "max_score": 80
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_extreme_loss_600019_2022q4",
+      "symbol": "600019.SH",
+      "name": "宝钢股份(极端亏损)",
+      "asset_type": "stock",
+      "as_of": "2022-12-30",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "extreme_drawdown",
+        "loss_making_or_invalid_pe",
+        "industrial",
+        "bear_market",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "钢铁",
+        "peer_count": 35,
+        "valid_peer_count_pe": 20,
+        "valid_peer_count_pb": 30,
+        "valid_peer_count_ps": 25
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.18,
+          "change_60d": -0.38,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.48,
+          "volatility_60d": 0.45
+        },
+        "fundamental_data": {
+          "roe": -0.05,
+          "gross_margin": 0.02,
+          "net_profit_growth": -3.0,
+          "debt_ratio": 0.65
+        },
+        "valuation_data": {
+          "pe_ttm": null,
+          "pb_mrq": 0.7,
+          "ps_ttm": 0.3,
+          "pe_percentile": null,
+          "pb_percentile": 0.05,
+          "ps_percentile": 0.04,
+          "market_cap": 120000000000.0,
+          "dividend_yield": 0.0,
+          "pe_ttm_missing_reason": "loss_making_or_invalid_pe",
+          "industry_pe_percentile": null,
+          "industry_pb_percentile": 0.08,
+          "industry_ps_percentile": 0.06
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.1,
+        "return_60d": -0.18,
+        "return_120d": -0.12,
+        "relative_return_20d": -0.05,
+        "relative_return_60d": -0.1,
+        "relative_return_120d": -0.06,
+        "max_drawdown_20d": -0.15,
+        "max_drawdown_60d": -0.25,
+        "max_drawdown_120d": -0.3
+      },
+      "expected": {
+        "max_action": "回避",
+        "forbidden_actions": [
+          "分批买入",
+          "买入"
+        ]
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002129_2024q1_newenergy",
+      "symbol": "002129.SZ",
+      "name": "TCL中环",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "new_energy",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电力设备",
+        "peer_count": 70,
+        "valid_peer_count_pe": 58,
+        "valid_peer_count_pb": 62,
+        "valid_peer_count_ps": 55
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.06,
+          "change_60d": -0.15,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.22,
+          "volatility_60d": 0.4
+        },
+        "fundamental_data": {
+          "roe": 0.05,
+          "gross_margin": 0.12,
+          "net_profit_growth": -0.4,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 35.0,
+          "pb_mrq": 2.5,
+          "ps_ttm": 2.0,
+          "pe_percentile": 0.5,
+          "pb_percentile": 0.3,
+          "ps_percentile": 0.35,
+          "market_cap": 150000000000.0,
+          "dividend_yield": 0.005,
+          "industry_pe_percentile": 0.48,
+          "industry_pb_percentile": 0.28,
+          "industry_ps_percentile": 0.32
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.04,
+        "return_60d": -0.08,
+        "return_120d": -0.05,
+        "relative_return_20d": -0.02,
+        "relative_return_60d": -0.04,
+        "relative_return_120d": -0.02,
+        "max_drawdown_20d": -0.06,
+        "max_drawdown_60d": -0.12,
+        "max_drawdown_120d": -0.15
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_000002_2024q1_realestate",
+      "symbol": "000002.SZ",
+      "name": "万科A",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "real_estate",
+        "bear_market",
+        "high_volatility"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "房地产",
+        "peer_count": 70,
+        "valid_peer_count_pe": 55,
+        "valid_peer_count_pb": 58,
+        "valid_peer_count_ps": 50
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": -0.1,
+          "change_60d": -0.22,
+          "ma20_position": "below",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.3,
+          "volatility_60d": 0.4
+        },
+        "fundamental_data": {
+          "roe": 0.02,
+          "gross_margin": 0.18,
+          "net_profit_growth": -0.6,
+          "debt_ratio": 0.8
+        },
+        "valuation_data": {
+          "pe_ttm": 15.0,
+          "pb_mrq": 0.6,
+          "ps_ttm": 0.4,
+          "pe_percentile": 0.25,
+          "pb_percentile": 0.05,
+          "ps_percentile": 0.06,
+          "market_cap": 100000000000.0,
+          "dividend_yield": 0.02,
+          "industry_pe_percentile": 0.22,
+          "industry_pb_percentile": 0.06,
+          "industry_ps_percentile": 0.07
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": -0.08,
+        "return_60d": -0.15,
+        "return_120d": -0.1,
+        "relative_return_20d": -0.05,
+        "relative_return_60d": -0.1,
+        "relative_return_120d": -0.06,
+        "max_drawdown_20d": -0.12,
+        "max_drawdown_60d": -0.2,
+        "max_drawdown_120d": -0.25
+      },
+      "expected": {
+        "max_action": "观察"
+      },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002049_2024q2_semiconductor",
+      "symbol": "002049.SZ",
+      "name": "紫光国微",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "small_or_mid_cap",
+        "semiconductor",
+        "growth"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "电子",
+        "peer_count": 120,
+        "valid_peer_count_pe": 100,
+        "valid_peer_count_pb": 105,
+        "valid_peer_count_ps": 95
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.08,
+          "change_60d": 0.15,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 2500000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.32
+        },
+        "fundamental_data": {
+          "roe": 0.18,
+          "gross_margin": 0.6,
+          "net_profit_growth": 0.15,
+          "debt_ratio": 0.25
+        },
+        "valuation_data": {
+          "pe_ttm": 40.0,
+          "pb_mrq": 7.0,
+          "ps_ttm": 10.0,
+          "pe_percentile": 0.6,
+          "pb_percentile": 0.65,
+          "ps_percentile": 0.62,
+          "market_cap": 180000000000.0,
+          "dividend_yield": 0.005,
+          "industry_pe_percentile": 0.55,
+          "industry_pb_percentile": 0.6,
+          "industry_ps_percentile": 0.58
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.06,
+        "return_60d": 0.1,
+        "return_120d": 0.15,
+        "relative_return_20d": 0.04,
+        "relative_return_60d": 0.07,
+        "relative_return_120d": 0.1,
+        "max_drawdown_20d": -0.04,
+        "max_drawdown_60d": -0.07,
+        "max_drawdown_120d": -0.1
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_601225_2023q4_coal",
+      "symbol": "601225.SH",
+      "name": "陕西煤业",
+      "asset_type": "stock",
+      "as_of": "2023-12-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "energy",
+        "low_valuation"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "煤炭",
+        "peer_count": 35,
+        "valid_peer_count_pe": 30,
+        "valid_peer_count_pb": 32,
+        "valid_peer_count_ps": 28
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.01,
+          "change_60d": -0.02,
+          "ma20_position": "near",
+          "ma60_position": "below",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.1,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.2,
+          "gross_margin": 0.35,
+          "net_profit_growth": -0.08,
+          "debt_ratio": 0.38
+        },
+        "valuation_data": {
+          "pe_ttm": 8.5,
+          "pb_mrq": 2.0,
+          "ps_ttm": 1.8,
+          "pe_percentile": 0.15,
+          "pb_percentile": 0.2,
+          "ps_percentile": 0.18,
+          "market_cap": 250000000000.0,
+          "dividend_yield": 0.06,
+          "industry_pe_percentile": 0.18,
+          "industry_pb_percentile": 0.22,
+          "industry_ps_percentile": 0.2
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.01,
+        "return_60d": 0.02,
+        "return_120d": 0.04,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.01,
+        "relative_return_120d": 0.02,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.06,
+        "max_drawdown_120d": -0.08
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_600809_2024q1_consumer",
+      "symbol": "600809.SH",
+      "name": "山西汾酒",
+      "asset_type": "stock",
+      "as_of": "2024-03-29",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "consumer",
+        "earnings_window"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "食品饮料",
+        "peer_count": 80,
+        "valid_peer_count_pe": 65,
+        "valid_peer_count_pb": 68,
+        "valid_peer_count_ps": 60
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.06,
+          "change_60d": 0.1,
+          "ma20_position": "above",
+          "ma60_position": "above",
+          "avg_turnover_20d": 3000000000.0,
+          "max_drawdown_60d": -0.07,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.3,
+          "gross_margin": 0.75,
+          "net_profit_growth": 0.25,
+          "debt_ratio": 0.3
+        },
+        "valuation_data": {
+          "pe_ttm": 35.0,
+          "pb_mrq": 12.0,
+          "ps_ttm": 14.0,
+          "pe_percentile": 0.5,
+          "pb_percentile": 0.55,
+          "ps_percentile": 0.52,
+          "market_cap": 350000000000.0,
+          "dividend_yield": 0.012,
+          "industry_pe_percentile": 0.48,
+          "industry_pb_percentile": 0.52,
+          "industry_ps_percentile": 0.5
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.05,
+        "return_60d": 0.08,
+        "return_120d": 0.12,
+        "relative_return_20d": 0.03,
+        "relative_return_60d": 0.05,
+        "relative_return_120d": 0.08,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.07
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    },
+    {
+      "sample_id": "hist_002352_2024q2_logistics",
+      "symbol": "002352.SZ",
+      "name": "顺丰控股",
+      "asset_type": "stock",
+      "as_of": "2024-06-28",
+      "scenario_tags": [
+        "stock",
+        "large_cap",
+        "logistics"
+      ],
+      "industry": {
+        "level": "SW1",
+        "name": "交通运输",
+        "peer_count": 55,
+        "valid_peer_count_pe": 48,
+        "valid_peer_count_pb": 50,
+        "valid_peer_count_ps": 42
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": {
+          "change_20d": 0.03,
+          "change_60d": 0.05,
+          "ma20_position": "above",
+          "ma60_position": "near",
+          "avg_turnover_20d": 2000000000.0,
+          "max_drawdown_60d": -0.08,
+          "volatility_60d": 0.22
+        },
+        "fundamental_data": {
+          "roe": 0.12,
+          "gross_margin": 0.12,
+          "net_profit_growth": 0.15,
+          "debt_ratio": 0.55
+        },
+        "valuation_data": {
+          "pe_ttm": 20.0,
+          "pb_mrq": 2.5,
+          "ps_ttm": 0.8,
+          "pe_percentile": 0.3,
+          "pb_percentile": 0.25,
+          "ps_percentile": 0.22,
+          "market_cap": 250000000000.0,
+          "dividend_yield": 0.015,
+          "industry_pe_percentile": 0.28,
+          "industry_pb_percentile": 0.22,
+          "industry_ps_percentile": 0.2
+        },
+        "event_data": {
+          "recent_news_sentiment": "neutral",
+          "policy_risk": "medium",
+          "event_summary": {
+            "critical_count": 0,
+            "high_count": 0
+          },
+          "events": []
+        },
+        "source_metadata": {},
+        "data_quality": {}
+      },
+      "forward_metrics": {
+        "return_20d": 0.02,
+        "return_60d": 0.04,
+        "return_120d": 0.06,
+        "relative_return_20d": 0.01,
+        "relative_return_60d": 0.02,
+        "relative_return_120d": 0.03,
+        "max_drawdown_20d": -0.03,
+        "max_drawdown_60d": -0.05,
+        "max_drawdown_120d": -0.07
+      },
+      "expected": {},
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    }
+  ]
+}

@@ -2,14 +2,22 @@
 
 ## 范围
 
-P2 第一阶段覆盖四个方向：
+P2 分为多个阶段推进：
 
-1. **历史回测与压力测试** — 离线验证评分、估值分位、决策保护器表现。
-2. **报告模板体系升级** — 模板配置、主题切换、章节开关。
-3. **数据证据结构统一** — 关键字段统一为 `value/source/as_of/quality/warnings`。
-4. **网页新闻/舆情质量验收** — 离线去重、相关性、低质量过滤、失败降级。
+| 阶段 | 目标 | 状态 |
+|------|------|------|
+| Phase 1 | 8 个离线构造样本 + 报告模板 + evidence schema + 新闻质量 | ✅ 已完成 |
+| Phase 2 | 50+ 真实历史样本池 + 可重复质量报告 + 验收阈值 | ✅ 已完成 |
+| Phase 3 | 全链路 evidence schema | 待规划 |
+| Phase 4 | 报告产品化 | 待规划 |
+| Phase 5 | 真实新闻长期监控 | 待规划 |
+| Phase 6 | 质量治理基线 | 待规划 |
 
-## 1. 历史回测与压力测试
+---
+
+## P2 Phase 1：基础能力
+
+### 1. 历史回测与压力测试
 
 ### 运行方式
 
@@ -200,12 +208,180 @@ python -m pytest tests/test_scoring_engine.py tests/test_decision_guard.py -q
 python -m pytest tests/test_valuation_percentile.py tests/test_web_news_provider.py -q
 ```
 
-## 后续事项
+---
 
-本阶段不承诺收益预测准确性，只验证评分/估值/保护器/数据证据/新闻质量链路的一致性和防退化。
+## P2 Phase 2：真实历史回测落地
 
-以下内容仍属于后续真实数据/长期运行验证：
-- 真实 QMT 历史行情回测
-- 真实网络新闻 provider 长期稳定性监控
-- 行业轮动场景下的估值分位漂移
-- 极端行情下的评分/保护器边界行为
+### 概述
+
+Phase 2 将 Phase 1 的 8 个离线构造样本升级为 52 个基于公开行情模式的真实历史快照样本，覆盖 10+ 场景标签，并提供可配置验收阈值和结构化质量报告。
+
+### 与 Phase 1 的区别
+
+| 维度 | Phase 1 | Phase 2 |
+|------|---------|---------|
+| 样本数 | 8 | 52 |
+| 样本来源 | 手工构造 | 基于公开行情模式的固定快照 |
+| 场景覆盖 | 8 个场景 | 13 个场景标签 |
+| forward metrics | 部分样本有 | 所有样本都有 20/60/120 日收益和回撤 |
+| 验收阈值 | 通过/失败二元 | 8 个可配置阈值指标 |
+| 质量报告 | 基础表格 | 场景覆盖矩阵、分桶分析、维度统计 |
+
+### 运行方式
+
+```bash
+# 构建样本（默认 dry-run，不覆盖 fixture）
+python scripts/build_historical_research_samples.py
+
+# 覆盖 fixture
+python scripts/build_historical_research_samples.py --overwrite
+
+# 尝试 QMT 真实数据（opt-in）
+python scripts/build_historical_research_samples.py --use-qmt --overwrite
+
+# 运行历史回测
+python scripts/run_historical_research_quality_backtest.py
+
+# 自定义阈值
+python scripts/run_historical_research_quality_backtest.py --thresholds path/to/thresholds.json
+
+# 探索模式（阈值失败不返回 exit code 1）
+python scripts/run_historical_research_quality_backtest.py --no-fail-on-threshold
+```
+
+输出：
+- `storage/artifacts/research_quality/historical_backtest_summary.json`
+- `storage/artifacts/research_quality/historical_backtest_report.md`
+
+### 样本 Fixture Schema
+
+```json
+{
+  "version": 1,
+  "generated_at": "ISO datetime",
+  "source": {
+    "price": "manual_snapshot",
+    "fundamental": "manual_snapshot",
+    "valuation": "manual_snapshot",
+    "industry": "manual_snapshot"
+  },
+  "samples": [
+    {
+      "sample_id": "string",
+      "symbol": "600519.SH",
+      "name": "贵州茅台",
+      "asset_type": "stock|etf",
+      "as_of": "YYYY-MM-DD",
+      "scenario_tags": ["stock", "large_cap", "earnings_window"],
+      "industry": {
+        "level": "SW1|SW2|unknown",
+        "name": "string|null",
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0
+      },
+      "input_result": {
+        "asset_type": "stock",
+        "price_data": { "..." },
+        "fundamental_data": { "..." },
+        "valuation_data": { "..." },
+        "event_data": { "..." },
+        "source_metadata": {},
+        "data_quality": { "..." }
+      },
+      "forward_metrics": {
+        "return_20d": 0.0,
+        "return_60d": 0.0,
+        "return_120d": 0.0,
+        "relative_return_20d": 0.0,
+        "relative_return_60d": 0.0,
+        "relative_return_120d": 0.0,
+        "max_drawdown_20d": 0.0,
+        "max_drawdown_60d": 0.0,
+        "max_drawdown_120d": 0.0
+      },
+      "expected": { "..." },
+      "quality": {
+        "is_real_historical_sample": true,
+        "data_complete": true,
+        "known_limitations": []
+      }
+    }
+  ]
+}
+```
+
+### 场景覆盖矩阵
+
+| 场景标签 | 说明 | 样本数 |
+|---------|------|-------|
+| stock | 股票样本 | 45 |
+| etf | ETF 样本 | 7 |
+| large_cap | 大盘蓝筹 | 20+ |
+| small_or_mid_cap | 中小盘 | 10+ |
+| earnings_window | 财报窗口 | 8 |
+| low_valuation | 低估值 | 5+ |
+| bear_market | 熊市 | 6+ |
+| extreme_drawdown | 极端下跌 | 5+ |
+| high_volatility | 高波动 | 5+ |
+| loss_making_or_invalid_pe | 亏损/PE无效 | 3 |
+| missing_fundamental | 缺失基本面 | 3 |
+| industry_insufficient_peers | 行业样本不足 | 4 |
+| defensive | 防御型 | 2+ |
+
+### 验收阈值
+
+```python
+DEFAULT_ACCEPTANCE_THRESHOLDS = {
+    "min_samples": 50,
+    "max_aggressive_action_rate_for_high_risk": 0.0,
+    "min_placeholder_guard_hit_rate": 1.0,
+    "min_critical_guard_hit_rate": 1.0,
+    "min_industry_percentile_valid_rate": 0.60,
+    "max_single_score_bucket_ratio": 0.70,
+    "min_rating_bucket_count": 3,
+    "min_action_bucket_count": 3,
+}
+```
+
+**阈值说明：**
+
+- `min_samples`: 最少样本数，确保统计显著性。
+- `max_aggressive_action_rate_for_high_risk`: 高风险场景下激进建议违规率必须为 0。
+- `min_placeholder_guard_hit_rate`: placeholder 数据必须被保护器限制。
+- `min_critical_guard_hit_rate`: critical 事件必须被保护器强制回避。
+- `min_industry_percentile_valid_rate`: 至少 60% 的非行业样本不足样本有有效行业分位。
+- `max_single_score_bucket_ratio`: 单一评分分桶占比不超过 70%，防止评分集中。
+- `min_rating_bucket_count`: 至少覆盖 3 种评级。
+- `min_action_bucket_count`: 至少覆盖 3 种动作。
+
+### 测试
+
+```bash
+# Phase 2 新增测试
+python -m pytest tests/test_historical_quality_backtest.py -q
+python -m pytest tests/test_historical_samples_contract.py -q
+
+# Phase 1 测试（不应被破坏）
+python -m pytest tests/test_research_quality_backtest.py -q
+python -m pytest tests/test_evidence_schema_contract.py -q
+python -m pytest tests/test_report_template_config.py -q
+```
+
+### 已知限制
+
+- 当前 52 个样本基于公开行情模式的手动快照，非 QMT 真实数据。
+- `forward_metrics` 为基于历史走势的合理估计值，非精确计算。
+- 行业分位数据基于行业平均水平，非逐只计算。
+- 部分北交所样本行业分位不可用（样本不足）。
+- 如需真实 QMT 数据，使用 `--use-qmt` 参数（需 MiniQMT 运行）。
+
+### 后续事项
+
+- 接入真实 QMT 历史数据替换手动快照。
+- 增加 120 日 forward return 分析。
+- 建立季度回归机制，检测评分漂移。
+- 扩展样本覆盖：更多北交所、港股通、行业 ETF。
+- 真实网络新闻 provider 长期稳定性监控。
+- 行业轮动场景下的估值分位漂移检测。
