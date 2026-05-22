@@ -144,6 +144,7 @@ def test_qmt_provider_auto_downloads_when_local_history_is_empty(monkeypatch):
     monkeypatch.setenv("QMT_AUTO_DOWNLOAD", "true")
     monkeypatch.setenv("QMT_HISTORY_START", "20250101")
     monkeypatch.setenv("QMT_HISTORY_END", "20260429")
+    monkeypatch.setenv("QMT_PRICE_AKSHARE_FALLBACK", "false")
 
     result = get_qmt_asset_data("600519.SH")
 
