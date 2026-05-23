@@ -16,6 +16,314 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# ── Provider enrichment (lazy imports to avoid circular deps) ─────
+
+
+def _get_csmar_provider():
+    from services.data.providers.local_csmar_daily_derived_provider import (
+        LocalCSMARDailyDerivedProvider,
+        is_csmar_daily_derived_enabled,
+    )
+    if not is_csmar_daily_derived_enabled():
+        return None
+    return LocalCSMARDailyDerivedProvider()
+
+
+def _get_eva_provider():
+    from services.data.providers.local_csmar_eva_structure_provider import (
+        LocalCSMAREVAStructureProvider,
+        is_eva_structure_enabled,
+    )
+    if not is_eva_structure_enabled():
+        return None
+    return LocalCSMAREVAStructureProvider()
+
+
+def _get_industry_provider():
+    try:
+        from services.data.providers.local_csmar_industry_provider import (
+            LocalCSMARIndustryProvider,
+        )
+        return LocalCSMARIndustryProvider()
+    except Exception:
+        return None
+
+
+def _compute_percentile_from_values(current: float, values: list[float]) -> float:
+    """Fraction of *values* that are <= current."""
+    if not values:
+        return 0.5
+    below = sum(1 for v in values if v <= current)
+    return below / len(values)
+
+
+def enrich_valuation_from_csmar(
+    symbol: str,
+    as_of: str,
+    close: float | None,
+) -> tuple[dict[str, Any], str]:
+    """Query CSMAR monthly_snapshots for PE/PB/PS/dividend_yield at as_of.
+
+    Returns (valuation_data, source_label).
+    source_label is one of: 'local_csmar_daily_derived', 'missing'.
+    """
+    provider = _get_csmar_provider()
+    if provider is None:
+        return {}, "missing"
+
+    # Get the latest snapshot on or before as_of
+    result = provider.get_as_of_metrics(
+        symbol, as_of, metrics=["pe", "pb", "pcf", "ps", "dividend_yield"]
+    )
+    if not result.metadata.success or not result.data.get("pe"):
+        return {}, "missing"
+
+    data = result.data
+    pe = data.get("pe")
+    pb = data.get("pb")
+    ps = data.get("ps")
+    dividend_yield = data.get("dividend_yield")
+
+    valuation: dict[str, Any] = {}
+    if pe is not None and pe > 0:
+        valuation["pe_ttm"] = round(float(pe), 4)
+    if pb is not None and pb > 0:
+        valuation["pb_mrq"] = round(float(pb), 4)
+    if ps is not None and ps > 0:
+        valuation["ps_ttm"] = round(float(ps), 4)
+    if dividend_yield is not None:
+        valuation["dividend_yield"] = round(float(dividend_yield), 6)
+
+    valuation["_csmar_trading_date"] = data.get("trading_date")
+
+    # Compute percentiles from historical monthly snapshots
+    _enrich_valuation_percentiles(provider, symbol, as_of, valuation)
+
+    return valuation, "local_csmar_daily_derived"
+
+
+def _enrich_valuation_percentiles(
+    provider,
+    symbol: str,
+    as_of: str,
+    valuation: dict[str, Any],
+) -> None:
+    """Compute PE/PB/PS percentiles from CSMAR monthly history <= as_of."""
+    for csmar_key, percentile_key, max_val in [
+        ("pe", "pe_percentile", 300),
+        ("pb", "pb_percentile", 50),
+        ("ps", "ps_percentile", 100),
+    ]:
+        current_val = valuation.get(f"{csmar_key}_tmn" if csmar_key != "pb" else "pb_mrq")
+        if csmar_key == "pe":
+            current_val = valuation.get("pe_ttm")
+        elif csmar_key == "pb":
+            current_val = valuation.get("pb_mrq")
+        elif csmar_key == "ps":
+            current_val = valuation.get("ps_ttm")
+        if current_val is None or current_val <= 0:
+            continue
+
+        # Fetch all monthly history <= as_of for this metric
+        monthly_result = provider.get_monthly_history(
+            symbols=[symbol],
+            metrics=[csmar_key],
+            end_date=as_of,
+        )
+        if not monthly_result.metadata.success or not monthly_result.data:
+            continue
+
+        series = [
+            float(row[csmar_key])
+            for row in monthly_result.data
+            if row.get(csmar_key) is not None and 0 < float(row[csmar_key]) <= max_val
+        ]
+        if len(series) >= 12:
+            valuation[percentile_key] = round(
+                _compute_percentile_from_values(current_val, series), 4
+            )
+            valuation[f"{percentile_key}_source"] = "local_csmar_daily_derived"
+            valuation[f"{percentile_key}_sample_count"] = len(series)
+
+
+def enrich_fundamental_from_eva(
+    symbol: str,
+    as_of: str,
+) -> tuple[dict[str, Any], str]:
+    """Query EVA eva_structure_history for share capital data at as_of.
+
+    Returns (fundamental_data, source_label).
+    We only populate fields provably available from EVA: total_volume,
+    float_volume, market_cap, float_market_cap, equity_per_share/bps.
+    We do NOT fabricate ROE, gross_margin, net_profit_growth, revenue_growth.
+    """
+    provider = _get_eva_provider()
+    if provider is None:
+        return {}, "missing"
+
+    result = provider.get_as_of_share_capital(symbol, as_of)
+    if not result.metadata.success:
+        return {}, "missing"
+
+    data = result.data
+    if not data.get("total_volume") and not data.get("market_cap"):
+        return {}, "missing"
+
+    fund: dict[str, Any] = {
+        "_eva_end_date": data.get("as_of"),
+        "source": "local_csmar_eva_structure",
+    }
+    # EVA provides share capital and market cap, not profitability metrics.
+    # We explicitly do NOT set roe, gross_margin, net_profit_growth, revenue_growth.
+    # These would need QMT financial which we are not integrating.
+    if data.get("equity_per_share"):
+        fund["bps"] = round(float(data["equity_per_share"]), 4)
+
+    return fund, "local_csmar_eva_structure"
+
+
+def enrich_valuation_from_eva(
+    symbol: str,
+    as_of: str,
+    close: float | None,
+) -> tuple[dict[str, Any], str]:
+    """Use EVA share capital data + QMT close to derive market_cap fields.
+
+    Returns (extra_valuation_fields, source_label).
+    """
+    provider = _get_eva_provider()
+    if provider is None:
+        return {}, "missing"
+
+    result = provider.get_as_of_share_capital(symbol, as_of)
+    if not result.metadata.success:
+        return {}, "missing"
+
+    data = result.data
+    extra: dict[str, Any] = {}
+
+    if data.get("market_cap"):
+        extra["market_cap"] = float(data["market_cap"])
+    if data.get("float_market_cap"):
+        extra["float_market_cap"] = float(data["float_market_cap"])
+
+    # Derive market_cap from close * total_volume if not directly available
+    if close and data.get("total_volume") and "market_cap" not in extra:
+        extra["market_cap"] = round(close * float(data["total_volume"]), 2)
+
+    if extra:
+        extra["_eva_end_date"] = data.get("as_of")
+        return extra, "local_csmar_eva_structure"
+
+    return {}, "missing"
+
+
+def _enrich_industry_percentiles(
+    symbol: str,
+    as_of: str,
+    industry_data: dict[str, Any],
+    valuation_data: dict[str, Any],
+    close: float | None,
+) -> None:
+    """Compute industry PE/PB/PS percentiles from peer monthly snapshots.
+
+    Modifies industry_data and valuation_data in place.
+    Only works when the industry provider has peer member data.
+    """
+    provider = _get_csmar_provider()
+    if provider is None:
+        return
+
+    members = industry_data.get("_members", [])
+    if not members:
+        # Try to get members from industry provider
+        ind_provider = _get_industry_provider()
+        if ind_provider is None:
+            return
+        ind_result = ind_provider.resolve_industry(symbol, as_of=as_of)
+        if not ind_result.metadata.success:
+            return
+        members = ind_result.data.get("industry_members", [])
+        if not members:
+            return
+
+    # Fetch PE/PB/PS for all peers at as_of
+    peer_values: dict[str, list[float]] = {"pe": [], "pb": [], "ps": []}
+    valid_peers = {"pe": 0, "pb": 0, "ps": 0}
+
+    for peer_sym in members[:200]:  # cap at 200 peers for performance
+        if peer_sym == symbol:
+            continue
+        result = provider.get_as_of_metrics(
+            peer_sym, as_of, metrics=["pe", "pb", "ps"]
+        )
+        if not result.metadata.success:
+            continue
+        for metric in ["pe", "pb", "ps"]:
+            val = result.data.get(metric)
+            if val is not None and 0 < float(val) < (300 if metric == "pe" else 50 if metric == "pb" else 100):
+                peer_values[metric].append(float(val))
+                valid_peers[metric] += 1
+
+    # Update industry peer counts
+    industry_data["valid_peer_count_pe"] = valid_peers["pe"]
+    industry_data["valid_peer_count_pb"] = valid_peers["pb"]
+    industry_data["valid_peer_count_ps"] = valid_peers["ps"]
+
+    # Compute industry percentiles
+    for csmar_key, percentile_key, val_key in [
+        ("pe", "industry_pe_percentile", "pe_ttm"),
+        ("pb", "industry_pb_percentile", "pb_mrq"),
+        ("ps", "industry_ps_percentile", "ps_ttm"),
+    ]:
+        current_val = valuation_data.get(val_key)
+        peers = peer_values[csmar_key]
+        if current_val is not None and current_val > 0 and len(peers) >= 10:
+            valuation_data[percentile_key] = round(
+                _compute_percentile_from_values(current_val, peers), 4
+            )
+
+
+def enrich_industry_from_local(
+    symbol: str,
+    as_of: str,
+) -> tuple[dict[str, Any], str, bool]:
+    """Query CSMAR industry provider for industry classification.
+
+    Returns (industry_data, source_label, is_strict).
+    The industry provider only has a single snapshot (2026-05-20),
+    so is_strict is True only if as_of >= snapshot_date.
+    """
+    provider = _get_industry_provider()
+    if provider is None:
+        return {}, "missing", False
+
+    result = provider.resolve_industry(symbol, as_of=as_of)
+    if not result.metadata.success or not result.data:
+        return {}, "missing", False
+
+    data = result.data
+    snapshot_date = data.get("snapshot_date")
+
+    # Strict as_of: only if the snapshot_date <= as_of
+    is_strict = False
+    if snapshot_date and snapshot_date <= as_of:
+        is_strict = True
+
+    industry: dict[str, Any] = {
+        "level": data.get("industry_level", "unknown"),
+        "name": data.get("industry_name"),
+        "peer_count": data.get("peer_count", 0),
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0,
+        "_snapshot_date": snapshot_date,
+        "_fallback_used": data.get("fallback_used", False),
+    }
+
+    source_label = "local_csmar_industry" if is_strict else "local_csmar_industry_non_strict"
+    return industry, source_label, is_strict
+
 # ── 用户指定的边界样本股票 ──────────────────────────────────────
 
 BOUNDARY_SYMBOLS: list[str] = [
@@ -611,8 +919,24 @@ def build_sample_from_qmt_data(
     industry_data: dict | None,
     scenario_tags: list[str] | None = None,
     expected: dict | None = None,
+    *,
+    fundamental_source: str = "missing",
+    valuation_source: str = "missing",
+    industry_source: str = "missing",
+    industry_strict: bool = False,
 ) -> dict[str, Any]:
     """从 QMT 历史数据组装一个完整样本。
+
+    Parameters
+    ----------
+    fundamental_source : str
+        Provenance label for fundamental data.
+    valuation_source : str
+        Provenance label for valuation data.
+    industry_source : str
+        Provenance label for industry data.
+    industry_strict : bool
+        Whether industry data passes strict as_of validation.
 
     Returns
     -------
@@ -653,7 +977,10 @@ def build_sample_from_qmt_data(
     confidence = 0.95
 
     fund = fundamental_data or {}
-    if not fund or all(v is None for v in fund.values()):
+    has_meaningful_fund = fund and any(
+        v is not None for k, v in fund.items() if not k.startswith("_")
+    )
+    if not has_meaningful_fund:
         has_placeholder = True
         blocking_issues.append("fundamental_data_missing")
         confidence -= 0.15
@@ -667,16 +994,18 @@ def build_sample_from_qmt_data(
     if not industry.get("name"):
         blocking_issues.append("industry_data_missing")
         confidence -= 0.05
+    elif not industry_strict:
+        blocking_issues.append("industry_as_of_unverifiable")
 
     if forward_metrics.get("coverage_gap"):
         blocking_issues.append(forward_metrics["coverage_gap"])
 
-    # Provenance
+    # Provenance — use real source labels from enrichment
     source_metadata = {
         "price_source": "qmt_xtdata",
-        "fundamental_source": "missing" if not fund else "qmt_financial",
-        "valuation_source": "derived" if val else "missing",
-        "industry_source": "qmt_industry" if industry.get("name") else "missing",
+        "fundamental_source": fundamental_source,
+        "valuation_source": valuation_source,
+        "industry_source": industry_source if industry.get("name") else "missing",
         "as_of": as_of,
         "symbol": symbol,
     }
@@ -695,13 +1024,19 @@ def build_sample_from_qmt_data(
         known_limitations.append("valuation_data unavailable")
     if not industry.get("name"):
         known_limitations.append("industry_data unavailable")
+    elif not industry_strict:
+        known_limitations.append("industry_as_of_unverifiable: latest snapshot fallback")
     if is_out_of_scope_exception(symbol):
         known_limitations.append("out_of_scope_exception: 科创板，非主板范围")
-    if has_placeholder:
-        known_limitations.append("fundamental_data 不可用")
+    if not has_meaningful_fund:
+        known_limitations.append("fundamental_data partial (EVA share capital only)")
 
-    # 确定 data_complete
-    data_complete = bool(price_data) and not has_placeholder
+    # data_complete requires: price, valuation, fundamental/EVA, industry with strict as_of
+    data_complete = (
+        bool(price_data)
+        and not has_placeholder
+        and industry_strict
+    )
     if forward_metrics.get("coverage_gap"):
         data_complete = False
 
@@ -718,7 +1053,8 @@ def build_sample_from_qmt_data(
         "input_result": {
             "asset_type": "stock",
             "price_data": price_data,
-            "fundamental_data": fund,
+            "fundamental_data": {k: v for k, v in fund.items()
+                                 if not k.startswith("_")},
             "valuation_data": {k: v for k, v in val.items()
                                if not k.startswith("_")},
             "event_data": {
@@ -937,6 +1273,31 @@ def try_build_from_qmt(
         sample_counter += 1
         sample_id = f"qmt_{symbol.replace('.', '_')}_{chosen_as_of.replace('-', '')}"
 
+        # ── Enrich from CSMAR / EVA / Industry ──
+        close_val = float(close_series.loc[:chosen_as_of].iloc[-1]) if not close_series.loc[:chosen_as_of].empty else None
+
+        # Valuation from CSMAR Daily Derived (strict as_of)
+        val_data, val_source = enrich_valuation_from_csmar(symbol, chosen_as_of, close_val)
+
+        # Fundamental from EVA (strict as_of): share capital, BPS only
+        fund_data, fund_source = enrich_fundamental_from_eva(symbol, chosen_as_of)
+
+        # Additional valuation fields from EVA (market_cap etc.)
+        eva_val_extra, eva_val_source = enrich_valuation_from_eva(symbol, chosen_as_of, close_val)
+        if eva_val_extra:
+            val_data.update(eva_val_extra)
+            if val_source == "missing":
+                val_source = eva_val_source
+
+        # Industry from local CSMAR (may be non-strict)
+        ind_data, ind_source, ind_strict = enrich_industry_from_local(symbol, chosen_as_of)
+
+        # Compute industry percentiles if we have peer data and valuation
+        if ind_data.get("name") and val_data:
+            _enrich_industry_percentiles(
+                symbol, chosen_as_of, ind_data, val_data, close_val
+            )
+
         sample = build_sample_from_qmt_data(
             sample_id=sample_id,
             symbol=symbol,
@@ -945,9 +1306,13 @@ def try_build_from_qmt(
             close_series=close_series,
             amount_series=amount_series,
             benchmark_close=benchmark_close,
-            fundamental_data=None,
-            valuation_data=None,
-            industry_data=None,
+            fundamental_data=fund_data if fund_data else None,
+            valuation_data=val_data if val_data else None,
+            industry_data=ind_data if ind_data else None,
+            fundamental_source=fund_source,
+            valuation_source=val_source,
+            industry_source=ind_source,
+            industry_strict=ind_strict,
         )
 
         samples.append(sample)
@@ -959,8 +1324,8 @@ def try_build_from_qmt(
         "skipped": skipped,
         "source": {
             "price": "qmt_xtdata",
-            "fundamental": "missing",
-            "valuation": "missing",
-            "industry": "missing",
+            "fundamental": "local_csmar_eva_structure",
+            "valuation": "local_csmar_daily_derived",
+            "industry": "local_csmar_industry",
         },
     }

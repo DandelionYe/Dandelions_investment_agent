@@ -176,6 +176,66 @@ class LocalCSMARDailyDerivedProvider:
             ),
         )
 
+    def get_as_of_metrics(
+        self,
+        symbol: str,
+        as_of: str,
+        metrics: Sequence[str] | None = None,
+    ) -> ProviderResult:
+        """Return the latest monthly snapshot for *symbol* with trading_date <= *as_of*.
+
+        This is the strict historical query: only data visible on or before
+        *as_of* is returned.  Callers use this for historical sample building.
+        """
+        started = perf_counter()
+        requested = list(metrics) if metrics else list(_ALL_FIELDS)
+        valid_metrics = [m for m in requested if m in _ALL_FIELDS]
+
+        if not is_csmar_daily_derived_enabled():
+            return self._empty_result(symbol, started, "provider disabled by env")
+
+        if not Path(self._db_path).exists():
+            return self._empty_result(symbol, started, f"SQLite not found: {self._db_path}")
+
+        if not valid_metrics:
+            return self._empty_result(symbol, started, f"no valid metrics in {requested}")
+
+        try:
+            row = self._query_as_of_snapshot(symbol, valid_metrics, as_of)
+        except Exception as exc:
+            return self._empty_result(symbol, started, f"query failed: {exc}")
+
+        if row is None:
+            return self._empty_result(
+                symbol, started,
+                f"no monthly_snapshot for {symbol} with trading_date <= {as_of}",
+            )
+
+        data: dict[str, Any] = {
+            "symbol": symbol,
+            "source": self.provider,
+            "trading_date": row.get("trading_date"),
+            "as_of": as_of,
+        }
+        for m in valid_metrics:
+            value = row.get(m)
+            if value is not None:
+                data[m] = _safe_float(value)
+
+        return ProviderResult(
+            provider=self.provider,
+            dataset="monthly_snapshots",
+            symbol=symbol,
+            as_of=as_of,
+            data=data,
+            raw=row,
+            metadata=ProviderMetadata(
+                source_url=f"sqlite:///{self._db_path}",
+                success=True,
+                latency_ms=int((perf_counter() - started) * 1000),
+            ),
+        )
+
     def get_monthly_history(
         self,
         symbols: Sequence[str],
@@ -237,6 +297,31 @@ class LocalCSMARDailyDerivedProvider:
                 "SELECT * FROM latest_non_null_metrics WHERE symbol = ?",
                 (symbol,),
             )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return dict(row)
+        finally:
+            conn.close()
+
+    def _query_as_of_snapshot(
+        self,
+        symbol: str,
+        metrics: Sequence[str],
+        as_of: str,
+    ) -> dict[str, Any] | None:
+        columns = ["symbol", "trading_date", "period"] + list(metrics)
+        col_clause = ", ".join(columns)
+        sql = (
+            f"SELECT {col_clause} FROM monthly_snapshots "
+            f"WHERE symbol = ? AND trading_date <= ? "
+            f"ORDER BY trading_date DESC LIMIT 1"
+        )
+        conn = sqlite3.connect(self._db_path, timeout=5)
+        try:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(sql, (symbol, as_of))
             row = cur.fetchone()
             if row is None:
                 return None

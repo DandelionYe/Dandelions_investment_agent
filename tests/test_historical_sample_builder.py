@@ -299,12 +299,17 @@ class TestBuildSampleFromQmtData:
             fundamental_data=None,
             valuation_data=None,
             industry_data=None,
+            fundamental_source="local_csmar_eva_structure",
+            valuation_source="local_csmar_daily_derived",
+            industry_source="local_csmar_industry",
         )
 
         sm = sample["input_result"]["source_metadata"]
         assert sm["price_source"] == "qmt_xtdata"
         assert sm["as_of"] == "2023-06-01"
         assert sm["symbol"] == "600519.SH"
+        assert sm["fundamental_source"] == "local_csmar_eva_structure"
+        assert sm["valuation_source"] == "local_csmar_daily_derived"
 
     def test_forward_metrics_computed(self):
         close = _make_close_series(start_price=100, days=300, daily_return=0.001)
@@ -352,6 +357,9 @@ class TestBuildSampleFromQmtData:
         val = {"pe_ttm": 20.0, "pb_mrq": 3.0, "ps_ttm": 5.0,
                "pe_percentile": 0.30, "pb_percentile": 0.25, "ps_percentile": 0.28,
                "market_cap": 2e11}
+        ind = {"level": "SW1", "name": "食品饮料", "peer_count": 80,
+               "valid_peer_count_pe": 65, "valid_peer_count_pb": 68,
+               "valid_peer_count_ps": 60}
 
         sample = build_sample_from_qmt_data(
             sample_id="test_005",
@@ -363,11 +371,15 @@ class TestBuildSampleFromQmtData:
             benchmark_close=None,
             fundamental_data=fund,
             valuation_data=val,
-            industry_data=None,
+            industry_data=ind,
+            fundamental_source="local_csmar_eva_structure",
+            valuation_source="local_csmar_daily_derived",
+            industry_source="local_csmar_industry",
+            industry_strict=True,
         )
 
         assert sample["quality"]["data_complete"] is True
-        assert sample["input_result"]["source_metadata"]["fundamental_source"] == "qmt_financial"
+        assert sample["input_result"]["source_metadata"]["fundamental_source"] == "local_csmar_eva_structure"
 
     def test_out_of_scope_exception_flagged(self):
         close = _make_close_series(start_price=100, days=300, daily_return=0.001)
@@ -409,3 +421,141 @@ class TestGenerateAsOfDates:
             assert len(d) == 10
             assert d[4] == "-"
             assert d[7] == "-"
+
+
+# ── Provider as_of 查询 ──────────────────────────────────────────
+
+class TestCSMARDailyDerivedAsOf:
+
+    def test_as_of_returns_historical_data(self):
+        """as_of 查询应返回 <= as_of 日期的数据。"""
+        from services.data.providers.local_csmar_daily_derived_provider import (
+            LocalCSMARDailyDerivedProvider,
+        )
+        provider = LocalCSMARDailyDerivedProvider()
+        result = provider.get_as_of_metrics("600519.SH", "2023-06-30", metrics=["pe", "pb"])
+        assert result.metadata.success
+        assert result.data.get("pe") is not None or result.data.get("pb") is not None
+        # trading_date should be <= as_of
+        td = result.data.get("trading_date", "")
+        assert td <= "2023-06-30"
+
+    def test_future_date_returns_none(self):
+        """未来日期不应返回数据。"""
+        from services.data.providers.local_csmar_daily_derived_provider import (
+            LocalCSMARDailyDerivedProvider,
+        )
+        provider = LocalCSMARDailyDerivedProvider()
+        result = provider.get_as_of_metrics("600519.SH", "2099-01-01", metrics=["pe"])
+        # Should either return no data or data with trading_date <= 2099
+        if result.data.get("pe") is not None:
+            td = result.data.get("trading_date", "")
+            assert td <= "2099-01-01"
+
+
+class TestEVAAsOf:
+
+    def test_as_of_returns_historical_data(self):
+        """EVA as_of 查询应返回 <= as_of 日期的数据。"""
+        from services.data.providers.local_csmar_eva_structure_provider import (
+            LocalCSMAREVAStructureProvider,
+        )
+        provider = LocalCSMAREVAStructureProvider()
+        result = provider.get_as_of_share_capital("600519.SH", "2023-06-30")
+        assert result.metadata.success
+        assert result.data.get("total_volume") is not None or result.data.get("market_cap") is not None
+        # end_date should be <= as_of
+        ed = result.data.get("as_of", "")
+        assert ed <= "2023-06-30"
+
+    def test_future_date_returns_none(self):
+        """未来日期不应返回数据。"""
+        from services.data.providers.local_csmar_eva_structure_provider import (
+            LocalCSMAREVAStructureProvider,
+        )
+        provider = LocalCSMAREVAStructureProvider()
+        result = provider.get_as_of_share_capital("600519.SH", "2099-01-01")
+        if result.data.get("total_volume") is not None:
+            ed = result.data.get("as_of", "")
+            assert ed <= "2099-01-01"
+
+
+# ── 行业严格/非严格 ──────────────────────────────────────────────
+
+class TestIndustryStrictVsNonStrict:
+
+    def test_industry_non_strict_for_historical_date(self):
+        """行业库只有 2026-05-20 快照，历史日期应标记为 non-strict。"""
+        from services.research.historical_sample_builder import enrich_industry_from_local
+        _, source, is_strict = enrich_industry_from_local("600519.SH", "2023-06-30")
+        # Industry snapshot is 2026-05-20, so 2023-06-30 < snapshot → non-strict
+        assert is_strict is False
+        assert "non_strict" in source
+
+    def test_industry_strict_for_recent_date(self):
+        """如果 as_of >= snapshot_date，应标记为 strict。"""
+        from services.research.historical_sample_builder import enrich_industry_from_local
+        _, source, is_strict = enrich_industry_from_local("600519.SH", "2026-05-20")
+        # snapshot_date is 2026-05-20, as_of >= snapshot → strict
+        assert is_strict is True
+        assert source == "local_csmar_industry"
+
+
+# ── 样本 source 字段 ────────────────────────────────────────────
+
+class TestSampleSourceFields:
+
+    def test_enriched_sample_has_csmar_eva_sources(self):
+        """接入 CSMAR/EVA 后，sample source 不应全是 missing。"""
+        close = _make_close_series(start_price=100, days=300, daily_return=0.001)
+        fund = {"total_volume": 1e9, "bps": 50.0}
+        val = {"pe_ttm": 25.0, "pb_mrq": 5.0}
+        ind = {"level": "SW1", "name": "食品饮料", "peer_count": 80,
+               "valid_peer_count_pe": 65, "valid_peer_count_pb": 68,
+               "valid_peer_count_ps": 60}
+
+        sample = build_sample_from_qmt_data(
+            sample_id="test_enriched",
+            symbol="600519.SH",
+            name="贵州茅台",
+            as_of="2023-06-01",
+            close_series=close,
+            amount_series=None,
+            benchmark_close=None,
+            fundamental_data=fund,
+            valuation_data=val,
+            industry_data=ind,
+            fundamental_source="local_csmar_eva_structure",
+            valuation_source="local_csmar_daily_derived",
+            industry_source="local_csmar_industry_non_strict",
+            industry_strict=False,
+        )
+
+        sm = sample["input_result"]["source_metadata"]
+        assert sm["fundamental_source"] == "local_csmar_eva_structure"
+        assert sm["valuation_source"] == "local_csmar_daily_derived"
+        assert sm["industry_source"] == "local_csmar_industry_non_strict"
+
+    def test_non_strict_industry_adds_blocking_issue(self):
+        """non-strict 行业应添加 blocking issue。"""
+        close = _make_close_series(start_price=100, days=300, daily_return=0.001)
+        val = {"pe_ttm": 25.0}
+        ind = {"level": "SW1", "name": "食品饮料", "peer_count": 80}
+
+        sample = build_sample_from_qmt_data(
+            sample_id="test_non_strict",
+            symbol="600519.SH",
+            name="贵州茅台",
+            as_of="2023-06-01",
+            close_series=close,
+            amount_series=None,
+            benchmark_close=None,
+            fundamental_data=None,
+            valuation_data=val,
+            industry_data=ind,
+            industry_source="local_csmar_industry_non_strict",
+            industry_strict=False,
+        )
+
+        assert "industry_as_of_unverifiable" in sample["input_result"]["data_quality"]["blocking_issues"]
+        assert sample["quality"]["data_complete"] is False

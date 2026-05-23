@@ -79,6 +79,71 @@ class LocalCSMAREVAStructureProvider:
     def __init__(self, db_path: str | None = None):
         self._db_path = db_path or _db_path()
 
+    def get_as_of_share_capital(
+        self, symbol: str, as_of: str
+    ) -> ProviderResult:
+        """Return share capital data for *symbol* with end_date <= *as_of*.
+
+        Strict historical query: only data visible on or before *as_of*.
+        """
+        started = perf_counter()
+
+        if not is_eva_structure_enabled():
+            return self._empty_result(symbol, started, "provider disabled by env")
+
+        if not Path(self._db_path).exists():
+            return self._empty_result(symbol, started, f"SQLite not found: {self._db_path}")
+
+        try:
+            row = self._query_as_of(symbol, as_of)
+        except Exception as exc:
+            return self._empty_result(symbol, started, f"query failed: {exc}")
+
+        if row is None:
+            return self._empty_result(
+                symbol, started,
+                f"no eva_structure_history for {symbol} with end_date <= {as_of}",
+            )
+
+        total_volume = _positive_float(row.get("total_volume"))
+        float_volume = _positive_float(row.get("float_volume"))
+        market_cap = _positive_float(row.get("market_cap"))
+        float_market_cap = _positive_float(row.get("float_market_cap"))
+        equity_per_share = _positive_float(row.get("equity_per_share"))
+
+        data: dict[str, Any] = {
+            "symbol": symbol,
+            "stkcd": row.get("stkcd"),
+            "as_of": row.get("end_date"),
+            "short_name": row.get("short_name"),
+            "source": self.provider,
+        }
+
+        if total_volume is not None and total_volume > 0:
+            data["total_volume"] = total_volume
+        if float_volume is not None and float_volume > 0:
+            data["float_volume"] = float_volume
+        if market_cap is not None and market_cap > 0:
+            data["market_cap"] = market_cap
+        if float_market_cap is not None and float_market_cap > 0:
+            data["float_market_cap"] = float_market_cap
+        if equity_per_share is not None and equity_per_share > 0:
+            data["equity_per_share"] = equity_per_share
+
+        return ProviderResult(
+            provider=self.provider,
+            dataset="eva_structure_history",
+            symbol=symbol,
+            as_of=as_of,
+            data=data,
+            raw=row,
+            metadata=ProviderMetadata(
+                source_url=f"sqlite:///{self._db_path}",
+                success=True,
+                latency_ms=int((perf_counter() - started) * 1000),
+            ),
+        )
+
     def get_latest_share_capital(self, symbol: str) -> ProviderResult:
         """Return latest share capital data for *symbol*.
 
@@ -207,6 +272,24 @@ class LocalCSMAREVAStructureProvider:
         return result
 
     # -- internal queries --------------------------------------------------
+
+    def _query_as_of(self, symbol: str, as_of: str) -> dict[str, Any] | None:
+        conn = sqlite3.connect(self._db_path, timeout=5)
+        try:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM eva_structure_history "
+                "WHERE symbol = ? AND end_date <= ? "
+                "ORDER BY end_date DESC LIMIT 1",
+                (symbol, as_of),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return dict(row)
+        finally:
+            conn.close()
 
     def _query_latest(self, symbol: str) -> dict[str, Any] | None:
         conn = sqlite3.connect(self._db_path, timeout=5)
