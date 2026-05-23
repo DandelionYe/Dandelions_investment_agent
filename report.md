@@ -25,7 +25,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P1 | 观察池条件触发器真实行情验收 | 代码和测试存在，但仍偏单元层 | 观察池是持续使用入口，需要验证真实行情、批量扫描、进度推送和报告生成链路 |
 | P1 | 生产部署与运维安全 | 开发环境启动脚本已存在，生产部署体系不足 | Redis/Celery 持久化、日志、备份、密钥、进程守护、异常恢复需要明确方案 |
 | P1 | 多用户隔离与 RBAC | ✅ 已完成 | owner_username 隔离、RBAC helper、API/Streamlit/存储层统一权限、57 项 RBAC 测试 |
-| P2 | 历史回测与压力测试 | 尚未形成系统能力 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
+| P2 | 历史回测与压力测试 | 进行中：QMT price-only 样本池已落地，待接入本地 CSMAR/EVA/行业库的严格 as_of 研究输入 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
 | P2 | 网页新闻/舆情长期质量验收 | provider 已有，网络 smoke 已有 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
@@ -151,11 +151,20 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 6. 验收阈值新增基本面/估值/行业来源覆盖率、完整研究输入覆盖率、placeholder/critical 实际样本数，避免无样本时命中率虚高。
 7. 离线测试覆盖 schema、benchmark return、样本级 source、out-of-scope 例外、strict-vs-price-only 验收。
 
+已确认推进口径：
+
+- 运行环境以 XtMiniQMT 后台登录为前提；不要求额外开发或调用完整 QMT 客户端。
+- 完整 QMT 到 MiniQMT 的数据补充继续作为手工运维动作，通过本文开头记录的 `robocopy` 命令同步 `datadir`，不纳入自动化开发范围。
+- 后续 Phase 2B 不接入 QMT financial 下载/补充流程；基本面、估值和行业来源优先使用仓库本地 CSMAR/EVA/行业库。
+- 历史样本采用严格 as_of 口径：只能使用 `as_of` 当日或之前已经可见的数据；如果本地库只有最新快照或无法证明时间点有效性，应标记为不合格或 fallback，不能偷看未来数据。
+- 样本范围聚焦 A 股沪深主板上市公司，时间范围 2021-2026，基准为沪深300；ETF、北交所、港股通不作为本阶段范围。
+- 历史回测模块不依赖历史新闻倒查；新闻/舆情 provider 的长期质量验收仍保留在 P2 第五阶段，不作为 Phase 2B 的阻塞项。
+
 未完成：
 
 - 当前 100 个样本的 `fundamental`、`valuation`、`industry` 来源仍为 `missing`，`data_complete_coverage = 0%`，因此只能算 QMT price-only 样本池。
-- 严格 Phase 2B 验收仍会失败：缺少 critical 样本、行业分位、基本面/估值/行业来源覆盖率、完整研究输入覆盖率，评级/动作分桶也不足。
-- 下一步应接入 QMT financial、CSMAR/EVA 和行业库的 as_of 数据，或明确本地数据缺失的可验收边界。
+- 严格 Phase 2B 验收仍会失败：缺少行业分位、基本面/估值/行业来源覆盖率、完整研究输入覆盖率，评级/动作分桶也不足。
+- 下一步应把本地 `storage/reference/csmar_daily_derived_snapshots.sqlite`、`storage/reference/csmar_eva_structure.sqlite`、`storage/reference/csmar_industry.sqlite` 接入历史样本构建器，并按严格 as_of 规则生成研究输入。
 
 **P2 第三阶段：Evidence Schema 全链路化**
 目标：从“新增 `evidence_fields`”升级为“所有关键字段都有可信证据链”。
