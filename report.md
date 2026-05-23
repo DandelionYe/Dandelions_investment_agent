@@ -25,7 +25,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P1 | 观察池条件触发器真实行情验收 | 代码和测试存在，但仍偏单元层 | 观察池是持续使用入口，需要验证真实行情、批量扫描、进度推送和报告生成链路 |
 | P1 | 生产部署与运维安全 | 开发环境启动脚本已存在，生产部署体系不足 | Redis/Celery 持久化、日志、备份、密钥、进程守护、异常恢复需要明确方案 |
 | P1 | 多用户隔离与 RBAC | ✅ 已完成 | owner_username 隔离、RBAC helper、API/Streamlit/存储层统一权限、57 项 RBAC 测试 |
-| P2 | 历史回测与压力测试 | ✅ Phase 2B 已完成：100 个 QMT+CSMAR/EVA/行业样本，严格验收通过。行业库为单一快照，基本面只有 EVA partial | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
+| P2 | 历史回测与压力测试 | 进行中：QMT 价格、CSMAR 估值、EVA 股本/BPS 的严格 as_of 已落地；完整 Phase 2B 仍被历史行业库和盈利基本面阻塞 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
 | P2 | 网页新闻/舆情长期质量验收 | provider 已有，网络 smoke 已有 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
@@ -139,7 +139,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 
 我建议后续按这几阶段推进：
 
-**P2 第二阶段：真实历史回测落地** ✅ 已完成（严格验收通过）
+**P2 第二阶段：真实历史回测落地** 进行中
 
 已完成：
 
@@ -151,25 +151,26 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 6. 验收阈值新增基本面/估值/行业来源覆盖率、完整研究输入覆盖率、placeholder/critical 实际样本数，避免无样本时命中率虚高。
 7. 离线测试覆盖 schema、benchmark return、样本级 source、out-of-scope 例外、strict-vs-price-only 验收。
 8. **CSMAR Daily Derived 接入完成**：`get_as_of_metrics()` 严格查询 `monthly_snapshots` 中 `trading_date <= as_of` 的最近记录，填充 PE/PB/PS/dividend_yield 及历史分位。72/100 样本获得 CSMAR 估值数据。
-9. **EVA Structure 接入完成**：`get_as_of_share_capital()` 严格查询 `eva_structure_history` 中 `end_date <= as_of` 的最近记录，填充 total_volume/float_volume/market_cap/bps。100/100 样本获得 EVA 基本面数据。
-10. **行业库接入完成**：`LocalCSMARIndustryProvider.resolve_industry()` 提供行业分类和同行列表，用于计算行业 PE/PB/PS 分位。72/100 样本获得行业分位数据。
-11. 严格 Phase 2B 验收通过：价格来源覆盖率 100%、基本面来源覆盖率 100%、估值来源覆盖率 100%、行业分位有效率 72%。
+9. **EVA Structure 接入完成**：`get_as_of_share_capital()` 严格查询 `eva_structure_history` 中 `end_date <= as_of` 的最近记录，填充 total_volume/float_volume/market_cap/bps。100/100 样本获得 EVA 股本/BPS 数据，但不计入盈利质量基本面覆盖率。
+10. **行业库接入完成但非严格**：`LocalCSMARIndustryProvider.resolve_industry()` 可提供行业分类和同行列表，用于诊断性计算行业 PE/PB/PS 分位；由于本地行业库只有 2026-05-20 单一快照，2021-2025 样本行业来源全部为 `local_csmar_industry_non_strict`。
+11. 严格 Phase 2B 验收已恢复真实阈值，当前应失败而不是假通过：基本面来源覆盖率 0%、严格行业来源覆盖率 0%、严格行业分位有效率 0%、完整研究输入覆盖率 0%。
 
 已确认推进口径：
 
 - 运行环境以 XtMiniQMT 后台登录为前提；不要求额外开发或调用完整 QMT 客户端。
 - 完整 QMT 到 MiniQMT 的数据补充继续作为手工运维动作，通过本文开头记录的 `robocopy` 命令同步 `datadir`，不纳入自动化开发范围。
-- Phase 2B 不接入 QMT financial 下载/补充流程；基本面来自 EVA（股本/BPS）、估值来自 CSMAR Daily Derived（PE/PB/PS/分位）、行业来自本地 CSMAR 行业库。
+- Phase 2B 不接入 QMT financial 下载/补充流程；EVA 只作为股本/BPS/资本结构来源，不伪装为 ROE、毛利率、利润增速等盈利质量基本面。
 - 历史样本采用严格 as_of 口径：只能使用 `as_of` 当日或之前已经可见的数据。
 - 样本范围聚焦 A 股沪深主板上市公司，时间范围 2021-2026，基准为沪深300；ETF、北交所、港股通不作为本阶段范围。
 - 历史回测模块不依赖历史新闻倒查；新闻/舆情 provider 的长期质量验收仍保留在 P2 第五阶段，不作为 Phase 2B 的阻塞项。
 
-已知限制：
+未完成/阻塞：
 
-- **行业库只有单一快照**（2026-05-20）：所有历史样本的行业来源标记为 `local_csmar_industry_non_strict`，不计入严格行业来源覆盖率。行业分位仍可计算（72% 样本有行业分位），但来源不可严格验证。
-- **基本面只有 EVA partial**：EVA 提供 total_volume/float_volume/market_cap/bps，不提供 ROE/gross_margin/net_profit_growth/revenue_growth。需要 QMT financial 才能补齐这些字段。
-- **评级/动作分桶有限**：由于缺少盈利指标，评分主要依赖价格趋势和估值，集中在 D/C 评级和回避/谨慎观察动作。
-- **data_complete = 0%**：`data_complete` 要求行业严格 as_of，当前行业库无法满足。
+- **严格行业来源覆盖率 = 0%**：行业库只有单一快照（2026-05-20），不能证明历史 `as_of` 当时可见。
+- **盈利质量基本面覆盖率 = 0%**：EVA 只能提供股本/BPS/市值等资本结构字段，不提供 ROE、毛利率、利润增速、收入增速等评分需要的盈利字段。
+- **严格行业分位有效率 = 0%**：当前 72% 行业分位来自 non-strict 行业快照，只能作为诊断，不计入严格验收。
+- **data_complete = 0%**：完整研究输入要求价格、估值、盈利基本面和行业均满足严格 as_of，当前无法满足。
+- **评级/动作分桶有限**：由于缺少盈利指标和严格行业输入，评分集中在 D/C 评级和回避/谨慎观察动作。
 
 **P2 第三阶段：Evidence Schema 全链路化**
 目标：从“新增 `evidence_fields`”升级为“所有关键字段都有可信证据链”。

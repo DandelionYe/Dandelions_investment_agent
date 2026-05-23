@@ -58,6 +58,8 @@ class TestFixtureSchema:
         source = fixture_data["source"]
         for key in ("price", "fundamental", "valuation", "industry"):
             assert key in source, f"source 缺少 {key}"
+        if source.get("price") == "qmt_xtdata":
+            assert "capital_structure" in source, "QMT fixture source 缺少 capital_structure"
 
     def test_has_samples(self, fixture_data):
         assert "samples" in fixture_data
@@ -176,9 +178,7 @@ class TestScenarioTagCoverage:
     def test_has_loss_making(self, samples):
         assert any("loss_making_or_invalid_pe" in s.get("scenario_tags", []) for s in samples)
 
-    def test_has_missing_fundamental(self, samples, is_real_qmt):
-        if is_real_qmt:
-            pytest.skip("真实 QMT 样本接入 EVA 后，fundamental 不再全部缺失")
+    def test_has_missing_fundamental(self, samples):
         assert any("missing_fundamental" in s.get("scenario_tags", []) for s in samples)
 
     def test_has_industry_insufficient(self, samples, is_real_qmt):

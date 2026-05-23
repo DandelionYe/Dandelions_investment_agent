@@ -129,11 +129,13 @@ def _build_markdown_report(summary: dict, fixture_path: str, source: dict | None
     lines.append(f"- **critical 样本数**: {summary.get('critical_sample_count', 0)}")
     lines.append(f"- **placeholder 保护器命中率**: {_format_rate(summary.get('placeholder_guard_hit_rate'))}")
     lines.append(f"- **critical 保护器命中率**: {_format_rate(summary.get('critical_guard_hit_rate'))}")
-    lines.append(f"- **行业分位有效率**: {summary['industry_percentile_valid_rate']:.1%}")
+    lines.append(f"- **严格 as_of 行业分位有效率**: {summary['industry_percentile_valid_rate']:.1%}")
+    lines.append(f"- **全部行业分位有效率（含 non-strict）**: {summary.get('all_industry_percentile_valid_rate', 0.0):.1%}")
     lines.append(f"- **最大单一评分分桶占比**: {summary['max_single_score_bucket_ratio']:.1%}")
     lines.append(f"- **评级分桶数**: {summary['rating_bucket_count']}")
     lines.append(f"- **动作分桶数**: {summary['action_bucket_count']}")
     lines.append(f"- **fundamental source coverage**: {summary.get('fundamental_source_coverage', 0.0):.1%}")
+    lines.append(f"- **capital structure source coverage**: {summary.get('capital_structure_source_coverage', 0.0):.1%}")
     lines.append(f"- **valuation source coverage**: {summary.get('valuation_source_coverage', 0.0):.1%}")
     lines.append(f"- **industry source coverage**: {summary.get('industry_source_coverage', 0.0):.1%}")
     lines.append(f"- **data complete coverage**: {summary.get('data_gap_summary', {}).get('data_complete_coverage', 0.0):.1%}")
@@ -254,6 +256,7 @@ def _build_markdown_report(summary: dict, fixture_path: str, source: dict | None
     lines.append(f"- **数据完整样本数**: {dg.get('data_complete_count', 'N/A')}")
     lines.append(f"- **存在阻断问题样本数**: {dg.get('total_with_blocking_issues', 'N/A')}")
     lines.append(f"- **基本面来源覆盖率**: {summary.get('fundamental_source_coverage', 0.0):.1%}")
+    lines.append(f"- **股本/BPS 来源覆盖率**: {summary.get('capital_structure_source_coverage', 0.0):.1%}")
     lines.append(f"- **估值来源覆盖率**: {summary.get('valuation_source_coverage', 0.0):.1%}")
     lines.append(f"- **行业来源覆盖率**: {summary.get('industry_source_coverage', 0.0):.1%}")
     lines.append(f"- **完整研究输入覆盖率**: {dg.get('data_complete_coverage', 0.0):.1%}")
@@ -266,7 +269,7 @@ def _build_markdown_report(summary: dict, fixture_path: str, source: dict | None
     ):
         lines.append("- **注意**: 当前为 QMT price-only 样本池，不满足严格 Phase 2B 研究质量验收。")
     if summary.get("critical_sample_count", 0) == 0:
-        lines.append("- **注意**: 当前没有 critical 样本，critical 保护器命中率不可验收。")
+        lines.append("- **注意**: Phase 2B 不做历史新闻事件回测，critical 样本不作为本阶段阻塞项。")
     lines.append("")
 
     # 质量结论
@@ -282,6 +285,8 @@ def _build_markdown_report(summary: dict, fixture_path: str, source: dict | None
     )
     if is_price_only:
         lines.append("QMT 价格链路已通过 smoke 检查，但基本面/估值/行业输入缺失，严格 Phase 2B 未完成。")
+    elif dg.get("data_complete_coverage", 0.0) < 0.5:
+        lines.append("历史价格、CSMAR 估值和 EVA 股本/BPS 已接入，但完整研究输入覆盖率不足，严格 Phase 2B 未完成。")
     elif summary["failed"] == 0:
         lines.append("所有历史样本均通过严格验收。评分/估值/保护器行为稳定。")
     else:
@@ -294,7 +299,7 @@ def _build_markdown_report(summary: dict, fixture_path: str, source: dict | None
     if psc < 1.0:
         lines.append("- 接入真实 QMT 历史数据替换手动快照（使用 --use-qmt --require-qmt）")
     lines.append("- 建立季度回归机制，检测评分漂移")
-    lines.append("- 扩展基本面/估值/行业数据源（CSMAR/EVA/provider）")
+    lines.append("- 补充可严格 as_of 的历史行业分类库和盈利质量基本面来源")
     lines.append("")
 
     return "\n".join(lines)

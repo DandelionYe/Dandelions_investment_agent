@@ -51,6 +51,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _parse_as_of_date(value: str) -> date | None:
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
 def is_eva_structure_enabled() -> bool:
     return _env_bool("CSMAR_EVA_STRUCTURE_PROVIDER", True)
 
@@ -87,6 +94,7 @@ class LocalCSMAREVAStructureProvider:
         Strict historical query: only data visible on or before *as_of*.
         """
         started = perf_counter()
+        parsed_as_of = _parse_as_of_date(as_of)
 
         if not is_eva_structure_enabled():
             return self._empty_result(symbol, started, "provider disabled by env")
@@ -94,15 +102,27 @@ class LocalCSMAREVAStructureProvider:
         if not Path(self._db_path).exists():
             return self._empty_result(symbol, started, f"SQLite not found: {self._db_path}")
 
+        if parsed_as_of is None:
+            return self._empty_result(symbol, started, f"invalid as_of date: {as_of}")
+
+        if parsed_as_of > date.today():
+            return self._empty_result(
+                symbol,
+                started,
+                f"future as_of date is not allowed for strict history: {as_of}",
+            )
+
+        normalized_as_of = parsed_as_of.isoformat()
+
         try:
-            row = self._query_as_of(symbol, as_of)
+            row = self._query_as_of(symbol, normalized_as_of)
         except Exception as exc:
             return self._empty_result(symbol, started, f"query failed: {exc}")
 
         if row is None:
             return self._empty_result(
                 symbol, started,
-                f"no eva_structure_history for {symbol} with end_date <= {as_of}",
+                f"no eva_structure_history for {symbol} with end_date <= {normalized_as_of}",
             )
 
         total_volume = _positive_float(row.get("total_volume"))
@@ -134,7 +154,7 @@ class LocalCSMAREVAStructureProvider:
             provider=self.provider,
             dataset="eva_structure_history",
             symbol=symbol,
-            as_of=as_of,
+            as_of=normalized_as_of,
             data=data,
             raw=row,
             metadata=ProviderMetadata(

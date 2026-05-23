@@ -308,8 +308,9 @@ class TestBuildSampleFromQmtData:
         assert sm["price_source"] == "qmt_xtdata"
         assert sm["as_of"] == "2023-06-01"
         assert sm["symbol"] == "600519.SH"
-        assert sm["fundamental_source"] == "local_csmar_eva_structure"
-        assert sm["valuation_source"] == "local_csmar_daily_derived"
+        assert sm["fundamental_source"] == "missing"
+        assert sm["capital_structure_source"] == "missing"
+        assert sm["valuation_source"] == "missing"
 
     def test_forward_metrics_computed(self):
         close = _make_close_series(start_price=100, days=300, daily_return=0.001)
@@ -447,10 +448,8 @@ class TestCSMARDailyDerivedAsOf:
         )
         provider = LocalCSMARDailyDerivedProvider()
         result = provider.get_as_of_metrics("600519.SH", "2099-01-01", metrics=["pe"])
-        # Should either return no data or data with trading_date <= 2099
-        if result.data.get("pe") is not None:
-            td = result.data.get("trading_date", "")
-            assert td <= "2099-01-01"
+        assert result.data.get("pe") is None
+        assert "future as_of" in (result.metadata.error or "")
 
 
 class TestEVAAsOf:
@@ -475,9 +474,9 @@ class TestEVAAsOf:
         )
         provider = LocalCSMAREVAStructureProvider()
         result = provider.get_as_of_share_capital("600519.SH", "2099-01-01")
-        if result.data.get("total_volume") is not None:
-            ed = result.data.get("as_of", "")
-            assert ed <= "2099-01-01"
+        assert result.data.get("total_volume") is None
+        assert result.data.get("market_cap") is None
+        assert "future as_of" in (result.metadata.error or "")
 
 
 # ── 行业严格/非严格 ──────────────────────────────────────────────
@@ -532,7 +531,8 @@ class TestSampleSourceFields:
         )
 
         sm = sample["input_result"]["source_metadata"]
-        assert sm["fundamental_source"] == "local_csmar_eva_structure"
+        assert sm["fundamental_source"] == "missing"
+        assert sm["capital_structure_source"] == "local_csmar_eva_structure"
         assert sm["valuation_source"] == "local_csmar_daily_derived"
         assert sm["industry_source"] == "local_csmar_industry_non_strict"
 

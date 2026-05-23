@@ -44,17 +44,10 @@ DEFAULT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
 }
 
 # Phase 2B strict acceptance: full research-quality samples, not price-only smoke.
-# - min_critical_sample_count = 0: Phase 2B does not do historical news event backtesting.
-# - min_industry_source_coverage = 0.0: CSMAR industry only has a single snapshot
-#   (2026-05-20), so all historical as_of dates are non-strict.  Industry data
-#   is still used for percentile computation (non-strict), but not counted as
-#   strict coverage.  This limitation is documented in the report.
-# - min_data_complete_coverage = 0.0: data_complete requires industry_strict,
-#   which is always False for historical dates.  Valuation/fundamental/industry
-#   percentile enrichment is still active and reported separately.
-# - min_rating_bucket_count / min_action_bucket_count = 2: without QMT financial
-#   (ROE, revenue growth), scores cluster in lower range, producing mainly D/C
-#   ratings.  This is an honest reflection of available data.
+# Historical news/critical-event backtesting is explicitly out of scope, but
+# valuation, profitability fundamentals, strict industry provenance, and complete
+# research inputs must remain real thresholds. If local data cannot satisfy them,
+# the strict run should fail and report the blocker instead of passing softly.
 REAL_QMT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
     "min_samples": 50,
     "max_aggressive_action_rate_for_high_risk": 0.0,
@@ -64,13 +57,13 @@ REAL_QMT_ACCEPTANCE_THRESHOLDS: dict[str, Any] = {
     "min_critical_sample_count": 0,
     "min_industry_percentile_valid_rate": 0.60,
     "max_single_score_bucket_ratio": 0.70,
-    "min_rating_bucket_count": 2,
-    "min_action_bucket_count": 2,
+    "min_rating_bucket_count": 3,
+    "min_action_bucket_count": 3,
     "min_price_source_coverage": 1.0,
     "min_fundamental_source_coverage": 0.60,
     "min_valuation_source_coverage": 0.60,
-    "min_industry_source_coverage": 0.0,
-    "min_data_complete_coverage": 0.0,
+    "min_industry_source_coverage": 0.60,
+    "min_data_complete_coverage": 0.50,
     "skip_required_tag_check": True,
 }
 
@@ -113,6 +106,43 @@ HIGH_RISK_SCENARIO_TAGS = {
     "critical_event",
     "bear_market",
 }
+
+STRICT_FUNDAMENTAL_FIELDS = frozenset({
+    "roe",
+    "gross_margin",
+    "net_margin",
+    "net_profit_growth",
+    "revenue_growth",
+    "net_profit_ttm",
+    "revenue_ttm",
+    "debt_ratio",
+    "operating_cashflow_quality",
+})
+
+STRICT_VALUATION_FIELDS = frozenset({
+    "pe_ttm",
+    "pb_mrq",
+    "ps_ttm",
+    "dividend_yield",
+})
+
+CAPITAL_STRUCTURE_FIELDS = frozenset({
+    "total_volume",
+    "float_volume",
+    "market_cap",
+    "float_market_cap",
+    "bps",
+})
+
+NON_STRICT_SOURCE_LABELS = frozenset({
+    None,
+    "",
+    "missing",
+    "non_strict",
+    "latest_snapshot_fallback",
+    "local_csmar_industry_non_strict",
+    "local_csmar_eva_structure_partial",
+})
 
 # ── 评分分桶 ─────────────────────────────────────────────────
 
@@ -375,8 +405,13 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
                 critical_guarded += 1
 
     # ── 行业分位有效率 ──
+    # Strict Phase 2B only counts industry percentiles whose industry
+    # classification is itself strict as_of. Non-strict latest-snapshot
+    # percentiles are still reported separately for diagnostics.
     industry_total = 0
     industry_valid = 0
+    all_industry_total = 0
+    all_industry_valid = 0
     for r in results:
         tags = set(r.get("scenario_tags", []))
         if "industry_insufficient_peers" in tags:
@@ -385,11 +420,21 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         vd = ir.get("valuation_data", {}) if isinstance(ir, dict) else {}
         if not vd:
             continue
-        industry_total += 1
+        sm = ir.get("source_metadata", {}) if isinstance(ir, dict) else {}
+        industry_source = sm.get("industry_source") if isinstance(sm, dict) else None
+        is_strict_industry = industry_source not in NON_STRICT_SOURCE_LABELS
         has_valid = any(
             vd.get(f"industry_{m}_percentile") is not None
             for m in ["pe", "pb", "ps"]
         )
+        all_industry_total += 1
+        if has_valid:
+            all_industry_valid += 1
+
+        if not is_strict_industry:
+            continue
+
+        industry_total += 1
         if has_valid:
             industry_valid += 1
 
@@ -502,30 +547,57 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         elif "small_or_mid_cap" in tags:
             market_cap_mid_small += 1
 
-    # ── price source coverage ──
-    # Exclude non_strict / latest_snapshot_fallback from strict coverage.
-    _non_strict_sources = frozenset({
-        None, "", "missing", "non_strict", "latest_snapshot_fallback",
-        "local_csmar_industry_non_strict",
-    })
+    # ── source coverage ──
+    # Exclude non-strict/latest/partial sources from strict coverage. EVA
+    # capital-structure data is tracked separately and does not count as
+    # profitability fundamental coverage.
     price_source_qmt = 0
     price_source_other = 0
     fundamental_available = 0
+    capital_structure_available = 0
     valuation_available = 0
     industry_available = 0
     for r in results:
         ir = r.get("input_result", {})
         if isinstance(ir, dict):
             sm = ir.get("source_metadata", {})
+            fundamental_data = ir.get("fundamental_data", {})
+            valuation_data = ir.get("valuation_data", {})
             if isinstance(sm, dict) and sm.get("price_source") == "qmt_xtdata":
                 price_source_qmt += 1
             else:
                 price_source_other += 1
-            if isinstance(sm, dict) and sm.get("fundamental_source") not in _non_strict_sources:
+            if (
+                isinstance(sm, dict)
+                and sm.get("fundamental_source") not in NON_STRICT_SOURCE_LABELS
+                and isinstance(fundamental_data, dict)
+                and any(
+                    fundamental_data.get(field) is not None
+                    for field in STRICT_FUNDAMENTAL_FIELDS
+                )
+            ):
                 fundamental_available += 1
-            if isinstance(sm, dict) and sm.get("valuation_source") not in _non_strict_sources:
+            if (
+                isinstance(sm, dict)
+                and sm.get("capital_structure_source") not in {None, "", "missing"}
+                and isinstance(fundamental_data, dict)
+                and any(
+                    fundamental_data.get(field) is not None
+                    for field in CAPITAL_STRUCTURE_FIELDS
+                )
+            ):
+                capital_structure_available += 1
+            if (
+                isinstance(sm, dict)
+                and sm.get("valuation_source") not in NON_STRICT_SOURCE_LABELS
+                and isinstance(valuation_data, dict)
+                and any(
+                    valuation_data.get(field) is not None
+                    for field in STRICT_VALUATION_FIELDS
+                )
+            ):
                 valuation_available += 1
-            if isinstance(sm, dict) and sm.get("industry_source") not in _non_strict_sources:
+            if isinstance(sm, dict) and sm.get("industry_source") not in NON_STRICT_SOURCE_LABELS:
                 industry_available += 1
         else:
             price_source_other += 1
@@ -536,6 +608,9 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
     )
     fundamental_source_coverage = (
         fundamental_available / total if total > 0 else 0.0
+    )
+    capital_structure_source_coverage = (
+        capital_structure_available / total if total > 0 else 0.0
     )
     valuation_source_coverage = (
         valuation_available / total if total > 0 else 0.0
@@ -590,6 +665,9 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         "industry_percentile_valid_rate": round(
             industry_valid / industry_total, 4
         ) if industry_total > 0 else 0.0,
+        "all_industry_percentile_valid_rate": round(
+            all_industry_valid / all_industry_total, 4
+        ) if all_industry_total > 0 else 0.0,
         "max_single_score_bucket_ratio": round(max_bucket_ratio, 4),
         "rating_bucket_count": len(rating_dist),
         "action_bucket_count": len(action_dist),
@@ -603,6 +681,7 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         },
         "price_source_coverage": round(price_source_coverage, 4),
         "fundamental_source_coverage": round(fundamental_source_coverage, 4),
+        "capital_structure_source_coverage": round(capital_structure_source_coverage, 4),
         "valuation_source_coverage": round(valuation_source_coverage, 4),
         "industry_source_coverage": round(industry_source_coverage, 4),
         "data_gap_summary": {

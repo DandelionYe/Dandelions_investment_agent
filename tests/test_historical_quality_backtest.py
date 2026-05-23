@@ -263,9 +263,7 @@ class TestAssertHistoricalAcceptance:
     ):
         if not is_real_qmt:
             pytest.skip("Only applies to QMT fixtures")
-        if summary.get("fundamental_source_coverage", 0.0) > 0:
-            pytest.skip("Fixture has research inputs available")
-        with pytest.raises(AssertionError, match="基本面来源覆盖率"):
+        with pytest.raises(AssertionError, match="完整研究输入覆盖率"):
             assert_historical_backtest_acceptance(
                 summary,
                 REAL_QMT_ACCEPTANCE_THRESHOLDS,
@@ -403,6 +401,7 @@ class TestPhase2BSummaryFields:
     def test_has_research_source_coverage(self, summary):
         for key in (
             "fundamental_source_coverage",
+            "capital_structure_source_coverage",
             "valuation_source_coverage",
             "industry_source_coverage",
         ):

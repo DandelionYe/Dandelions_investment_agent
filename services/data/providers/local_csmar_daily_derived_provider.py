@@ -52,6 +52,13 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _parse_as_of_date(value: str) -> date | None:
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
 def is_csmar_daily_derived_enabled() -> bool:
     return _env_bool("CSMAR_DAILY_DERIVED_PROVIDER", True)
 
@@ -190,6 +197,7 @@ class LocalCSMARDailyDerivedProvider:
         started = perf_counter()
         requested = list(metrics) if metrics else list(_ALL_FIELDS)
         valid_metrics = [m for m in requested if m in _ALL_FIELDS]
+        parsed_as_of = _parse_as_of_date(as_of)
 
         if not is_csmar_daily_derived_enabled():
             return self._empty_result(symbol, started, "provider disabled by env")
@@ -200,22 +208,34 @@ class LocalCSMARDailyDerivedProvider:
         if not valid_metrics:
             return self._empty_result(symbol, started, f"no valid metrics in {requested}")
 
+        if parsed_as_of is None:
+            return self._empty_result(symbol, started, f"invalid as_of date: {as_of}")
+
+        if parsed_as_of > date.today():
+            return self._empty_result(
+                symbol,
+                started,
+                f"future as_of date is not allowed for strict history: {as_of}",
+            )
+
+        normalized_as_of = parsed_as_of.isoformat()
+
         try:
-            row = self._query_as_of_snapshot(symbol, valid_metrics, as_of)
+            row = self._query_as_of_snapshot(symbol, valid_metrics, normalized_as_of)
         except Exception as exc:
             return self._empty_result(symbol, started, f"query failed: {exc}")
 
         if row is None:
             return self._empty_result(
                 symbol, started,
-                f"no monthly_snapshot for {symbol} with trading_date <= {as_of}",
+                f"no monthly_snapshot for {symbol} with trading_date <= {normalized_as_of}",
             )
 
         data: dict[str, Any] = {
             "symbol": symbol,
             "source": self.provider,
             "trading_date": row.get("trading_date"),
-            "as_of": as_of,
+            "as_of": normalized_as_of,
         }
         for m in valid_metrics:
             value = row.get(m)
@@ -226,7 +246,7 @@ class LocalCSMARDailyDerivedProvider:
             provider=self.provider,
             dataset="monthly_snapshots",
             symbol=symbol,
-            as_of=as_of,
+            as_of=normalized_as_of,
             data=data,
             raw=row,
             metadata=ProviderMetadata(

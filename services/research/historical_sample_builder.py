@@ -16,6 +16,33 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+STRICT_FUNDAMENTAL_FIELDS = frozenset({
+    "roe",
+    "gross_margin",
+    "net_margin",
+    "net_profit_growth",
+    "revenue_growth",
+    "net_profit_ttm",
+    "revenue_ttm",
+    "debt_ratio",
+    "operating_cashflow_quality",
+})
+
+CAPITAL_STRUCTURE_FIELDS = frozenset({
+    "total_volume",
+    "float_volume",
+    "market_cap",
+    "float_market_cap",
+    "bps",
+})
+
+STRICT_VALUATION_FIELDS = frozenset({
+    "pe_ttm",
+    "pb_mrq",
+    "ps_ttm",
+    "dividend_yield",
+})
+
 # ── Provider enrichment (lazy imports to avoid circular deps) ─────
 
 
@@ -171,15 +198,18 @@ def enrich_fundamental_from_eva(
 
     fund: dict[str, Any] = {
         "_eva_end_date": data.get("as_of"),
-        "source": "local_csmar_eva_structure",
+        "source": "local_csmar_eva_structure_partial",
     }
     # EVA provides share capital and market cap, not profitability metrics.
     # We explicitly do NOT set roe, gross_margin, net_profit_growth, revenue_growth.
     # These would need QMT financial which we are not integrating.
+    for key in ("total_volume", "float_volume", "market_cap", "float_market_cap"):
+        if data.get(key) is not None:
+            fund[key] = float(data[key])
     if data.get("equity_per_share"):
         fund["bps"] = round(float(data["equity_per_share"]), 4)
 
-    return fund, "local_csmar_eva_structure"
+    return fund, "local_csmar_eva_structure_partial"
 
 
 def enrich_valuation_from_eva(
@@ -890,7 +920,7 @@ def infer_scenario_tags(
         tags.append("loss_making_or_invalid_pe")
 
     # 基本面缺失
-    if not fund or all(v is None for v in fund.values()):
+    if not any(fund.get(field) is not None for field in STRICT_FUNDAMENTAL_FIELDS):
         tags.append("missing_fundamental")
 
     # 行业样本不足
@@ -977,16 +1007,22 @@ def build_sample_from_qmt_data(
     confidence = 0.95
 
     fund = fundamental_data or {}
-    has_meaningful_fund = fund and any(
-        v is not None for k, v in fund.items() if not k.startswith("_")
+    has_strict_fundamental = any(
+        fund.get(field) is not None for field in STRICT_FUNDAMENTAL_FIELDS
     )
-    if not has_meaningful_fund:
+    has_capital_structure = any(
+        fund.get(field) is not None for field in CAPITAL_STRUCTURE_FIELDS
+    )
+    if not has_strict_fundamental:
         has_placeholder = True
-        blocking_issues.append("fundamental_data_missing")
+        blocking_issues.append("fundamental_profitability_missing")
         confidence -= 0.15
 
     val = valuation_data or {}
-    if not val or val.get("pe_ttm") is None:
+    has_strict_valuation = any(
+        val.get(field) is not None for field in STRICT_VALUATION_FIELDS
+    )
+    if not has_strict_valuation:
         has_placeholder = True
         blocking_issues.append("valuation_data_missing")
         confidence -= 0.05
@@ -1000,11 +1036,22 @@ def build_sample_from_qmt_data(
     if forward_metrics.get("coverage_gap"):
         blocking_issues.append(forward_metrics["coverage_gap"])
 
-    # Provenance — use real source labels from enrichment
+    strict_fundamental_source = (
+        fundamental_source if has_strict_fundamental else "missing"
+    )
+    capital_structure_source = (
+        fundamental_source if has_capital_structure and fundamental_source != "missing"
+        else "missing"
+    )
+    strict_valuation_source = valuation_source if has_strict_valuation else "missing"
+
+    # Provenance — use real source labels from enrichment.
+    # EVA share-capital/BPS is useful, but it is not profitability fundamental data.
     source_metadata = {
         "price_source": "qmt_xtdata",
-        "fundamental_source": fundamental_source,
-        "valuation_source": valuation_source,
+        "fundamental_source": strict_fundamental_source,
+        "capital_structure_source": capital_structure_source,
+        "valuation_source": strict_valuation_source,
         "industry_source": industry_source if industry.get("name") else "missing",
         "as_of": as_of,
         "symbol": symbol,
@@ -1012,6 +1059,7 @@ def build_sample_from_qmt_data(
     sample_source = {
         "price": source_metadata["price_source"],
         "fundamental": source_metadata["fundamental_source"],
+        "capital_structure": source_metadata["capital_structure_source"],
         "valuation": source_metadata["valuation_source"],
         "industry": source_metadata["industry_source"],
     }
@@ -1022,19 +1070,25 @@ def build_sample_from_qmt_data(
         known_limitations.append(f"coverage_gap: {forward_metrics['coverage_gap']}")
     if not val:
         known_limitations.append("valuation_data unavailable")
+    elif not has_strict_valuation:
+        known_limitations.append("valuation multiples unavailable; EVA capital structure only")
     if not industry.get("name"):
         known_limitations.append("industry_data unavailable")
     elif not industry_strict:
         known_limitations.append("industry_as_of_unverifiable: latest snapshot fallback")
     if is_out_of_scope_exception(symbol):
         known_limitations.append("out_of_scope_exception: 科创板，非主板范围")
-    if not has_meaningful_fund:
-        known_limitations.append("fundamental_data partial (EVA share capital only)")
+    if not has_strict_fundamental and has_capital_structure:
+        known_limitations.append("profitability fundamental unavailable; EVA capital structure only")
+    elif not has_strict_fundamental:
+        known_limitations.append("fundamental_data unavailable")
 
-    # data_complete requires: price, valuation, fundamental/EVA, industry with strict as_of
+    # data_complete requires strict research inputs, not only capital structure.
     data_complete = (
         bool(price_data)
         and not has_placeholder
+        and has_strict_fundamental
+        and has_strict_valuation
         and industry_strict
     )
     if forward_metrics.get("coverage_gap"):
@@ -1286,8 +1340,7 @@ def try_build_from_qmt(
         eva_val_extra, eva_val_source = enrich_valuation_from_eva(symbol, chosen_as_of, close_val)
         if eva_val_extra:
             val_data.update(eva_val_extra)
-            if val_source == "missing":
-                val_source = eva_val_source
+            val_data["_capital_structure_source"] = eva_val_source
 
         # Industry from local CSMAR (may be non-strict)
         ind_data, ind_source, ind_strict = enrich_industry_from_local(symbol, chosen_as_of)
@@ -1297,6 +1350,15 @@ def try_build_from_qmt(
             _enrich_industry_percentiles(
                 symbol, chosen_as_of, ind_data, val_data, close_val
             )
+            if any(
+                val_data.get(field) is not None
+                for field in (
+                    "industry_pe_percentile",
+                    "industry_pb_percentile",
+                    "industry_ps_percentile",
+                )
+            ):
+                val_data["industry_percentile_source"] = ind_source
 
         sample = build_sample_from_qmt_data(
             sample_id=sample_id,
@@ -1324,8 +1386,9 @@ def try_build_from_qmt(
         "skipped": skipped,
         "source": {
             "price": "qmt_xtdata",
-            "fundamental": "local_csmar_eva_structure",
-            "valuation": "local_csmar_daily_derived",
-            "industry": "local_csmar_industry",
+            "fundamental": "missing",
+            "capital_structure": "local_csmar_eva_structure_partial",
+            "valuation": "mixed:local_csmar_daily_derived,missing",
+            "industry": "local_csmar_industry_non_strict",
         },
     }
