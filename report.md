@@ -25,7 +25,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P1 | 观察池条件触发器真实行情验收 | 代码和测试存在，但仍偏单元层 | 观察池是持续使用入口，需要验证真实行情、批量扫描、进度推送和报告生成链路 |
 | P1 | 生产部署与运维安全 | 开发环境启动脚本已存在，生产部署体系不足 | Redis/Celery 持久化、日志、备份、密钥、进程守护、异常恢复需要明确方案 |
 | P1 | 多用户隔离与 RBAC | ✅ 已完成 | owner_username 隔离、RBAC helper、API/Streamlit/存储层统一权限、57 项 RBAC 测试 |
-| P2 | 历史回测与压力测试 | 进行中：QMT 价格、CSMAR 估值、EVA 股本/BPS 的严格 as_of 已落地；完整 Phase 2B 仍被历史行业库和盈利基本面阻塞 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
+| P2 | 历史回测与压力测试 | 进行中：QMT 价格、CSMAR 估值、EVA 股本/BPS 的严格 as_of 已落地；历史行业库、利润表、现金流量表等本地 CSMAR 原始数据已补充，剩余工作转为代码接入和验收恢复 | 行业估值、评分、决策保护器需要用历史样本验证稳定性，尤其是极端行情和行业轮动场景 |
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
 | P2 | 网页新闻/舆情长期质量验收 | provider 已有，网络 smoke 已有 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
@@ -166,11 +166,25 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 
 未完成/阻塞：
 
-- **严格行业来源覆盖率 = 0%**：行业库只有单一快照（2026-05-20），不能证明历史 `as_of` 当时可见。
-- **盈利质量基本面覆盖率 = 0%**：EVA 只能提供股本/BPS/市值等资本结构字段，不提供 ROE、毛利率、利润增速、收入增速等评分需要的盈利字段。
-- **严格行业分位有效率 = 0%**：当前 72% 行业分位来自 non-strict 行业快照，只能作为诊断，不计入严格验收。
-- **data_complete = 0%**：完整研究输入要求价格、估值、盈利基本面和行业均满足严格 as_of，当前无法满足。
-- **评级/动作分桶有限**：由于缺少盈利指标和严格行业输入，评分集中在 D/C 评级和回避/谨慎观察动作。
+- **数据文件已补充，剩余主要是代码层面接入**：`data/raw/csmar/industry_history/Basic Information Table/DEBT_INSTITUTIONINFO.csv` 可提供历史行业分类；`data/raw/csmar/financial_statements/Income Statement/FS_Comins.csv`、`Cash Flow Statement (Direct Method)/FS_Comscfd.csv`、`Cash Flow Statement (Indirect Method)/FS_Comscfi.csv`、`Balance Sheet/FS_Combas.csv` 可提供公司级利润、现金流和资产负债数据。
+- **严格行业来源覆盖率当前仍为 0%**：现有代码仍在使用单一快照行业 provider，尚未接入 `DEBT_INSTITUTIONINFO.csv`。该 CSV 有一行地址字段引号异常，读取时需要容错或预清洗。
+- **盈利质量基本面覆盖率当前仍为 0%**：现有代码仍未从利润表、现金流量表、资产负债表推导 ROE、毛利率、净利率、收入增长、净利润增长、经营现金流质量、资产负债率等字段。
+- **严格 as_of 披露口径需要代码实现**：这些财报文件中的 `DeclareDate` 字段为“差错更正披露日期”，不能直接作为普通财报公告日。代码应采用保守可见规则：年报下一年 04-30 后可用，一季报当年 04-30 后可用，半年报当年 08-31 后可用，三季报当年 10-31 后可用，并过滤 `Accper = 01-01` 这类期初行。
+- **data_complete 当前仍为 0%**：完整研究输入要求价格、估值、盈利基本面和行业均满足严格 `as_of`。在上述 provider 接入并重新生成 fixture 前，严格验收仍应失败。
+- **评级/动作分桶有限**：由于当前样本缺少盈利指标和严格行业输入，评分集中在 D/C 评级和回避/谨慎观察动作；接入财务和行业历史后需要重新验证分布是否恢复。
+
+后续代码层面工作备注：
+
+1. 新增或扩展本地 CSMAR 财务 provider，读取 `FS_Comins.csv`、`FS_Comscfd.csv`、`FS_Comscfi.csv`、`FS_Combas.csv`，只选择公司级、合并报表 `Typrep = A` 的记录。
+2. 实现严格 `as_of` 财报快照选择：按 `Stkcd + Accper` 查找在 `as_of` 时点已经“保守可见”的最近一期或 TTM 窗口，不允许使用 `as_of` 之后才应可见的报表。
+3. 从本地财报推导评分需要的盈利质量字段：`revenue_ttm`、`net_profit_ttm`、`roe`、`gross_margin`、`net_margin`、`revenue_growth`、`net_profit_growth`、`debt_ratio`、`operating_cashflow_quality`。缺少营业成本或现金流时必须记录 missing reason，不得用未来数据或行业均值填充。
+4. 新增历史行业 provider，读取 `DEBT_INSTITUTIONINFO.csv`，按 `Symbol + EndDate <= as_of` 取最近历史行业分类。2021-2022 优先使用 `P0207`，2023 以后优先使用 `P0221`；需要记录 `industry_source = local_csmar_industry_history` 和实际分类标准。
+5. 将历史行业 provider 接入行业同行和行业分位计算，使严格行业来源覆盖率、严格行业分位有效率从 0% 恢复为可验收指标。non-strict 单一快照只能作为 fallback 诊断，不能计入严格验收。
+6. 更新 `historical_sample_builder.py` 的 enrichment 流程：价格来自 QMT，估值来自 CSMAR Daily Derived/EVA fallback，盈利质量来自本地 CSMAR 财报，行业来自历史行业库；样本 `source_metadata` 必须区分 `fundamental_source`、`capital_structure_source`、`valuation_source`、`industry_source`。
+7. 重新生成 `tests/fixtures/research_quality_historical_samples.json`，目标仍为 100 个 A 股沪深主板样本，覆盖 2021-2025、沪深300基准、13 个边界股票和不同市场环境。
+8. 恢复并验证严格 Phase 2B 验收：`fundamental_source_coverage >= 60%`、`industry_source_coverage >= 60%`、`industry_percentile_valid_rate >= 60%`、`data_complete_coverage >= 50%`、评级/动作分桶数不少于 3，且高风险样本不得出现激进建议。
+9. 补充测试：provider 字段映射测试、坏行容错测试、严格 `as_of` 防未来函数测试、TTM/同比计算测试、边界股票覆盖测试、fixture schema/source contract 测试和严格/price-only 双模式验收测试。
+10. 更新 artifact 输出：在 `historical_backtest_summary.json` 和 Markdown 报告中展示财务字段覆盖率、行业历史覆盖率、strict vs fallback 来源占比、data_complete 样本占比和主要 missing reason。
 
 **P2 第三阶段：Evidence Schema 全链路化**
 目标：从“新增 `evidence_fields`”升级为“所有关键字段都有可信证据链”。
