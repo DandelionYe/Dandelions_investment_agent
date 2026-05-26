@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from services.data.evidence_schema import normalize_key_fields
+
 logger = logging.getLogger(__name__)
 
 STRICT_FUNDAMENTAL_FIELDS = frozenset({
@@ -1241,6 +1243,32 @@ def build_sample_from_qmt_data(
     if forward_metrics.get("coverage_gap"):
         data_complete = False
 
+    input_result = {
+        "symbol": symbol,
+        "name": name,
+        "asset_type": "stock",
+        "as_of": as_of,
+        "price_data": price_data,
+        "fundamental_data": {k: v for k, v in fund.items()
+                             if not k.startswith("_")},
+        "valuation_data": {k: v for k, v in val.items()
+                           if not k.startswith("_")},
+        "industry": industry,
+        "event_data": {
+            "recent_news_sentiment": "neutral",
+            "policy_risk": "medium",
+            "event_summary": {"critical_count": 0, "high_count": 0},
+            "events": [],
+        },
+        "source_metadata": source_metadata,
+        "data_quality": {
+            "has_placeholder": has_placeholder,
+            "blocking_issues": blocking_issues,
+            "overall_confidence": round(confidence, 2),
+        },
+    }
+    normalize_key_fields(input_result)
+
     return {
         "sample_id": sample_id,
         "symbol": symbol,
@@ -1251,26 +1279,7 @@ def build_sample_from_qmt_data(
         "out_of_scope_exception": is_out_of_scope_exception(symbol),
         "scenario_tags": scenario_tags,
         "industry": industry,
-        "input_result": {
-            "asset_type": "stock",
-            "price_data": price_data,
-            "fundamental_data": {k: v for k, v in fund.items()
-                                 if not k.startswith("_")},
-            "valuation_data": {k: v for k, v in val.items()
-                               if not k.startswith("_")},
-            "event_data": {
-                "recent_news_sentiment": "neutral",
-                "policy_risk": "medium",
-                "event_summary": {"critical_count": 0, "high_count": 0},
-                "events": [],
-            },
-            "source_metadata": source_metadata,
-            "data_quality": {
-                "has_placeholder": has_placeholder,
-                "blocking_issues": blocking_issues,
-                "overall_confidence": round(confidence, 2),
-            },
-        },
+        "input_result": input_result,
         "forward_metrics": {
             "return_20d": forward_metrics.get("return_20d"),
             "return_60d": forward_metrics.get("return_60d"),

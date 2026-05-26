@@ -17,6 +17,10 @@ from pathlib import Path
 
 import pytest
 
+from services.data.evidence_schema import (
+    summarize_evidence_coverage,
+    validate_evidence_fields,
+)
 from services.research.historical_quality_backtest import (
     REQUIRED_SCENARIO_TAGS,
     validate_historical_sample,
@@ -149,6 +153,36 @@ class TestSampleSchema:
             source = s.get("source")
             assert isinstance(source, dict), f"{s['sample_id']}: 缺少 sample source"
             assert source.get("price") == "qmt_xtdata"
+
+    def test_all_samples_have_valid_evidence_fields(self, samples):
+        for s in samples:
+            ir = s.get("input_result", {})
+            assert isinstance(ir.get("evidence_fields"), dict), (
+                f"{s['sample_id']}: 缺少 input_result.evidence_fields"
+            )
+            errors = validate_evidence_fields(ir)
+            assert not errors, f"{s['sample_id']}: evidence_fields 校验失败: {errors[:5]}"
+
+    def test_flat_source_metadata_reaches_evidence_fields(self, samples, is_real_qmt):
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        for s in samples:
+            ir = s.get("input_result", {})
+            ef = ir.get("evidence_fields", {})
+            sm = ir.get("source_metadata", {})
+            assert ef["price_data.close"]["source"] == sm.get("price_source")
+            assert ef["price_data.close"]["as_of"] == s.get("as_of")
+            valuation_source = sm.get("valuation_source")
+            if valuation_source and valuation_source != "missing":
+                assert ef["valuation_data.pe_ttm"]["source"] == valuation_source
+
+    def test_evidence_coverage_is_not_zero(self, samples):
+        for s in samples:
+            ir = s.get("input_result", {})
+            summary = summarize_evidence_coverage(ir)
+            assert summary["coverage_rate"] > 0.20, (
+                f"{s['sample_id']}: evidence coverage too low: {summary}"
+            )
 
     def test_out_of_scope_exception_flagged(self, samples, is_real_qmt):
         if not is_real_qmt:

@@ -103,7 +103,7 @@ class TestIsEvidenceField:
 
     def test_dict_with_quality(self):
         d = {"value": 1, "source": "qmt", "quality": {"available": True}}
-        assert is_evidence_field(d) is True
+        assert is_evidence_field(d) is False
 
 
 class TestIsStrictSource:
@@ -260,6 +260,22 @@ class TestNormalizeKeyFields:
         assert ef["price_data.close"]["source"] == "qmt_xtdata"
         assert ef["valuation_data.pe_ttm"]["source"] == "local_csmar_daily_derived"
 
+    def test_flat_historical_source_metadata_propagated(self):
+        result = self._make_result()
+        result["source_metadata"] = {
+            "price_source": "qmt_xtdata",
+            "fundamental_source": "local_csmar_financial_statements",
+            "capital_structure_source": "local_csmar_eva_structure_partial",
+            "valuation_source": "local_csmar_daily_derived",
+            "industry_source": "local_csmar_industry_history",
+            "event_source": "cninfo",
+        }
+        normalize_key_fields(result)
+        ef = result["evidence_fields"]
+        assert ef["price_data.close"]["source"] == "qmt_xtdata"
+        assert ef["valuation_data.pe_ttm"]["source"] == "local_csmar_daily_derived"
+        assert ef["event_data.policy_risk"]["source"] == "cninfo"
+
     def test_missing_field_has_unavailable(self):
         result = self._make_result()
         result["valuation_data"]["pe_ttm"] = None
@@ -407,6 +423,16 @@ class TestValidateEvidenceFields:
         )
         assert any(e["error"] == "warnings_not_list" for e in errors)
 
+    def test_missing_standard_keys_detected(self):
+        result = self._make_valid_result()
+        result["evidence_fields"]["price_data.close"].pop("as_of")
+        result["evidence_fields"]["price_data.close"]["quality"].pop("freshness")
+        errors = validate_evidence_fields(
+            result, required_paths=["price_data.close"]
+        )
+        assert any(e["error"] == "missing_key_as_of" for e in errors)
+        assert any(e["error"] == "missing_quality_key_freshness" for e in errors)
+
 
 class TestSummarizeEvidenceCoverage:
 
@@ -468,6 +494,16 @@ class TestSummarizeEvidenceCoverage:
         )
         assert summary["total_required"] == 2
         assert summary["covered"] == 2
+
+    def test_accepts_raw_evidence_fields_dict(self):
+        result = self._make_result_with_evidence()
+        summary = summarize_evidence_coverage(
+            result["evidence_fields"],
+            required_paths=["price_data.close", "valuation_data.pe_ttm"],
+        )
+        assert summary["total_required"] == 2
+        assert summary["covered"] == 2
+        assert "qmt_xtdata" in summary["by_source"]
 
     def test_missing_field_counted(self):
         result = self._make_result_with_evidence()

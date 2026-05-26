@@ -8,6 +8,7 @@ HTML 结构有效性、CSS 页面定义、JSON 序列化往返。
 import json
 from pathlib import Path
 
+from services.data.evidence_schema import make_evidence_field
 from services.report.html_builder import build_html_report, save_html_report
 from services.report.json_builder import save_json_result
 from services.report.markdown_builder import build_markdown_report, save_markdown_report
@@ -264,6 +265,25 @@ def test_markdown_handles_empty_evidence_bundle():
 
     md = build_markdown_report(result)
     assert "暂无" in md
+
+
+def test_markdown_evidence_fields_summary_counts_existing_fields():
+    result = _minimal_result()
+    result["evidence_fields"] = {
+        "price_data.close": make_evidence_field(
+            1688.0, source="qmt_xtdata", as_of="2026-05-04", freshness="fresh"
+        ),
+        "valuation_data.pe_ttm": make_evidence_field(
+            21.5,
+            source="local_csmar_daily_derived",
+            as_of="2026-05-04",
+            freshness="historical",
+        ),
+    }
+
+    md = build_markdown_report(result)
+    assert "qmt_xtdata(1)" in md
+    assert "local_csmar_daily_derived(1)" in md
 
 
 def test_markdown_handles_empty_guard_reasons():

@@ -13,9 +13,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from services.data.evidence_schema import normalize_key_fields, validate_evidence_fields
 from services.research.decision_guard import ACTION_LEVEL
 from services.research.quality_backtest import (
     evaluate_backtest_sample,
@@ -163,6 +165,27 @@ def _score_bucket(score: int) -> str:
     return "unknown"
 
 
+def _ensure_input_result_evidence(sample: dict) -> dict:
+    """Return input_result with evidence_fields attached.
+
+    Historical fixtures store industry at sample level, while the evidence
+    schema reads it from the result payload. Copy it into input_result before
+    normalization so historical backtest artifacts carry the same evidence
+    view used by normal research reports.
+    """
+    input_result = sample.get("input_result", {})
+    if not isinstance(input_result, dict):
+        return {}
+    if isinstance(input_result.get("evidence_fields"), dict):
+        return input_result
+
+    enriched = deepcopy(input_result)
+    if "industry" not in enriched and isinstance(sample.get("industry"), dict):
+        enriched["industry"] = sample["industry"]
+    normalize_key_fields(enriched)
+    return enriched
+
+
 # ── Schema 校验 ───────────────────────────────────────────────
 
 _REQUIRED_SAMPLE_KEYS = {"sample_id", "symbol", "as_of", "asset_type",
@@ -214,6 +237,13 @@ def validate_historical_sample(sample: dict) -> list[str]:
         for k in _REQUIRED_PRICE_KEYS:
             if k not in pd:
                 errors.append(f"input_result.price_data 缺少: {k}")
+        if "evidence_fields" not in ir:
+            errors.append("input_result 缺少: evidence_fields")
+        else:
+            for error in validate_evidence_fields(ir):
+                errors.append(
+                    f"input_result.evidence_fields.{error['path']}: {error['error']}"
+                )
 
     # forward_metrics 结构
     fm = sample.get("forward_metrics", {})
@@ -248,7 +278,11 @@ def validate_historical_sample(sample: dict) -> list[str]:
 
 def load_historical_samples(path: str | Path) -> list[dict]:
     """加载历史回测样本。"""
-    return load_backtest_samples(path)
+    samples = load_backtest_samples(path)
+    for sample in samples:
+        if isinstance(sample, dict):
+            sample["input_result"] = _ensure_input_result_evidence(sample)
+    return samples
 
 
 def evaluate_historical_sample(sample: dict) -> dict:
@@ -267,7 +301,7 @@ def run_historical_backtest(samples: list[dict]) -> dict:
             r["forward_metrics"] = samples[i].get("forward_metrics", {})
             r["symbol"] = samples[i].get("symbol", "")
             r["as_of"] = samples[i].get("as_of", "")
-            r["input_result"] = samples[i].get("input_result", {})
+            r["input_result"] = _ensure_input_result_evidence(samples[i])
             r["quality"] = samples[i].get("quality", {})
             r["source"] = samples[i].get("source", {})
             r["out_of_scope_exception"] = samples[i].get("out_of_scope_exception", False)

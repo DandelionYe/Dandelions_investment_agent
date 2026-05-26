@@ -44,6 +44,7 @@ def main() -> int:
     )
     ind_provider = LocalCSMARIndustryHistoryProvider() if is_csmar_industry_history_enabled() else None
     print(f"  Industry history provider: {'available' if ind_provider else 'not available'}")
+    from services.data.evidence_schema import normalize_key_fields
     from services.research.historical_sample_builder import _enrich_industry_percentiles
 
     # Pre-warm the caches by loading data once
@@ -161,6 +162,11 @@ def main() -> int:
             blocking.append("industry_as_of_unverifiable")
         dq["blocking_issues"] = blocking
         ir["data_quality"] = dq
+        ir["symbol"] = symbol
+        ir["name"] = sample.get("name", symbol)
+        ir["as_of"] = as_of
+        ir["industry"] = sample.get("industry", {})
+        normalize_key_fields(ir)
 
         data_complete = (
             bool(pd_data)

@@ -28,7 +28,9 @@ _VALID_SOURCES = frozenset({
     "qmt", "qmt_xtdata", "akshare", "local_csmar", "web_news", "mock", "unknown",
     "eastmoney", "csmar", "eva", "cninfo",
     "local_csmar_daily_derived", "local_csmar_financial_statements",
-    "local_csmar_industry_history", "local_csmar_industry_non_strict",
+    "local_csmar_industry", "local_csmar_industry_history",
+    "local_csmar_industry_non_strict",
+    "local_csmar_industry_history_non_strict",
     "local_csmar_eva_structure_partial", "local_csmar_eva_structure",
     "derived", "missing", "event_provider",
 })
@@ -45,6 +47,15 @@ NON_STRICT_SOURCES = frozenset({
     "local_csmar_industry_non_strict", "local_csmar_industry_history_non_strict",
     "local_csmar_eva_structure_partial", "mock", "unknown",
 })
+
+_FLAT_SOURCE_KEYS: dict[str, tuple[str, ...]] = {
+    "price_data": ("price_source",),
+    "valuation_data": ("valuation_source",),
+    "fundamental_data": ("fundamental_source",),
+    "capital_structure": ("capital_structure_source",),
+    "industry": ("industry_source",),
+    "event_data": ("event_source", "event_data_source"),
+}
 
 
 def is_strict_source(source: str | None) -> bool:
@@ -110,11 +121,20 @@ def is_evidence_field(obj: Any) -> bool:
     """
     if not isinstance(obj, dict):
         return False
+    quality = obj.get("quality")
+    if not isinstance(quality, dict):
+        return False
     return (
         "value" in obj
         and "source" in obj
+        and "as_of" in obj
         and "quality" in obj
-        and isinstance(obj.get("quality"), dict)
+        and "warnings" in obj
+        and isinstance(obj.get("warnings"), list)
+        and "available" in quality
+        and "confidence" in quality
+        and "freshness" in quality
+        and "missing_reason" in quality
     )
 
 
@@ -129,7 +149,12 @@ def normalize_evidence_field(
     - 已是 evidence field → 幂等返回（补齐缺失 key）。
     - 裸值 → 包装为 evidence field。
     """
-    if is_evidence_field(raw):
+    if is_evidence_field(raw) or (
+        isinstance(raw, dict)
+        and "value" in raw
+        and "source" in raw
+        and "quality" in raw
+    ):
         q = raw.get("quality", {})
         if not isinstance(q, dict):
             q = {}
@@ -171,15 +196,30 @@ def _get_nested(d: dict, dotpath: str) -> Any:
         cur = cur.get(p)
     return cur
 
+def _normalize_source_label(source: Any) -> str:
+    if source == "mock_placeholder":
+        return "mock"
+    return str(source) if source else "unknown"
+
 
 def _get_source_for_field(source_metadata: dict, section: str) -> str:
     """从 source_metadata 中提取某 section 的 source 标识。"""
+    if not isinstance(source_metadata, dict):
+        return "unknown"
+
     meta = source_metadata.get(section, {})
     if isinstance(meta, dict):
         src = meta.get("source", "unknown")
-        if src == "mock_placeholder":
-            return "mock"
-        return str(src) if src else "unknown"
+        source = _normalize_source_label(src)
+        if source != "unknown":
+            return source
+    elif meta:
+        return _normalize_source_label(meta)
+
+    for flat_key in _FLAT_SOURCE_KEYS.get(section, ()):
+        if flat_key in source_metadata:
+            return _normalize_source_label(source_metadata.get(flat_key))
+
     return "unknown"
 
 
@@ -490,7 +530,7 @@ def validate_evidence_fields(
             continue
 
         # Check required keys
-        for key in ("value", "source", "quality"):
+        for key in ("value", "source", "as_of", "quality", "warnings"):
             if key not in ev:
                 errors.append({
                     "path": path,
@@ -506,10 +546,30 @@ def validate_evidence_fields(
                 "error": "empty_source",
                 "detail": f"{path} source 为空",
             })
+        elif source not in _VALID_SOURCES:
+            errors.append({
+                "path": path,
+                "error": "invalid_source",
+                "detail": f"{path} source={source} 不在标准 source 集合",
+            })
 
         # Check quality structure
         quality = ev.get("quality")
         if isinstance(quality, dict):
+            for key in ("available", "confidence", "freshness", "missing_reason"):
+                if key not in quality:
+                    errors.append({
+                        "path": path,
+                        "error": f"missing_quality_key_{key}",
+                        "detail": f"{path} quality 缺少 {key}",
+                    })
+            freshness = quality.get("freshness")
+            if freshness not in _VALID_FRESHNESS:
+                errors.append({
+                    "path": path,
+                    "error": "invalid_freshness",
+                    "detail": f"{path} freshness={freshness} 不在标准 freshness 集合",
+                })
             # Check confidence bounds
             conf = quality.get("confidence")
             if conf is not None:
@@ -540,6 +600,12 @@ def validate_evidence_fields(
                     "error": "inconsistent_available_missing_reason",
                     "detail": f"{path} available=true 但 missing_reason={missing_reason}",
                 })
+        elif quality is not None:
+            errors.append({
+                "path": path,
+                "error": "quality_not_dict",
+                "detail": f"{path} quality 不是 dict",
+            })
 
         # Check warnings is list
         warnings = ev.get("warnings")
@@ -565,9 +631,12 @@ def summarize_evidence_coverage(
         total_required, covered, missing, coverage_rate,
         by_source, by_quality, missing_reasons
     """
-    evidence_fields = result.get("evidence_fields", {})
-    if not isinstance(evidence_fields, dict):
-        evidence_fields = {}
+    if "evidence_fields" not in result and any("." in str(k) for k in result):
+        evidence_fields = result
+    else:
+        evidence_fields = result.get("evidence_fields", {})
+        if not isinstance(evidence_fields, dict):
+            evidence_fields = {}
 
     paths = required_paths or [dotpath for dotpath, _, _ in _KEY_FIELD_MAP]
 

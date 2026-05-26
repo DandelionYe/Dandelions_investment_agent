@@ -112,7 +112,7 @@ def _build_evidence_fields_summary(evidence_fields: dict) -> str:
 
     from services.data.evidence_schema import summarize_evidence_coverage
 
-    summary = summarize_evidence_coverage(evidence_fields)
+    summary = summarize_evidence_coverage({"evidence_fields": evidence_fields})
 
     lines = [
         f"- 核心字段覆盖率：{summary['coverage_rate']:.0%}"
