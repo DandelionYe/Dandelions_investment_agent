@@ -76,6 +76,32 @@ def _get_industry_provider():
         return None
 
 
+def _get_financial_provider():
+    try:
+        from services.data.providers.local_csmar_financial_statement_provider import (
+            LocalCSMARFinancialStatementProvider,
+            is_csmar_financial_enabled,
+        )
+        if not is_csmar_financial_enabled():
+            return None
+        return LocalCSMARFinancialStatementProvider()
+    except Exception:
+        return None
+
+
+def _get_industry_history_provider():
+    try:
+        from services.data.providers.local_csmar_industry_history_provider import (
+            LocalCSMARIndustryHistoryProvider,
+            is_csmar_industry_history_enabled,
+        )
+        if not is_csmar_industry_history_enabled():
+            return None
+        return LocalCSMARIndustryHistoryProvider()
+    except Exception:
+        return None
+
+
 def _compute_percentile_from_values(current: float, values: list[float]) -> float:
     """Fraction of *values* that are <= current."""
     if not values:
@@ -352,6 +378,87 @@ def enrich_industry_from_local(
     }
 
     source_label = "local_csmar_industry" if is_strict else "local_csmar_industry_non_strict"
+    return industry, source_label, is_strict
+
+
+def enrich_fundamental_from_financial_statements(
+    symbol: str,
+    as_of: str,
+) -> tuple[dict[str, Any], str]:
+    """Query local CSMAR financial statements for profitability metrics.
+
+    Returns (fundamental_data, source_label).
+    source_label is one of: 'local_csmar_financial_statements', 'missing'.
+    """
+    provider = _get_financial_provider()
+    if provider is None:
+        return {}, "missing"
+
+    result = provider.get_fundamentals(symbol, as_of)
+    if not result.metadata.success or not result.data:
+        return {}, "missing"
+
+    data = result.data
+    fund: dict[str, Any] = {}
+
+    # Copy computed metrics
+    for key in STRICT_FUNDAMENTAL_FIELDS:
+        if key in data and data[key] is not None:
+            fund[key] = data[key]
+
+    # Track warnings and missing reasons
+    if data.get("_warnings"):
+        fund["_warnings"] = data["_warnings"]
+    if data.get("_missing_reasons"):
+        fund["_missing_reasons"] = data["_missing_reasons"]
+
+    if not fund:
+        return {}, "missing"
+
+    return fund, "local_csmar_financial_statements"
+
+
+def enrich_industry_from_history(
+    symbol: str,
+    as_of: str,
+) -> tuple[dict[str, Any], str, bool]:
+    """Query local CSMAR industry history for historical classification.
+
+    Returns (industry_data, source_label, is_strict).
+    The industry history CSV has EndDate records; strict means EndDate <= as_of
+    and the record is from the correct classification system (P0207 for 2021-2022,
+    P0221 for 2023+).
+    """
+    provider = _get_industry_history_provider()
+    if provider is None:
+        return {}, "missing", False
+
+    result = provider.resolve_industry(symbol, as_of=as_of)
+    if not result.metadata.success or not result.data:
+        return {}, "missing", False
+
+    data = result.data
+    industry_as_of = data.get("industry_as_of")
+
+    # Strict: the record's EndDate must be <= as_of
+    is_strict = False
+    if industry_as_of and industry_as_of <= as_of:
+        is_strict = True
+
+    industry: dict[str, Any] = {
+        "level": "CSMAR_INDUSTRY_HISTORY",
+        "name": data.get("industry_name"),
+        "industry_code": data.get("industry_code"),
+        "classification_system": data.get("classification_system"),
+        "peer_count": 0,
+        "valid_peer_count_pe": 0,
+        "valid_peer_count_pb": 0,
+        "valid_peer_count_ps": 0,
+        "_industry_as_of": industry_as_of,
+        "_source": data.get("source"),
+    }
+
+    source_label = "local_csmar_industry_history" if is_strict else "local_csmar_industry_history_non_strict"
     return industry, source_label, is_strict
 
 # ── 用户指定的边界样本股票 ──────────────────────────────────────
@@ -954,6 +1061,7 @@ def build_sample_from_qmt_data(
     valuation_source: str = "missing",
     industry_source: str = "missing",
     industry_strict: bool = False,
+    capital_structure_source: str = "missing",
 ) -> dict[str, Any]:
     """从 QMT 历史数据组装一个完整样本。
 
@@ -1039,8 +1147,10 @@ def build_sample_from_qmt_data(
     strict_fundamental_source = (
         fundamental_source if has_strict_fundamental else "missing"
     )
-    capital_structure_source = (
-        fundamental_source if has_capital_structure and fundamental_source != "missing"
+    # Use the explicitly passed capital_structure_source parameter
+    # (from EVA enrichment), not derived from fundamental_source
+    effective_cap_structure = (
+        capital_structure_source if has_capital_structure
         else "missing"
     )
     strict_valuation_source = valuation_source if has_strict_valuation else "missing"
@@ -1050,7 +1160,7 @@ def build_sample_from_qmt_data(
     source_metadata = {
         "price_source": "qmt_xtdata",
         "fundamental_source": strict_fundamental_source,
-        "capital_structure_source": capital_structure_source,
+        "capital_structure_source": effective_cap_structure,
         "valuation_source": strict_valuation_source,
         "industry_source": industry_source if industry.get("name") else "missing",
         "as_of": as_of,
@@ -1327,14 +1437,23 @@ def try_build_from_qmt(
         sample_counter += 1
         sample_id = f"qmt_{symbol.replace('.', '_')}_{chosen_as_of.replace('-', '')}"
 
-        # ── Enrich from CSMAR / EVA / Industry ──
+        # ── Enrich from CSMAR / EVA / Industry / Financial Statements ──
         close_val = float(close_series.loc[:chosen_as_of].iloc[-1]) if not close_series.loc[:chosen_as_of].empty else None
 
         # Valuation from CSMAR Daily Derived (strict as_of)
         val_data, val_source = enrich_valuation_from_csmar(symbol, chosen_as_of, close_val)
 
-        # Fundamental from EVA (strict as_of): share capital, BPS only
-        fund_data, fund_source = enrich_fundamental_from_eva(symbol, chosen_as_of)
+        # Capital structure from EVA (strict as_of): share capital, BPS only
+        fund_data, eva_fund_source = enrich_fundamental_from_eva(symbol, chosen_as_of)
+        cap_structure_source = eva_fund_source if eva_fund_source != "missing" else "missing"
+
+        # Profitability fundamentals from local CSMAR financial statements (strict as_of)
+        fin_data, fin_source = enrich_fundamental_from_financial_statements(symbol, chosen_as_of)
+        if fin_data:
+            fund_data.update(fin_data)
+            fundamental_source = fin_source
+        else:
+            fundamental_source = "missing"
 
         # Additional valuation fields from EVA (market_cap etc.)
         eva_val_extra, eva_val_source = enrich_valuation_from_eva(symbol, chosen_as_of, close_val)
@@ -1342,8 +1461,10 @@ def try_build_from_qmt(
             val_data.update(eva_val_extra)
             val_data["_capital_structure_source"] = eva_val_source
 
-        # Industry from local CSMAR (may be non-strict)
-        ind_data, ind_source, ind_strict = enrich_industry_from_local(symbol, chosen_as_of)
+        # Industry: try history provider first, then fallback to snapshot provider
+        ind_data, ind_source, ind_strict = enrich_industry_from_history(symbol, chosen_as_of)
+        if not ind_data:
+            ind_data, ind_source, ind_strict = enrich_industry_from_local(symbol, chosen_as_of)
 
         # Compute industry percentiles if we have peer data and valuation
         if ind_data.get("name") and val_data:
@@ -1371,10 +1492,11 @@ def try_build_from_qmt(
             fundamental_data=fund_data if fund_data else None,
             valuation_data=val_data if val_data else None,
             industry_data=ind_data if ind_data else None,
-            fundamental_source=fund_source,
+            fundamental_source=fundamental_source,
             valuation_source=val_source,
             industry_source=ind_source,
             industry_strict=ind_strict,
+            capital_structure_source=cap_structure_source,
         )
 
         samples.append(sample)
@@ -1386,9 +1508,9 @@ def try_build_from_qmt(
         "skipped": skipped,
         "source": {
             "price": "qmt_xtdata",
-            "fundamental": "missing",
+            "fundamental": "local_csmar_financial_statements",
             "capital_structure": "local_csmar_eva_structure_partial",
-            "valuation": "mixed:local_csmar_daily_derived,missing",
-            "industry": "local_csmar_industry_non_strict",
+            "valuation": "local_csmar_daily_derived",
+            "industry": "local_csmar_industry_history",
         },
     }

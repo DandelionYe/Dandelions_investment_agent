@@ -258,16 +258,18 @@ class TestAssertHistoricalAcceptance:
         else:
             assert_historical_backtest_acceptance(summary)
 
-    def test_strict_qmt_acceptance_fails_when_research_inputs_missing(
+    def test_strict_qmt_acceptance_passes_with_enriched_fixture(
         self, summary, is_real_qmt
     ):
+        """Strict Phase 2B acceptance should pass with enriched fixture."""
         if not is_real_qmt:
             pytest.skip("Only applies to QMT fixtures")
-        with pytest.raises(AssertionError, match="完整研究输入覆盖率"):
-            assert_historical_backtest_acceptance(
-                summary,
-                REAL_QMT_ACCEPTANCE_THRESHOLDS,
-            )
+        # With financial statements and industry history providers,
+        # the strict acceptance should now pass
+        assert_historical_backtest_acceptance(
+            summary,
+            REAL_QMT_ACCEPTANCE_THRESHOLDS,
+        )
 
     def test_acceptance_fails_on_too_few_samples(self, summary):
         """样本数不足时应失败。"""

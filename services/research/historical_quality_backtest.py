@@ -141,6 +141,7 @@ NON_STRICT_SOURCE_LABELS = frozenset({
     "non_strict",
     "latest_snapshot_fallback",
     "local_csmar_industry_non_strict",
+    "local_csmar_industry_history_non_strict",
     "local_csmar_eva_structure_partial",
 })
 

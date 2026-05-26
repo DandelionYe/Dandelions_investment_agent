@@ -528,6 +528,7 @@ class TestSampleSourceFields:
             valuation_source="local_csmar_daily_derived",
             industry_source="local_csmar_industry_non_strict",
             industry_strict=False,
+            capital_structure_source="local_csmar_eva_structure",
         )
 
         sm = sample["input_result"]["source_metadata"]

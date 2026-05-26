@@ -73,6 +73,33 @@ class TestSampleCount:
     def test_at_least_50_samples(self, samples):
         assert len(samples) >= 50, f"只有 {len(samples)} 个样本，需要 >= 50"
 
+    def test_at_least_100_samples_for_qmt(self, samples, is_real_qmt):
+        """QMT fixtures should have >= 100 samples."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        assert len(samples) >= 100, f"只有 {len(samples)} 个样本，需要 >= 100"
+
+    def test_year_coverage_2021_2025(self, samples, is_real_qmt):
+        """QMT fixtures should cover 2021-2025."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        years = set()
+        for s in samples:
+            as_of = s.get("as_of", "")
+            if len(as_of) >= 4:
+                years.add(as_of[:4])
+        for year in ["2021", "2022", "2023", "2024", "2025"]:
+            assert year in years, f"Missing year {year} in coverage: {sorted(years)}"
+
+    def test_boundary_symbols_covered(self, samples, is_real_qmt):
+        """QMT fixtures should cover all 13 boundary symbols."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        from services.research.historical_sample_builder import BOUNDARY_SYMBOLS
+        sample_symbols = {s.get("symbol") for s in samples}
+        for sym in BOUNDARY_SYMBOLS:
+            assert sym in sample_symbols, f"Boundary symbol {sym} not in samples"
+
 
 # ── 样本 Schema 校验 ─────────────────────────────────────────
 
@@ -246,3 +273,69 @@ class TestDeterminism:
             assert symbol, f"{s.get('sample_id')}: symbol 为空"
             # 应该是 XX.XX 格式
             assert "." in symbol, f"{s['sample_id']}: symbol 格式异常: {symbol}"
+
+
+# ── Strict coverage (QMT fixtures only) ────────────────────────
+
+class TestStrictCoverage:
+
+    def _source_coverage(self, samples: list, source_key: str, non_strict_labels: set) -> float:
+        """Calculate strict source coverage rate."""
+        total = len(samples)
+        if total == 0:
+            return 0.0
+        strict_count = 0
+        for s in samples:
+            ir = s.get("input_result", {})
+            sm = ir.get("source_metadata", {})
+            source = sm.get(source_key)
+            if source and source not in non_strict_labels:
+                strict_count += 1
+        return strict_count / total
+
+    def _has_any_fundamental_field(self, s: dict) -> bool:
+        """Check if sample has any strict fundamental field."""
+        ir = s.get("input_result", {})
+        fd = ir.get("fundamental_data", {})
+        strict_fields = {"roe", "gross_margin", "net_margin", "net_profit_growth",
+                         "revenue_growth", "net_profit_ttm", "revenue_ttm",
+                         "debt_ratio", "operating_cashflow_quality"}
+        return any(fd.get(f) is not None for f in strict_fields)
+
+    def _non_strict_labels(self) -> set:
+        return {
+            None, "", "missing", "non_strict", "latest_snapshot_fallback",
+            "local_csmar_industry_non_strict", "local_csmar_industry_history_non_strict",
+            "local_csmar_eva_structure_partial",
+        }
+
+    def test_strict_fundamental_coverage(self, samples, is_real_qmt):
+        """QMT fixtures should have >= 60% strict fundamental coverage."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        total = len(samples)
+        strict_count = 0
+        for s in samples:
+            ir = s.get("input_result", {})
+            sm = ir.get("source_metadata", {})
+            source = sm.get("fundamental_source")
+            if source and source not in self._non_strict_labels() and self._has_any_fundamental_field(s):
+                strict_count += 1
+        coverage = strict_count / total if total > 0 else 0.0
+        assert coverage >= 0.60, f"Strict fundamental coverage {coverage:.1%} < 60%"
+
+    def test_strict_industry_coverage(self, samples, is_real_qmt):
+        """QMT fixtures should have >= 60% strict industry coverage."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        coverage = self._source_coverage(samples, "industry_source", self._non_strict_labels())
+        assert coverage >= 0.60, f"Strict industry coverage {coverage:.1%} < 60%"
+
+    def test_data_complete_coverage(self, samples, is_real_qmt):
+        """QMT fixtures should have >= 50% data_complete coverage."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        total = len(samples)
+        complete_count = sum(1 for s in samples if s.get("quality", {}).get("data_complete") is True)
+        coverage = complete_count / total if total > 0 else 0.0
+        assert coverage >= 0.50, f"Data complete coverage {coverage:.1%} < 50%"
