@@ -369,12 +369,34 @@ class LocalCSMARFinancialStatementProvider:
         roe = None
         parent_equity = _to_float(balance_latest.get("A003100000")) if balance_latest is not None else None
         total_equity = _to_float(balance_latest.get("A003000000")) if balance_latest is not None else None
+        avg_parent_equity = None
+        avg_total_equity = None
+        if balance_latest is not None:
+            latest_balance_key = _quarter_key(str(balance_latest.get("Accper", "")))
+            if latest_balance_key is not None:
+                latest_year, latest_qi = latest_balance_key
+                prior_balance = self._find_quarter(balance_vis, latest_year - 1, latest_qi)
+                if prior_balance is not None:
+                    prior_parent_equity = _to_float(prior_balance.get("A003100000"))
+                    prior_total_equity = _to_float(prior_balance.get("A003000000"))
+                    if parent_equity is not None and prior_parent_equity is not None:
+                        avg_parent_equity = (parent_equity + prior_parent_equity) / 2
+                    if total_equity is not None and prior_total_equity is not None:
+                        avg_total_equity = (total_equity + prior_total_equity) / 2
 
-        equity_for_roe = parent_equity
+        equity_for_roe = avg_parent_equity
+        if equity_for_roe is None:
+            equity_for_roe = avg_total_equity
+            if equity_for_roe is not None and net_profit_ttm is not None:
+                warnings.append("ROE uses average total equity as fallback for parent equity")
+        if equity_for_roe is None:
+            equity_for_roe = parent_equity
+            if equity_for_roe is not None and net_profit_ttm is not None:
+                warnings.append("ROE uses latest parent equity because prior same-period equity is missing")
         if equity_for_roe is None:
             equity_for_roe = total_equity
             if equity_for_roe is not None and net_profit_ttm is not None:
-                warnings.append("ROE uses 所有者权益合计 as fallback for 归母权益")
+                warnings.append("ROE uses latest total equity as fallback")
 
         if net_profit_ttm is not None and equity_for_roe is not None and equity_for_roe > 0:
             roe = net_profit_ttm / equity_for_roe
@@ -574,10 +596,12 @@ class LocalCSMARFinancialStatementProvider:
 
         latest_year, latest_qi = latest_key
 
-        # Take all rows from previous year and earlier
+        # Take rows up to the same quarter one year earlier. Using all rows in
+        # the previous year would compare Q1/Q2/Q3 TTM against the prior annual
+        # TTM, which understates or overstates true year-on-year growth.
         prev_year_mask = df["Accper"].apply(
             lambda x: _quarter_key(str(x)) is not None
-            and _quarter_key(str(x))[0] <= latest_year - 1
+            and _quarter_key(str(x)) <= (latest_year - 1, latest_qi)
         )
         prev_df = df[prev_year_mask]
         if prev_df.empty:

@@ -35,6 +35,8 @@ _DEFAULT_CSV_PATH = Path(
 _USECOLS = [
     "Symbol",
     "EndDate",
+    "ABSign",
+    "Plate",
     "INDCLASSIFYSYSTEM",
     "INDUSTRYCODE",
     "IndustryName",
@@ -148,13 +150,63 @@ class LocalCSMARIndustryHistoryProvider:
                 # Use whatever is latest
                 best = visible_df.sort_values("_end_date").iloc[-1]
 
+        members = self._resolve_members(
+            df=df,
+            as_of_date=as_of_date,
+            classification_system=str(best.get("INDCLASSIFYSYSTEM", "")).strip(),
+            industry_code=str(best.get("INDUSTRYCODE", "")).strip(),
+        )
+
         return {
             "industry_code": str(best.get("INDUSTRYCODE", "")).strip(),
             "industry_name": str(best.get("IndustryName", "")).strip(),
             "classification_system": str(best.get("INDCLASSIFYSYSTEM", "")).strip(),
             "industry_as_of": str(best["_end_date"]),
+            "industry_members": members,
+            "peer_count": len(members),
             "source": "local_csmar_industry_history",
         }
+
+    def _resolve_members(
+        self,
+        *,
+        df: pd.DataFrame,
+        as_of_date: date,
+        classification_system: str,
+        industry_code: str,
+    ) -> list[str]:
+        """Return historical peers in the same industry at as_of.
+
+        Each peer is represented by its latest visible record in the same
+        classification system. This prevents a later industry assignment from
+        leaking into an earlier historical sample.
+        """
+        if not classification_system or not industry_code:
+            return []
+
+        visible = df[
+            (df["_end_date"] <= as_of_date)
+            & (df["_system"] == classification_system)
+        ].copy()
+        if visible.empty:
+            return []
+
+        visible = visible.sort_values(["_code", "_end_date"])
+        latest = visible.drop_duplicates(subset=["_code"], keep="last")
+        latest = latest[latest["INDUSTRYCODE"].astype(str).str.strip() == industry_code]
+        if latest.empty:
+            return []
+
+        # Phase 2B samples are A-share Shanghai/Shenzhen mainboard. Historical
+        # CSMAR labels former SME board as "中小板"; include it with mainboard.
+        if "ABSign" in latest.columns:
+            latest = latest[latest["ABSign"].astype(str).str.strip().isin({"A", ""})]
+        if "Plate" in latest.columns:
+            plate = latest["Plate"].astype(str).str.strip()
+            latest = latest[plate.isin({"主板", "中小板"})]
+
+        members = sorted({_format_symbol(code) for code in latest["_code"].tolist()})
+        return members
 
     def _load_data(self) -> pd.DataFrame:
         """Load and cache the CSV data with bad-row tolerance."""
@@ -214,6 +266,16 @@ def _normalize_symbol(symbol: str) -> str:
     else:
         code = value
     return code.zfill(6)
+
+
+def _format_symbol(code: str) -> str:
+    """Format a normalized 6-digit code with exchange suffix."""
+    normalized = str(code).strip().zfill(6)
+    if normalized.startswith(("6", "9")):
+        return f"{normalized}.SH"
+    if normalized.startswith(("4", "8")):
+        return f"{normalized}.BJ"
+    return f"{normalized}.SZ"
 
 
 def is_csmar_industry_history_enabled() -> bool:

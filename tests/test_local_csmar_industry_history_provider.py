@@ -83,20 +83,27 @@ class TestIndustryHistoryProvider:
         if not is_available:
             pytest.skip("Industry history CSV not available")
         result = provider.resolve_industry("000001.SZ", as_of="2021-12-31")
-        if result.metadata.success and result.data:
-            system = result.data.get("classification_system", "")
-            # P0207 should be preferred, but P0201 might be the only available
-            assert system in ("P0207", "P0201", "P0221"), f"Unexpected system: {system}"
+        assert result.metadata.success is True
+        assert result.data.get("classification_system") == "P0207"
 
     def test_p0221_preferred_for_2023(self, provider, is_available):
         """2023+ should prefer P0221 classification system."""
         if not is_available:
             pytest.skip("Industry history CSV not available")
         result = provider.resolve_industry("000001.SZ", as_of="2023-12-31")
-        if result.metadata.success and result.data:
-            system = result.data.get("classification_system", "")
-            # P0221 should be preferred for 2023+
-            assert system in ("P0207", "P0201", "P0221"), f"Unexpected system: {system}"
+        assert result.metadata.success is True
+        assert result.data.get("classification_system") == "P0221"
+
+    def test_returns_historical_peer_members(self, provider, is_available):
+        """Provider should return peers from the same historical industry."""
+        if not is_available:
+            pytest.skip("Industry history CSV not available")
+        result = provider.resolve_industry("000002.SZ", as_of="2024-12-31")
+        assert result.metadata.success is True
+        members = result.data.get("industry_members", [])
+        assert "000002.SZ" in members
+        assert result.data.get("peer_count") == len(members)
+        assert len(members) >= 10
 
     def test_industry_as_of_not_future(self, provider, is_available):
         """industry_as_of should be <= as_of."""

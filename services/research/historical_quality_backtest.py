@@ -424,6 +424,8 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
         sm = ir.get("source_metadata", {}) if isinstance(ir, dict) else {}
         industry_source = sm.get("industry_source") if isinstance(sm, dict) else None
         is_strict_industry = industry_source not in NON_STRICT_SOURCE_LABELS
+        percentile_source = vd.get("industry_percentile_source")
+        is_strict_percentile = percentile_source not in NON_STRICT_SOURCE_LABELS
         has_valid = any(
             vd.get(f"industry_{m}_percentile") is not None
             for m in ["pe", "pb", "ps"]
@@ -436,7 +438,7 @@ def summarize_historical_backtest(backtest_result: dict) -> dict:
             continue
 
         industry_total += 1
-        if has_valid:
+        if has_valid and is_strict_percentile:
             industry_valid += 1
 
     # ── forward return 分桶表现（含 120d） ──

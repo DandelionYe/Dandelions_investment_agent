@@ -201,3 +201,20 @@ class TestFinancialProviderIntegration:
             result = provider.get_fundamentals(symbol, "2023-12-31")
             # Should not raise, may have empty data
             assert isinstance(result.data, dict)
+
+    def test_growth_uses_previous_same_period_ttm(self, provider, is_available):
+        """Growth should compare current TTM with prior-year same-period TTM."""
+        if not is_available:
+            pytest.skip("CSMAR financial statements not available")
+        result = provider.get_fundamentals("000002.SZ", "2021-12-30")
+        assert result.metadata.success is True
+        assert result.data["revenue_growth"] == pytest.approx(0.165085, abs=0.000001)
+        assert result.data["net_profit_growth"] == pytest.approx(-0.05316, abs=0.000001)
+
+    def test_roe_uses_average_parent_equity(self, provider, is_available):
+        """ROE should use average parent equity when same-period prior data exists."""
+        if not is_available:
+            pytest.skip("CSMAR financial statements not available")
+        result = provider.get_fundamentals("000002.SZ", "2021-12-30")
+        assert result.metadata.success is True
+        assert result.data["roe"] == pytest.approx(0.178209, abs=0.000001)

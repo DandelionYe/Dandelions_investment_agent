@@ -339,3 +339,21 @@ class TestStrictCoverage:
         complete_count = sum(1 for s in samples if s.get("quality", {}).get("data_complete") is True)
         coverage = complete_count / total if total > 0 else 0.0
         assert coverage >= 0.50, f"Data complete coverage {coverage:.1%} < 50%"
+
+    def test_strict_industry_percentiles_have_strict_source(self, samples, is_real_qmt):
+        """Industry percentiles must be traced to historical industry peers."""
+        if not is_real_qmt:
+            pytest.skip("Only applies to QMT fixtures")
+        strict_valid = 0
+        for sample in samples:
+            ir = sample.get("input_result", {})
+            sm = ir.get("source_metadata", {})
+            if sm.get("industry_source") in self._non_strict_labels():
+                continue
+            vd = ir.get("valuation_data", {})
+            if not any(vd.get(f"industry_{m}_percentile") is not None for m in ("pe", "pb", "ps")):
+                continue
+            assert vd.get("industry_percentile_source") == "local_csmar_industry_history"
+            assert sample.get("industry", {}).get("peer_count", 0) >= 10
+            strict_valid += 1
+        assert strict_valid >= 60, f"Strict industry percentile count too low: {strict_valid}"

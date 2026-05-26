@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +44,7 @@ def main() -> int:
     )
     ind_provider = LocalCSMARIndustryHistoryProvider() if is_csmar_industry_history_enabled() else None
     print(f"  Industry history provider: {'available' if ind_provider else 'not available'}")
+    from services.research.historical_sample_builder import _enrich_industry_percentiles
 
     # Pre-warm the caches by loading data once
     if fin_provider:
@@ -72,8 +74,10 @@ def main() -> int:
         ir = sample.get("input_result", {})
         sm = ir.get("source_metadata", {})
 
-        # Enrich with financial statements if missing
-        if sm.get("fundamental_source") in (None, "", "missing") and fin_provider:
+        # Refresh financial statements. This is deterministic for a fixed
+        # fixture as_of and prevents stale derived metrics from lingering after
+        # provider logic changes.
+        if fin_provider:
             result = fin_provider.get_fundamentals(symbol, as_of)
             if result.metadata.success and result.data:
                 fd = ir.get("fundamental_data", {})
@@ -85,9 +89,10 @@ def main() -> int:
                 sm["fundamental_source"] = "local_csmar_financial_statements"
                 enriched_count += 1
 
-        # Enrich with industry history if not already strict
+        # Refresh industry history and recompute industry percentiles from
+        # historical peers. Do not preserve old latest-snapshot percentiles.
         ind_strict = False
-        if sm.get("industry_source") in (None, "", "missing", "local_csmar_industry_non_strict") and ind_provider:
+        if ind_provider:
             result = ind_provider.resolve_industry(symbol, as_of=as_of)
             if result.metadata.success and result.data:
                 industry_as_of = result.data.get("industry_as_of", "")
@@ -97,13 +102,32 @@ def main() -> int:
                     "name": result.data.get("industry_name"),
                     "industry_code": result.data.get("industry_code"),
                     "classification_system": result.data.get("classification_system"),
-                    "peer_count": 0,
+                    "peer_count": result.data.get("peer_count", 0),
                     "valid_peer_count_pe": 0,
                     "valid_peer_count_pb": 0,
                     "valid_peer_count_ps": 0,
                     "_industry_as_of": industry_as_of,
+                    "_source": result.data.get("source"),
+                    "_members": result.data.get("industry_members", []),
                 }
                 sm["industry_source"] = "local_csmar_industry_history" if ind_strict else "local_csmar_industry_history_non_strict"
+                vd = ir.get("valuation_data", {})
+                for key in (
+                    "industry_pe_percentile",
+                    "industry_pb_percentile",
+                    "industry_ps_percentile",
+                    "industry_percentile_source",
+                ):
+                    vd.pop(key, None)
+                price_data = ir.get("price_data", {})
+                _enrich_industry_percentiles(
+                    symbol,
+                    as_of,
+                    sample["industry"],
+                    vd,
+                    price_data.get("close"),
+                )
+                ir["valuation_data"] = vd
                 industry_enriched_count += 1
         else:
             # Check if existing industry is strict
@@ -157,6 +181,12 @@ def main() -> int:
         "capital_structure": "local_csmar_eva_structure_partial",
         "valuation": "local_csmar_daily_derived",
         "industry": "local_csmar_industry_history",
+    }
+    fixture["generated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    fixture.setdefault("build_metadata", {})["reenriched_with"] = {
+        "financial": "local_csmar_financial_statements",
+        "industry": "local_csmar_industry_history",
+        "industry_percentiles": "historical_industry_members",
     }
 
     print(f"\nEnriched {enriched_count} samples with financial data")

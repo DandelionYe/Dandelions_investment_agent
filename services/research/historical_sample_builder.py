@@ -292,6 +292,8 @@ def _enrich_industry_percentiles(
 
     members = industry_data.get("_members", [])
     if not members:
+        if industry_data.get("_source") == "local_csmar_industry_history":
+            return
         # Try to get members from industry provider
         ind_provider = _get_industry_provider()
         if ind_provider is None:
@@ -327,6 +329,7 @@ def _enrich_industry_percentiles(
     industry_data["valid_peer_count_ps"] = valid_peers["ps"]
 
     # Compute industry percentiles
+    has_percentile = False
     for csmar_key, percentile_key, val_key in [
         ("pe", "industry_pe_percentile", "pe_ttm"),
         ("pb", "industry_pb_percentile", "pb_mrq"),
@@ -338,6 +341,12 @@ def _enrich_industry_percentiles(
             valuation_data[percentile_key] = round(
                 _compute_percentile_from_values(current_val, peers), 4
             )
+            has_percentile = True
+
+    if has_percentile:
+        valuation_data["industry_percentile_source"] = industry_data.get(
+            "_source", "local_csmar_industry_non_strict"
+        )
 
 
 def enrich_industry_from_local(
@@ -378,6 +387,7 @@ def enrich_industry_from_local(
     }
 
     source_label = "local_csmar_industry" if is_strict else "local_csmar_industry_non_strict"
+    industry["_source"] = source_label
     return industry, source_label, is_strict
 
 
@@ -450,12 +460,13 @@ def enrich_industry_from_history(
         "name": data.get("industry_name"),
         "industry_code": data.get("industry_code"),
         "classification_system": data.get("classification_system"),
-        "peer_count": 0,
+        "peer_count": data.get("peer_count", 0),
         "valid_peer_count_pe": 0,
         "valid_peer_count_pb": 0,
         "valid_peer_count_ps": 0,
         "_industry_as_of": industry_as_of,
         "_source": data.get("source"),
+        "_members": data.get("industry_members", []),
     }
 
     source_label = "local_csmar_industry_history" if is_strict else "local_csmar_industry_history_non_strict"
@@ -1471,16 +1482,6 @@ def try_build_from_qmt(
             _enrich_industry_percentiles(
                 symbol, chosen_as_of, ind_data, val_data, close_val
             )
-            if any(
-                val_data.get(field) is not None
-                for field in (
-                    "industry_pe_percentile",
-                    "industry_pb_percentile",
-                    "industry_ps_percentile",
-                )
-            ):
-                val_data["industry_percentile_source"] = ind_source
-
         sample = build_sample_from_qmt_data(
             sample_id=sample_id,
             symbol=symbol,
