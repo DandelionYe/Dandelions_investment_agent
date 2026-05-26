@@ -13,8 +13,17 @@
 - 编排：LangGraph 双层图 —— 辩论子图（8 节点多轮辩论 + Supervisor + HITL）+ 完整 pipeline 图（6 节点端到端：数据→评分→辩论→HITL→决策保护→验证）。
 - 看板：Streamlit。
 - 报告：JSON → Markdown → HTML → Playwright PDF，支持正式模板 `default` / `institutional_full` / `compact_review` / `risk_only` 与主题配置。
-- 研究质量：已落地 P0 数据质量回归样本、P2 真实历史回测样本池和全链路 evidence schema，相关 artifact 输出到 `storage/artifacts/`。
+- 研究质量：已落地 P0 数据质量回归样本、P2 真实历史回测样本池、全链路 evidence schema、报告产品化、网页新闻质量监控和研究质量治理，相关 artifact 输出到 `storage/artifacts/`。
 - 当前不会自动下单，也不会调用 QMT 交易接口。
+
+## 已落地能力总览
+
+- 单票研究主链路：QMT/AKShare/mock 数据加载、六维评分、LangGraph 多轮辩论、HITL 审核、决策保护器和 JSON/Markdown/HTML/PDF 报告。
+- 服务化运行：FastAPI + Celery + Redis + WebSocket + Streamlit，一键开发启动脚本和生产运维脚本均已提供。
+- 多用户与权限：JWT 登录、refresh token、admin/普通用户角色区分、任务/报告/观察池 owner 隔离、WebSocket owner 校验。
+- 本地数据增强：CSMAR 行业库、历史行业库、财务报表、CSMAR Daily Derived、EVA 股本/BPS 与 MiniQMT 缓存协同使用。
+- 研究质量：真实数据质量回归样本、100 个 QMT 历史样本、严格 as_of 财务/估值/行业接入、Evidence Schema、报告模板体系、新闻质量监控和 baseline 治理脚本。
+- 运维安全：`.env.production.example`、生产启动/停止/状态/健康检查、运行时备份和清理脚本。
 
 ## 项目结构
 
@@ -685,7 +694,7 @@ python scripts/run_web_news_quality_monitor.py --sources eastmoney,sina --limit 
 
 ### 研究质量治理
 
-`services/research/quality_governance.py` 统一加载 baseline，比较历史回测、evidence schema、报告产品化、新闻质量的 artifact，输出 drift/failure 报告：
+`services/research/quality_governance.py` 统一加载 `configs/research_quality_baseline.json`，比较历史回测、evidence schema、报告产品化、离线新闻质量、live 新闻质量和数据质量回归 artifact，输出 drift/failure 报告。baseline 覆盖 6 个组件、26 个指标，并对历史回测、离线新闻、live 新闻和 QMT 数据质量 artifact 做新鲜度检查。
 
 ```powershell
 # 默认运行（全部离线检查）
@@ -693,6 +702,10 @@ python scripts/run_research_quality_governance.py
 
 # 刷新离线 artifact 后比较
 python scripts/run_research_quality_governance.py --refresh-offline-artifacts
+
+# 包含 opt-in 检查
+python scripts/run_research_quality_governance.py --include-web-news-live
+python scripts/run_research_quality_governance.py --include-qmt-regression
 ```
 
 输出：
@@ -701,6 +714,8 @@ python scripts/run_research_quality_governance.py --refresh-offline-artifacts
 - `storage/artifacts/research_quality/governance/latest.md`
 - `storage/artifacts/research_quality/governance/drift_report.md`
 - `storage/artifacts/research_quality/governance/failures.jsonl`
+
+默认检查全部离线运行，不依赖网络、QMT 或服务进程；`web_news_live` 和 `data_quality_regression` 需要真实网络/MiniQMT/本地参考库，默认不启用。`--update-baseline` 只生成候选 baseline，不会自动覆盖现有配置。
 
 ## 测试
 
