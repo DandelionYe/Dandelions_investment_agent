@@ -9,13 +9,14 @@ Usage:
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # 确保项目根目录在 sys.path 中
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from services.data.news_quality import (
+from services.data.news_quality import (  # noqa: E402
     evaluate_news_provider_result,
     summarize_news_quality,
 )
@@ -83,6 +84,7 @@ def main():
             all_passed = False
 
     summary = summarize_news_quality(evaluations)
+    summary["generated_at"] = datetime.now(timezone.utc).isoformat()
     print(f"\n汇总: 总评估={summary['total_evaluations']}, "
           f"总条目={summary['total_items']}, 去重后={summary['total_deduped']}, "
           f"相关={summary['total_relevant']}, 低质量={summary['total_low_quality']}, "

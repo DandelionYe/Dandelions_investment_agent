@@ -11,7 +11,7 @@ P2 分为多个阶段推进：
 | Phase 3 | 全链路 evidence schema | ✅ 已完成 |
 | Phase 4 | 报告产品化 | ✅ 已完成 |
 | Phase 5 | 真实新闻长期监控 | ✅ 代码层已完成 |
-| Phase 6 | 质量治理基线 | 待规划 |
+| Phase 6 | 质量治理基线 | ✅ 已完成 |
 
 ---
 
@@ -640,4 +640,87 @@ RUN_WEB_NEWS_NETWORK=1 python -m pytest tests/integration/test_web_news_quality_
 - 真实新闻 provider 天然不稳定，部分来源在特定网络环境下可能全部失败。
 - 不会把空新闻结果解释为"无负面舆情"的强结论。
 - 人工抽样候选只生成样本文件，不包含人工标注 UI。
+
+---
+
+## P2 Phase 6：研究质量治理 ✅
+
+### 概述
+
+Phase 6 将 Phase 1-5 分散的质量脚本和 artifacts 统一为可比较、可分级、可沉淀 bug case 的持续治理体系。通过 baseline 配置驱动，默认检查全部离线可运行。
+
+### 核心模块
+
+- `services/research/quality_governance.py`：治理核心，提供 baseline 校验、artifact 加载、指标比较、severity 分级、drift 报告、case registry
+- `configs/research_quality_baseline.json`：baseline 配置，定义各组件的指标阈值和 severity
+- `scripts/run_research_quality_governance.py`：治理脚本，支持刷新 artifact、opt-in 组件、baseline 更新
+
+### Baseline 覆盖的组件
+
+| 组件 | 默认启用 | 指标数 | 说明 |
+|------|---------|-------|------|
+| historical_backtest | ✅ | 15 | 历史回测质量（样本数、pass_rate、来源覆盖率、保护器命中率等） |
+| evidence_schema | ✅ | 4 | evidence schema 字段数、真实样本校验是否运行、校验样本数和错误数 |
+| report_productization | ✅ | 2 | 正式模板数和章节数 |
+| web_news_offline | ✅ | 3 | 离线新闻质量（样本数、失败数、相关率），并检查 artifact 新鲜度 |
+| web_news_live | ❌ opt-in | 1 | 真实新闻监控（成功率） |
+| data_quality_regression | ❌ opt-in | 1 | QMT 数据质量回归 |
+
+### Severity 分级
+
+- **blocker**：破坏研究可信度或验收标准，返回 exit code 1
+- **warning**：明显漂移但不阻断，默认 exit 0（`--fail-on-warning` 时返回 1）
+- **watch**：需要观察的真实 provider 或趋势项，默认 exit 0（`--fail-on-watch` 时返回 1）
+
+### 运行方式
+
+```bash
+# 默认运行（全部离线检查）
+python scripts/run_research_quality_governance.py
+
+# 刷新离线 artifact 后比较
+python scripts/run_research_quality_governance.py --refresh-offline-artifacts
+
+# 包含 opt-in 组件
+python scripts/run_research_quality_governance.py --include-web-news-live
+python scripts/run_research_quality_governance.py --include-qmt-regression
+
+# 输出 baseline 更新候选
+python scripts/run_research_quality_governance.py --update-baseline
+
+# warning 也返回非 0
+python scripts/run_research_quality_governance.py --fail-on-warning
+```
+
+### Artifact 输出
+
+| 文件 | 说明 |
+|------|------|
+| `latest.json` | 完整治理报告 |
+| `latest.md` | Markdown 报告 |
+| `drift_report.md` | drift 详情 |
+| `failures.jsonl` | 失败条目（每行一个） |
+| `baseline_candidate.json` | baseline 更新候选（仅 `--update-baseline`） |
+
+### Case Registry
+
+`tests/fixtures/research_quality_case_registry.json` 记录 bug case 沉淀流程。每条 case 包含：`case_id`, `component`, `source_artifact`, `symbol/sample_id`, `failure_type`, `severity`, `target_fixture`, `status` (proposed/accepted/regression), `created_at`, `notes`。
+
+### 测试
+
+```bash
+# 治理测试
+python -m pytest tests/test_research_quality_governance.py tests/test_research_quality_baseline_contract.py -q
+# 50 tests covering baseline schema/metric extraction/comparison/severity/missing artifact/exit logic/case registry
+
+# 已有测试（不应被破坏）
+python -m pytest tests/test_historical_quality_backtest.py tests/test_evidence_schema_contract.py tests/test_report_productization_contract.py tests/test_web_news_quality_contract.py tests/test_web_news_quality_monitor.py -q
+```
+
+### 已知限制
+
+- 治理脚本只读取已有 artifact，不自动运行 QMT 回测或真实网络监控（需 `--refresh-offline-artifacts` 或 opt-in）。
+- baseline 更新必须显式传 `--update-baseline`，不会自动覆盖。
+- web_news_live 和 data_quality_regression 需要外部依赖，默认不启用。
+- 治理层不替代各组件自身的验收逻辑，只做跨组件的统一比较和 drift 检测。
 - 默认脚本不阻断主研究链路；只有 `--fail-on-threshold` 才以阈值决定 exit code。

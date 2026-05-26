@@ -29,6 +29,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
 | P2 | 网页新闻/舆情长期质量验收 | ✅ 代码层已完成，真实连续运行待验证 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
+| P2 | 研究质量治理 | ✅ 已完成 | baseline 驱动的统一质量比较、severity 分级、drift 检测 |
 | P3 | 系统设置页面 | 尚未实现完整 UI | 可把环境配置、数据源开关、LLM 模型、报告选项从 `.env` 部分迁移到可视化配置 |
 | P3 | 组合优化 / 多资产配置 | 尚未实现 | 当前以单票研究为核心，组合层能力属于扩展项 |
 | P4 | Qlib 接入 | 尚未实现 | 价值取决于后续是否需要模型训练、因子研究和批量回测，不是当前主链路必需项 |
@@ -262,15 +263,37 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - 根据连续运行数据调整阈值。
 - 可选接入 Celery Beat（env-gated，默认关闭）。
 
-**P2 第六阶段：研究质量治理**
+**P2 第六阶段：研究质量治理** ✅
+
 目标：让 P2 成为持续质量体系，而不是一次性功能。
 
-需要推进：
-- 建立 `research_quality_baseline.json`，保存关键指标基线。
-- 每次评分、估值、报告、provider 改动后能比较质量漂移。
-- 把失败样本分级：阻断、警告、观察。
-- 维护真实样本扩充流程：新增 bug case 后必须沉淀为 fixture。
-- 明确哪些检查进默认测试，哪些 opt-in 运行。
+已完成：
+
+1. **核心治理模块**：`services/research/quality_governance.py` 实现 baseline 校验、artifact 加载、指标比较、severity 分级（blocker/warning/watch）、drift 报告、case registry。
+2. **Baseline 配置**：`configs/research_quality_baseline.json` 覆盖 6 个组件（historical_backtest、evidence_schema、report_productization、web_news_offline、web_news_live、data_quality_regression），共 26 个指标，并对历史回测、离线新闻、live 新闻和 QMT 数据质量 artifact 配置新鲜度检查。
+3. **治理脚本**：`scripts/run_research_quality_governance.py` 支持 `--refresh-offline-artifacts`、`--include-qmt-regression`、`--include-web-news-live`、`--update-baseline`、`--fail-on-warning`、`--fail-on-watch`。
+4. **默认检查全部离线**：historical_backtest、evidence_schema、report_productization、web_news_offline 为默认启用，不依赖网络/QMT/服务。
+5. **opt-in 检查**：web_news_live（需真实网络）、data_quality_regression（需 QMT+CSMAR）默认不启用。
+6. **Case Registry**：`tests/fixtures/research_quality_case_registry.json` 支持 proposed/accepted/regression 状态流转。
+7. **测试覆盖**：50 项测试覆盖 baseline schema、metric extraction、comparison、severity grading、missing artifact、exit logic、case registry。
+8. **治理脚本运行通过**：默认运行返回 exit 0（ok 状态），`--refresh-offline-artifacts` 正确刷新 artifact。
+
+验收结果：
+
+| 组件 | 状态 | pass | fail |
+|------|------|------|------|
+| historical_backtest | ok | 15 | 0 |
+| evidence_schema | ok | 4 | 0 |
+| report_productization | ok | 2 | 0 |
+| web_news_offline | ok | 3 | 0 |
+| web_news_live | 跳过 | - | - |
+| data_quality_regression | 跳过 | - | - |
+
+已知限制：
+- 治理脚本只读取已有 artifact，不自动运行 QMT 回测或真实网络监控。
+- baseline 更新必须显式传 `--update-baseline`，不会自动覆盖。
+- web_news_live 和 data_quality_regression 需要外部依赖，默认不启用。
+- 默认治理层完成，live 趋势仍需持续积累。
 
 总结：现在 P2 已经完成“第一阶段基础框架”和“第二阶段真实历史回测样本池”。后续还需要重点推进全链路 evidence、报告产品化、真实新闻长期监控和质量基线治理。下一步最值得做的是“Evidence Schema 全链路化”，因为 Phase 2B 已经证明历史样本能跑通，下一层风险在字段级证据、质量和报告解释是否一致。
 

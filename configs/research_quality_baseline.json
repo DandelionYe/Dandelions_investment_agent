@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "description": "P2 研究质量治理基线。更新必须显式传 --update-baseline。",
+  "components": {
+    "historical_backtest": {
+      "enabled": true,
+      "artifact_path": "storage/artifacts/research_quality/historical_backtest_summary.json",
+      "max_age_days": 7,
+      "freshness_severity": "warning",
+      "metrics": {
+        "total": {"expected": 100, "tolerance": 0, "severity": "blocker"},
+        "pass_rate": {"min": 1.0, "severity": "blocker"},
+        "price_source_coverage": {"min": 1.0, "severity": "blocker"},
+        "fundamental_source_coverage": {"min": 0.60, "severity": "blocker"},
+        "valuation_source_coverage": {"min": 0.60, "severity": "blocker"},
+        "industry_source_coverage": {"min": 0.60, "severity": "blocker"},
+        "data_gap_summary.data_complete_coverage": {"min": 0.50, "severity": "warning"},
+        "industry_percentile_valid_rate": {"min": 0.60, "severity": "blocker"},
+        "high_risk_aggressive_violation_rate": {"max": 0.0, "severity": "blocker"},
+        "placeholder_guard_hit_rate": {"min": 1.0, "severity": "blocker"},
+        "placeholder_sample_count": {"min": 1, "severity": "warning"},
+        "critical_sample_count": {"min": 0, "severity": "warning"},
+        "max_single_score_bucket_ratio": {"max": 0.70, "severity": "warning"},
+        "rating_bucket_count": {"min": 3, "severity": "warning"},
+        "action_bucket_count": {"min": 3, "severity": "warning"}
+      }
+    },
+    "evidence_schema": {
+      "enabled": true,
+      "source": "contract_test",
+      "artifact_path": null,
+      "metrics": {
+        "total_required": {"expected": 40, "tolerance": 0, "severity": "blocker"},
+        "validation_ran": {"expected": true, "severity": "blocker"},
+        "validation_sample_count": {"min": 1, "severity": "blocker"},
+        "validation_error_count": {"max": 0, "severity": "blocker"}
+      }
+    },
+    "report_productization": {
+      "enabled": true,
+      "source": "contract_test",
+      "artifact_path": null,
+      "metrics": {
+        "template_count": {"expected": 4, "tolerance": 0, "severity": "blocker"},
+        "section_count": {"expected": 11, "tolerance": 0, "severity": "warning"}
+      }
+    },
+    "web_news_offline": {
+      "enabled": true,
+      "artifact_path": "storage/artifacts/web_news_quality/summary.json",
+      "max_age_days": 7,
+      "freshness_severity": "warning",
+      "metrics": {
+        "total_evaluations": {"expected": 7, "tolerance": 0, "severity": "blocker"},
+        "total_failures": {"max": 2, "severity": "warning"},
+        "overall_relevance_rate": {"min": 0.20, "severity": "warning"}
+      }
+    },
+    "web_news_live": {
+      "enabled": false,
+      "default_enabled": false,
+      "opt_in_reason": "需要真实网络访问，每次运行结果不同",
+      "artifact_path": "storage/artifacts/web_news_quality/live/latest.json",
+      "max_age_days": 3,
+      "freshness_severity": "watch",
+      "metrics": {
+        "overall.success_rate": {"min": 0.30, "severity": "watch"}
+      }
+    },
+    "data_quality_regression": {
+      "enabled": false,
+      "default_enabled": false,
+      "opt_in_reason": "需要 QMT 和 CSMAR 本地数据",
+      "artifact_path": "storage/artifacts/data_quality_regression/latest.json",
+      "max_age_days": 7,
+      "freshness_severity": "warning",
+      "metrics": {
+        "passed": {"min": 1, "severity": "blocker"}
+      }
+    }
+  }
+}

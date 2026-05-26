@@ -683,6 +683,25 @@ python scripts/run_web_news_quality_monitor.py --sources eastmoney,sina --limit 
 - `storage/artifacts/web_news_quality/live/provider_health.json`
 - `storage/artifacts/web_news_quality/live/manual_review_candidates.jsonl`
 
+### 研究质量治理
+
+`services/research/quality_governance.py` 统一加载 baseline，比较历史回测、evidence schema、报告产品化、新闻质量的 artifact，输出 drift/failure 报告：
+
+```powershell
+# 默认运行（全部离线检查）
+python scripts/run_research_quality_governance.py
+
+# 刷新离线 artifact 后比较
+python scripts/run_research_quality_governance.py --refresh-offline-artifacts
+```
+
+输出：
+
+- `storage/artifacts/research_quality/governance/latest.json`
+- `storage/artifacts/research_quality/governance/latest.md`
+- `storage/artifacts/research_quality/governance/drift_report.md`
+- `storage/artifacts/research_quality/governance/failures.jsonl`
+
 ## 测试
 
 ```powershell
@@ -714,7 +733,7 @@ python -m pytest tests/test_production_operations_contract.py -q       # 生产�
 python -m pytest tests/test_rbac_task_access.py tests/test_rbac_watchlist_access.py tests/test_rbac_report_access.py tests/test_rbac_auth_admin.py tests/test_dashboard_rbac_contract.py -q
 python -m pytest tests/test_historical_sample_builder.py tests/test_historical_quality_backtest.py tests/test_historical_samples_contract.py -q
 python -m pytest tests/test_local_csmar_financial_statement_provider.py tests/test_local_csmar_industry_history_provider.py -q
-python -m pytest tests/test_evidence_schema_contract.py tests/test_research_quality_backtest.py tests/test_report_template_config.py tests/test_web_news_quality_contract.py tests/test_web_news_quality_monitor.py -q
+python -m pytest tests/test_evidence_schema_contract.py tests/test_research_quality_backtest.py tests/test_report_template_config.py tests/test_web_news_quality_contract.py tests/test_web_news_quality_monitor.py tests/test_research_quality_governance.py tests/test_research_quality_baseline_contract.py -q
 ```
 
 Live 集成测试默认跳过，需要按需开启环境变量。网页新闻/热榜真实网络 smoke：
