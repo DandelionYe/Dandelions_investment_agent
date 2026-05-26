@@ -28,7 +28,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | P2 | 历史回测与压力测试 | ✅ Phase 2B 已完成：100 个 QMT 历史样本、本地 CSMAR 财报、历史行业库、严格 as_of、质量阈值和 artifact 均已落地 | 后续重点转向 evidence 全链路化和质量基线治理 |
 | P2 | 报告模板体系升级 | 当前 Markdown/HTML/PDF 可用，但模板能力有限 | 后续若需要更正式的机构报告，应引入更清晰的模板、版式和主题配置 |
 | P2 | 数据证据结构进一步统一 | 已有 evidence bundle 和 provider 日志，但并非所有字段都严格统一 | 长期需要把关键字段稳定表达为 value/source/as_of/quality/warnings，方便审计和调试 |
-| P2 | 网页新闻/舆情长期质量验收 | provider 已有，网络 smoke 已有 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
+| P2 | 网页新闻/舆情长期质量验收 | ✅ 代码层已完成，真实连续运行待验证 | 需要持续观察来源稳定性、去重质量、相关性过滤和反爬失败表现 |
 | P3 | 系统设置页面 | 尚未实现完整 UI | 可把环境配置、数据源开关、LLM 模型、报告选项从 `.env` 部分迁移到可视化配置 |
 | P3 | 组合优化 / 多资产配置 | 尚未实现 | 当前以单票研究为核心，组合层能力属于扩展项 |
 | P4 | Qlib 接入 | 尚未实现 | 价值取决于后续是否需要模型训练、因子研究和批量回测，不是当前主链路必需项 |
@@ -228,20 +228,37 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - `pytest tests/test_report_template_config.py tests/test_report_builders.py tests/test_report_productization_contract.py -q`
 - `ruff check services/report apps/api/schemas/research.py apps/api/task_manager/celery_tasks.py apps/dashboard/components/progress_poller.py apps/dashboard/pages/1_Single_Asset_Research.py main.py tests/test_report_productization_contract.py`
 
-**P2 第五阶段：真实网页新闻/舆情长期验收**
-目标：从“离线新闻样本”升级为“真实 provider 稳定性监控”。
+**P2 第五阶段：真实网页新闻/舆情长期验收** ✅（代码层已完成）
 
-需要推进：
-- 定时对核心标的池运行真实新闻抓取验收。
-- 统计成功率、超时率、重复率、相关性、低质量占比、平均延迟。
-- 对 Eastmoney/其它来源分别记录 provider health。
-- 建立去重/相关性人工抽样评估集，持续调阈值。
-- provider 失败时验证报告能降级，而不是产生误导性舆情结论。
+目标：从”离线新闻样本”升级为”真实 provider 稳定性监控”。
 
-验收标准：
-- 连续运行若干天后有趋势 artifact。
-- provider 不可用不会中断研究主链路。
-- 新闻相关性和去重质量有量化指标。
+已完成：
+
+1. **核心监控模块**：`services/data/news_quality_monitor.py` 复用 WebNewsProvider 和 news_quality.py，支持按 provider/source 维度评估稳定性。
+2. **核心标的池**：`configs/web_news_quality_targets.json` 包含 10 个 A 股核心标的。
+3. **监控脚本**：`scripts/run_web_news_quality_monitor.py` 支持离线 fixture 和真实网络两种模式，CLI 参数完整。
+4. **Artifact 输出**：latest.json/latest.md/history.jsonl/provider_health.json/manual_review_candidates.jsonl。
+5. **阈值与状态分级**：默认阈值（min_success_rate=0.50 等），状态分为 ok/warn/fail。
+6. **provider 失败降级**：单 provider 失败不影响其它 source 评估；全部失败仍生成完整 artifact。
+7. **离线测试**：33 项测试覆盖阈值/health/fixture/mock-provider/artifacts。
+8. **真实网络 smoke**：已运行一次，eastmoney 100% 成功，其它来源在当前网络环境下部分失败（已记录为 provider health）。
+
+验收结果：
+- 离线 monitor 测试通过（33/33）。
+- `scripts/run_web_news_quality_monitor.py` 可运行并生成 artifacts。
+- 真实网络 smoke 已运行一次，生成完整 artifact。
+- provider 失败降级测试通过。
+- 默认研究主链路不因新闻 provider 失败中断。
+
+已知限制：
+- 真实连续运行仍需若干天 artifact 验证（需 Windows Task Scheduler 或 Celery Beat 定时触发）。
+- 人工抽样候选只生成样本文件，不含标注 UI。
+- 不会把空新闻结果解释为”无负面舆情”的强结论。
+
+后续：
+- 配置 Windows Task Scheduler 每日运行，积累多日趋势数据。
+- 根据连续运行数据调整阈值。
+- 可选接入 Celery Beat（env-gated，默认关闭）。
 
 **P2 第六阶段：研究质量治理**
 目标：让 P2 成为持续质量体系，而不是一次性功能。

@@ -10,7 +10,7 @@ P2 分为多个阶段推进：
 | Phase 2 | 50+ 真实历史样本池 + 可重复质量报告 + 验收阈值 | ✅ 已完成：QMT 价格、CSMAR 估值、EVA 股本/BPS、本地 CSMAR 财务报表、严格历史行业；严格 Phase 2B 验收通过 |
 | Phase 3 | 全链路 evidence schema | ✅ 已完成 |
 | Phase 4 | 报告产品化 | ✅ 已完成 |
-| Phase 5 | 真实新闻长期监控 | 待规划 |
+| Phase 5 | 真实新闻长期监控 | ✅ 代码层已完成 |
 | Phase 6 | 质量治理基线 | 待规划 |
 
 ---
@@ -531,5 +531,110 @@ python -m ruff check services/report apps/api/schemas/research.py apps/api/task_
 
 ### 仍不属于 Phase 4 的事项
 
-- 真实网页新闻/舆情 provider 长期健康趋势，保留在 Phase 5。
 - 评分漂移治理、阈值版本化和定期质量看板，保留在 Phase 6。
+
+---
+
+## P2 Phase 5：真实网页新闻/舆情长期监控 ✅
+
+### 概述
+
+Phase 5 将 Phase 1 的离线新闻质量样本升级为真实 provider 长期稳定性监控。对 10 个核心 A 股标的运行真实 WebNewsProvider 抓取，按 provider/source 维度评估稳定性，输出结构化 artifact。
+
+### 核心模块
+
+- `services/data/news_quality_monitor.py`：监控核心模块，复用 WebNewsProvider 和 news_quality.py
+- `configs/web_news_quality_targets.json`：10 个核心标的配置
+- `scripts/run_web_news_quality_monitor.py`：监控脚本，支持离线 fixture 和真实网络两种模式
+
+### 运行方式
+
+```bash
+# 离线 fixture 模式（不发网络请求）
+python scripts/run_web_news_quality_monitor.py \
+    --offline-fixture tests/fixtures/web_news_quality_samples.json \
+    --output-dir storage/artifacts/web_news_quality/live_test
+
+# 真实网络模式
+python scripts/run_web_news_quality_monitor.py \
+    --targets configs/web_news_quality_targets.json \
+    --sources eastmoney,sina,xinhuanet,hotrank,baidu \
+    --lookback-days 14 --limit 5 --timeout-seconds 8 --max-seconds 15 \
+    --output-dir storage/artifacts/web_news_quality/live
+
+# 带阈值检查
+python scripts/run_web_news_quality_monitor.py --fail-on-threshold
+```
+
+### 监控指标
+
+| 指标 | 说明 |
+|------|------|
+| success_rate | provider 成功率 |
+| timeout_rate | 超时率 |
+| empty_rate | 空结果率 |
+| relevance_rate | 相关性率（去重后条目中与标的相关的比例） |
+| low_quality_rate | 低质量率 |
+| avg_latency_seconds | 平均延迟 |
+| duplicate_rate | 去重率（单次抓取内） |
+
+### 默认阈值
+
+| 阈值 | 默认值 | 说明 |
+|------|--------|------|
+| min_success_rate | 0.50 | 最低成功率 |
+| max_timeout_rate | 0.50 | 最高超时率 |
+| max_empty_rate | 0.70 | 最高空结果率 |
+| min_relevance_rate | 0.20 | 最低相关性率 |
+| max_low_quality_rate | 0.60 | 最高低质量率 |
+| max_avg_latency_seconds | 15.0 | 最高平均延迟 |
+
+### 状态分级
+
+- `ok`：所有指标在阈值范围内
+- `warn`：空结果率、相关性率或低质量率超出阈值
+- `fail`：成功率、超时率或延迟超出阈值
+
+### Artifact 输出
+
+| 文件 | 说明 |
+|------|------|
+| `latest.json` | 最新运行完整报告 |
+| `latest.md` | 最新运行 Markdown 报告 |
+| `history.jsonl` | 历史运行摘要（每行一次运行） |
+| `provider_health.json` | 按 provider 聚合的健康统计 |
+| `manual_review_candidates.jsonl` | 需要人工复核的新闻样本 |
+
+### 核心标的池（10 只）
+
+600519.SH 贵州茅台、000001.SZ 平安银行、000002.SZ 万科A、600036.SH 招商银行、601318.SH 中国平安、601398.SH 工商银行、600030.SH 中信证券、600276.SH 恒瑞医药、000858.SZ 五粮液、601888.SH 中国中免
+
+### 人工抽样候选
+
+`manual_review_candidates.jsonl` 包含以下类型：
+- 低相关但被判 high tier
+- 高相关但低质量
+- provider 返回但无公司名/代码命中
+
+字段：`run_id`, `symbol`, `provider`, `title`, `url`, `summary`, `published_at`, `relevance`, `quality_tier`, `reasons`, `review_label`, `reviewer_notes`
+
+### 测试
+
+```bash
+# 离线单元测试
+python -m pytest tests/test_web_news_quality_monitor.py -q
+# 33 tests covering thresholds/health/classify/fixture/mock-provider/artifacts
+
+# 已有测试（不应被破坏）
+python -m pytest tests/test_web_news_quality_contract.py tests/test_web_news_provider.py -q
+
+# 真实网络 smoke（默认跳过）
+RUN_WEB_NEWS_NETWORK=1 python -m pytest tests/integration/test_web_news_quality_monitor_live.py -q
+```
+
+### 已知限制
+
+- 真实新闻 provider 天然不稳定，部分来源在特定网络环境下可能全部失败。
+- 不会把空新闻结果解释为"无负面舆情"的强结论。
+- 人工抽样候选只生成样本文件，不包含人工标注 UI。
+- 默认脚本不阻断主研究链路；只有 `--fail-on-threshold` 才以阈值决定 exit code。

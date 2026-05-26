@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "description": "网页新闻/舆情长期质量验收核心标的池",
+  "targets": [
+    {
+      "normalized_symbol": "600519.SH",
+      "plain_code": "600519",
+      "name": "贵州茅台",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "000001.SZ",
+      "plain_code": "000001",
+      "name": "平安银行",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "000002.SZ",
+      "plain_code": "000002",
+      "name": "万科A",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "600036.SH",
+      "plain_code": "600036",
+      "name": "招商银行",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "601318.SH",
+      "plain_code": "601318",
+      "name": "中国平安",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "601398.SH",
+      "plain_code": "601398",
+      "name": "工商银行",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "600030.SH",
+      "plain_code": "600030",
+      "name": "中信证券",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "600276.SH",
+      "plain_code": "600276",
+      "name": "恒瑞医药",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "000858.SZ",
+      "plain_code": "000858",
+      "name": "五粮液",
+      "asset_type": "stock"
+    },
+    {
+      "normalized_symbol": "601888.SH",
+      "plain_code": "601888",
+      "name": "中国中免",
+      "asset_type": "stock"
+    }
+  ]
+}
