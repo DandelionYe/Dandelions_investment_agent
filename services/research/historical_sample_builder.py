@@ -45,38 +45,59 @@ STRICT_VALUATION_FIELDS = frozenset({
 
 # ── Provider enrichment (lazy imports to avoid circular deps) ─────
 
+_CSMAR_PROVIDER: Any | None = None
+_EVA_PROVIDER: Any | None = None
+_INDUSTRY_PROVIDER: Any | None = None
+_FINANCIAL_PROVIDER: Any | None = None
+_INDUSTRY_HISTORY_PROVIDER: Any | None = None
+
 
 def _get_csmar_provider():
+    global _CSMAR_PROVIDER
+    if _CSMAR_PROVIDER is not None:
+        return _CSMAR_PROVIDER
     from services.data.providers.local_csmar_daily_derived_provider import (
         LocalCSMARDailyDerivedProvider,
         is_csmar_daily_derived_enabled,
     )
     if not is_csmar_daily_derived_enabled():
         return None
-    return LocalCSMARDailyDerivedProvider()
+    _CSMAR_PROVIDER = LocalCSMARDailyDerivedProvider()
+    return _CSMAR_PROVIDER
 
 
 def _get_eva_provider():
+    global _EVA_PROVIDER
+    if _EVA_PROVIDER is not None:
+        return _EVA_PROVIDER
     from services.data.providers.local_csmar_eva_structure_provider import (
         LocalCSMAREVAStructureProvider,
         is_eva_structure_enabled,
     )
     if not is_eva_structure_enabled():
         return None
-    return LocalCSMAREVAStructureProvider()
+    _EVA_PROVIDER = LocalCSMAREVAStructureProvider()
+    return _EVA_PROVIDER
 
 
 def _get_industry_provider():
+    global _INDUSTRY_PROVIDER
+    if _INDUSTRY_PROVIDER is not None:
+        return _INDUSTRY_PROVIDER
     try:
         from services.data.providers.local_csmar_industry_provider import (
             LocalCSMARIndustryProvider,
         )
-        return LocalCSMARIndustryProvider()
+        _INDUSTRY_PROVIDER = LocalCSMARIndustryProvider()
+        return _INDUSTRY_PROVIDER
     except Exception:
         return None
 
 
 def _get_financial_provider():
+    global _FINANCIAL_PROVIDER
+    if _FINANCIAL_PROVIDER is not None:
+        return _FINANCIAL_PROVIDER
     try:
         from services.data.providers.local_csmar_financial_statement_provider import (
             LocalCSMARFinancialStatementProvider,
@@ -84,12 +105,16 @@ def _get_financial_provider():
         )
         if not is_csmar_financial_enabled():
             return None
-        return LocalCSMARFinancialStatementProvider()
+        _FINANCIAL_PROVIDER = LocalCSMARFinancialStatementProvider()
+        return _FINANCIAL_PROVIDER
     except Exception:
         return None
 
 
 def _get_industry_history_provider():
+    global _INDUSTRY_HISTORY_PROVIDER
+    if _INDUSTRY_HISTORY_PROVIDER is not None:
+        return _INDUSTRY_HISTORY_PROVIDER
     try:
         from services.data.providers.local_csmar_industry_history_provider import (
             LocalCSMARIndustryHistoryProvider,
@@ -97,7 +122,8 @@ def _get_industry_history_provider():
         )
         if not is_csmar_industry_history_enabled():
             return None
-        return LocalCSMARIndustryHistoryProvider()
+        _INDUSTRY_HISTORY_PROVIDER = LocalCSMARIndustryHistoryProvider()
+        return _INDUSTRY_HISTORY_PROVIDER
     except Exception:
         return None
 

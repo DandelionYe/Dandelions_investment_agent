@@ -205,7 +205,9 @@ class TestScenarioTagCoverage:
     def test_has_loss_making(self, samples):
         assert any("loss_making_or_invalid_pe" in s.get("scenario_tags", []) for s in samples)
 
-    def test_has_missing_fundamental(self, samples):
+    def test_has_missing_fundamental(self, samples, is_real_qmt):
+        if is_real_qmt:
+            pytest.skip("真实 QMT + CSMAR 财报样本不再强制缺基本面")
         assert any("missing_fundamental" in s.get("scenario_tags", []) for s in samples)
 
     def test_has_industry_insufficient(self, samples, is_real_qmt):

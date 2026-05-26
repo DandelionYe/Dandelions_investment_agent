@@ -25,6 +25,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _disconnect_xtdata_if_loaded() -> None:
+    """Best-effort cleanup so xtdata background threads do not keep CLI alive."""
+    xtdata = sys.modules.get("xtquant.xtdata")
+    if xtdata is None:
+        return
+    disconnect = getattr(xtdata, "disconnect", None)
+    if not callable(disconnect):
+        return
+    try:
+        disconnect()
+    except Exception:
+        pass
+
+
 def _make_stock_sample(
     sample_id: str,
     symbol: str,
@@ -1574,4 +1588,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = 1
+    try:
+        exit_code = main()
+    finally:
+        _disconnect_xtdata_if_loaded()
+    sys.exit(exit_code)
