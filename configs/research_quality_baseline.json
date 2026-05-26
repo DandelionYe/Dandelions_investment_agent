@@ -64,7 +64,12 @@
       "max_age_days": 3,
       "freshness_severity": "watch",
       "metrics": {
-        "overall.success_rate": {"min": 0.30, "severity": "watch"}
+        "run_count": {"min": 3, "severity": "watch", "optional": true},
+        "day_count": {"min": 1, "severity": "watch", "optional": true},
+        "core_provider_ok": {"expected": true, "severity": "warning", "optional": true},
+        "healthy_provider_count": {"min": 1, "severity": "warning", "optional": true},
+        "failed_core_provider_count": {"max": 0, "severity": "warning", "optional": true},
+        "overall.success_rate": {"min": 0.30, "severity": "watch", "optional": true}
       }
     },
     "data_quality_regression": {

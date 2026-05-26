@@ -692,6 +692,48 @@ python scripts/run_web_news_quality_monitor.py --sources eastmoney,sina --limit 
 - `storage/artifacts/web_news_quality/live/provider_health.json`
 - `storage/artifacts/web_news_quality/live/manual_review_candidates.jsonl`
 
+### 新闻/舆情趋势分析
+
+`services/data/news_quality_trends.py` 从 `history.jsonl` 读取多次运行摘要，按 provider 分层聚合指标，判断趋势健康状态。provider 分为 core（eastmoney）、secondary（sina/xinhuanet/baidu）、weak（hotrank）三层，不同层级的失败对治理结果的影响不同。配置在 `configs/web_news_quality_policy.json`。
+
+```powershell
+# 运行趋势分析（默认读取最近 7 天 history）
+python scripts/analyze_web_news_quality_trends.py
+
+# 自定义窗口和最少运行次数
+python scripts/analyze_web_news_quality_trends.py --window-days 14 --min-runs 5
+
+# warning 也返回非 0
+python scripts/analyze_web_news_quality_trends.py --fail-on-warning
+```
+
+输出：
+
+- `storage/artifacts/web_news_quality/live/trend_summary.json`
+- `storage/artifacts/web_news_quality/live/trend_report.md`
+- `storage/artifacts/web_news_quality/live/provider_trends.json`
+
+### 每日定时运行
+
+通过 Windows Task Scheduler 或 Celery Beat 实现每日自动运行：
+
+```powershell
+# 安装 Windows 计划任务（默认每日 08:30）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prod\install_web_news_quality_task.ps1
+
+# 自定义时间
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prod\install_web_news_quality_task.ps1 -At "09:00"
+
+# 卸载
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prod\uninstall_web_news_quality_task.ps1
+```
+
+Celery Beat 集成默认关闭，通过环境变量启用：
+
+```text
+WEB_NEWS_QUALITY_BEAT_ENABLED=true
+```
+
 ### 研究质量治理
 
 `services/research/quality_governance.py` 统一加载 `configs/research_quality_baseline.json`，比较历史回测、evidence schema、报告产品化、离线新闻质量、live 新闻质量和数据质量回归 artifact，输出 drift/failure 报告。baseline 覆盖 6 个组件、26 个指标，并对历史回测、离线新闻、live 新闻和 QMT 数据质量 artifact 做新鲜度检查。

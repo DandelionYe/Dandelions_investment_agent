@@ -491,6 +491,7 @@ def run_governance(
         # Load artifact or use static source
         artifact = None
         artifact_loaded = False
+        trend_fallback_warning: str | None = None
 
         if source == "contract_test":
             if comp_name == "evidence_schema":
@@ -500,15 +501,41 @@ def run_governance(
                 artifact = _get_report_productization_metrics()
                 artifact_loaded = True
         elif artifact_path:
-            full_path = root / artifact_path
-            artifact = load_artifact(full_path)
-            artifact_loaded = artifact is not None
+            # For web_news_live, prefer trend_summary.json over latest.json
+            if comp_name == "web_news_live":
+                trend_path = root / "storage" / "artifacts" / "web_news_quality" / "live" / "trend_summary.json"
+                trend_artifact = load_artifact(trend_path)
+                if trend_artifact is not None:
+                    artifact = trend_artifact
+                    artifact_loaded = True
+                else:
+                    # Fallback to latest.json
+                    full_path = root / artifact_path
+                    artifact = load_artifact(full_path)
+                    artifact_loaded = artifact is not None
+                    if artifact_loaded:
+                        trend_fallback_warning = "trend_summary.json 不存在，回退到 latest.json；趋势指标不可用"
+            else:
+                full_path = root / artifact_path
+                artifact = load_artifact(full_path)
+                artifact_loaded = artifact is not None
 
         comp_result = ComponentResult(
             component=comp_name,
             enabled=True,
             artifact_loaded=artifact_loaded,
         )
+
+        # Add fallback warning for web_news_live
+        if trend_fallback_warning and artifact_loaded:
+            comp_result.metrics.append(MetricResult(
+                path=f"{comp_name}._trend_fallback",
+                component=comp_name,
+                metric_path="_trend_fallback",
+                severity="watch",
+                status="fail",
+                message=trend_fallback_warning,
+            ))
 
         # Freshness check
         if artifact is not None and artifact_loaded:

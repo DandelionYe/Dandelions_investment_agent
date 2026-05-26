@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "description": "网页新闻/舆情 provider 分层治理策略。provider 分为 core/secondary/weak 三层，不同层级的失败对治理结果的影响不同。",
+  "provider_tiers": {
+    "core": {
+      "providers": ["eastmoney"],
+      "description": "东方财富个股新闻，股票相关性最高，是最核心的新闻来源",
+      "on_failure": "warning",
+      "on_consecutive_failures": 3,
+      "on_consecutive_failures_severity": "blocker",
+      "min_success_rate": 0.40,
+      "success_rate_severity": "warning"
+    },
+    "secondary": {
+      "providers": ["sina", "xinhuanet", "baidu"],
+      "description": "新浪财经、新华网、百度新闻 RSS fallback",
+      "on_failure": "watch",
+      "min_success_rate": 0.20,
+      "success_rate_severity": "watch"
+    },
+    "weak": {
+      "providers": ["hotrank"],
+      "description": "热榜舆情补充源，与标的相关性较弱",
+      "on_failure": "watch",
+      "on_consecutive_failures": 0,
+      "on_consecutive_failures_severity": "watch",
+      "min_success_rate": 0.0,
+      "success_rate_severity": "watch",
+      "block_on_failure": false
+    }
+  },
+  "trend_analysis": {
+    "default_window_days": 7,
+    "min_runs_for_trend": 3,
+    "core_provider_ok_required": true,
+    "healthy_provider_count_min": 1,
+    "failed_core_provider_count_max": 0
+  },
+  "freshness": {
+    "max_age_hours": 48,
+    "freshness_severity": "warning"
+  }
+}

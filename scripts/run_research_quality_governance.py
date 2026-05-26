@@ -244,7 +244,7 @@ def _build_markdown(report: GovernanceReport) -> str:
         lines.append("| 指标 | 状态 | severity | 实际值 | 说明 |")
         lines.append("|---|---|---|---|---|")
         for m in comp.metrics:
-            status_icon = {"pass": "pass", "fail": "FAIL", "missing": "N/A"}.get(m.status, "?")
+            status_icon = {"pass": "pass", "fail": "FAIL", "missing": "N/A", "skipped": "-"}.get(m.status, "?")
             actual_str = str(m.actual) if m.actual is not None else "-"
             lines.append(
                 f"| {m.metric_path} | {status_icon} | {m.severity} | "

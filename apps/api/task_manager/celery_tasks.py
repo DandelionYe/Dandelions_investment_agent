@@ -420,3 +420,61 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
         publish_task_progress(
             task_id, TaskStatus.FAILED, 0.0, "", symbol, error_message=str(exc))
         raise
+
+
+# ═══════════════════════════════════════════════════════════════
+# 网页新闻质量监控 Beat 任务（默认关闭）
+# ═══════════════════════════════════════════════════════════════
+
+@celery_app.task(name="beat.web_news_quality_monitor")
+def web_news_quality_monitor_beat() -> dict:
+    """网页新闻/舆情每日质量监控 + 趋势分析。
+
+    默认关闭。通过环境变量 WEB_NEWS_QUALITY_BEAT_ENABLED=true 启用。
+    不影响主研究链路，仅在后台运行监控脚本。
+    """
+    import os
+    import subprocess
+
+    if os.getenv("WEB_NEWS_QUALITY_BEAT_ENABLED", "").lower() not in ("1", "true", "yes"):
+        return {"skipped": True, "reason": "WEB_NEWS_QUALITY_BEAT_ENABLED not set"}
+
+    project_root = Path(__file__).resolve().parents[3]
+    python_exe = sys.executable
+
+    results = {"monitor": None, "trend": None}
+
+    # Run monitor
+    try:
+        monitor_result = subprocess.run(
+            [python_exe, str(project_root / "scripts" / "run_web_news_quality_monitor.py"),
+             "--output-dir", str(project_root / "storage" / "artifacts" / "web_news_quality" / "live")],
+            capture_output=True, text=True, cwd=str(project_root), timeout=300,
+        )
+        results["monitor"] = {
+            "exit_code": monitor_result.returncode,
+            "stdout_tail": monitor_result.stdout[-500:] if monitor_result.stdout else "",
+            "stderr_tail": monitor_result.stderr[-500:] if monitor_result.stderr else "",
+        }
+    except Exception as exc:
+        results["monitor"] = {"exit_code": -1, "error": str(exc)}
+
+    # Run trend analyzer
+    try:
+        trend_result = subprocess.run(
+            [python_exe, str(project_root / "scripts" / "analyze_web_news_quality_trends.py"),
+             "--output-dir", str(project_root / "storage" / "artifacts" / "web_news_quality" / "live")],
+            capture_output=True, text=True, cwd=str(project_root), timeout=60,
+        )
+        results["trend"] = {
+            "exit_code": trend_result.returncode,
+            "stdout_tail": trend_result.stdout[-500:] if trend_result.stdout else "",
+            "stderr_tail": trend_result.stderr[-500:] if trend_result.stderr else "",
+        }
+    except Exception as exc:
+        results["trend"] = {"exit_code": -1, "error": str(exc)}
+
+    return {
+        "timestamp": utc_now_iso(),
+        "results": results,
+    }

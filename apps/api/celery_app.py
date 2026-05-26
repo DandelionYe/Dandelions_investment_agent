@@ -84,3 +84,10 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=15, minute=7, day_of_week="1-5"),
     },
 }
+
+# 网页新闻质量监控：默认关闭，通过 WEB_NEWS_QUALITY_BEAT_ENABLED=true 启用
+if os.getenv("WEB_NEWS_QUALITY_BEAT_ENABLED", "").lower() in ("1", "true", "yes"):
+    celery_app.conf.beat_schedule["web-news-quality-daily"] = {
+        "task": "beat.web_news_quality_monitor",
+        "schedule": crontab(hour=8, minute=30),
+    }

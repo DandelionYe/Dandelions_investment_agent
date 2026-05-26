@@ -24,7 +24,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 |---|---|---|---|
 | P0 | 运行态集成验收与 CI 服务矩阵 | 未完成；已有文档和 opt-in live 测试，但没有统一发布前验收流程 | 一条命令或一组固定命令完成服务启动、核心 smoke、artifact 归档和失败定位 |
 | P1 | 观察池条件触发器真实行情验收 | 未完成；CRUD、批量扫描和权限已具备，真实行情触发链路仍需验收 | 小型真实观察池覆盖触发/未触发、批量扫描、进度推送、报告关联和失败降级 |
-| P2 | 网页新闻/舆情连续运行验证 | 代码层可运行；缺少多日真实网络 artifact 趋势 | 通过 Windows Task Scheduler 或 Celery Beat 连续运行，确认 provider 稳定性和阈值 |
+| P2 | 网页新闻/舆情连续运行验证 | 代码层全部就绪（趋势分析、分层治理、Task Scheduler、Celery Beat）；需要安装每日任务并连续运行 7 天以上 | 通过 Windows Task Scheduler 或 Celery Beat 连续运行，确认 provider 稳定性和阈值 |
 | P3 | 系统设置页面 | 未开始 | 把常用 `.env` 配置迁移到可视化设置页，并保留安全边界 |
 | P3 | 组合优化 / 多资产配置 | 未开始 | 在单票研究和观察池稳定后，支持组合层评分、仓位建议和风险汇总 |
 | P4 | Qlib 接入 | 延后 | 仅在需要因子研究、模型训练或批量回测时再推进 |
@@ -69,28 +69,41 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 
 ## P2：网页新闻/舆情连续运行验证
 
-目标：把“新闻质量监控脚本可运行”升级为“真实网络 provider 稳定性可长期观察”。
+目标：把”新闻质量监控脚本可运行”升级为”真实网络 provider 稳定性可长期观察”。
 
-当前已有代码基础：
+代码基础已全部落地：
 
-- `services/data/news_quality_monitor.py`
-- `configs/web_news_quality_targets.json`
-- `scripts/run_web_news_quality_monitor.py`
-- `storage/artifacts/web_news_quality/live/` 下的 latest/history/provider_health/manual_review_candidates 输出
+- `services/data/news_quality_monitor.py`：监控核心模块
+- `services/data/news_quality_trends.py`：趋势分析模块（从 history.jsonl 聚合 provider 趋势）
+- `configs/web_news_quality_targets.json`：10 个核心标的
+- `configs/web_news_quality_policy.json`：provider 分层治理策略（core/secondary/weak）
+- `scripts/run_web_news_quality_monitor.py`：监控脚本
+- `scripts/analyze_web_news_quality_trends.py`：趋势分析脚本
+- `scripts/prod/install_web_news_quality_task.ps1`：Windows Task Scheduler 安装
+- `scripts/prod/uninstall_web_news_quality_task.ps1`：Windows Task Scheduler 卸载
+- `scripts/prod/run_web_news_quality_daily.ps1`：每日运行脚本
+- Celery Beat 集成（默认关闭，`WEB_NEWS_QUALITY_BEAT_ENABLED=true` 启用）
 
-仍需推进：
+Provider 分层：
 
-- 配置 Windows Task Scheduler 或 Celery Beat，每日定时运行真实网络监控。
-- 连续积累至少 7 天 artifact，观察 provider 成功率、空结果率、超时率、相关率和低质量率。
-- 根据真实趋势调优 `min_success_rate`、`max_empty_rate`、`max_avg_latency_seconds` 等阈值。
-- 明确哪些 provider 是核心源，哪些只是弱相关 fallback；失败时是否降级为 watch/warning。
+| 层级 | Provider | 失败影响 |
+|------|----------|---------|
+| core | eastmoney | warning / blocker（连续失败 >= 3 次） |
+| secondary | sina, xinhuanet, baidu | watch / warning |
+| weak | hotrank | watch（不阻断） |
+
+治理脚本 `--include-web-news-live` 优先读取 `trend_summary.json`，fallback 到 `latest.json`。
 
 验收标准：
 
-- 连续运行期间脚本不因单 provider 失败中断。
-- `provider_health.json` 能反映来源健康状态。
-- `manual_review_candidates.jsonl` 能持续产出可抽样复核的候选。
-- 治理脚本 `--include-web-news-live` 能稳定反映 watch/warning/blocker，而不是依赖单次偶然结果。
+- [x] 连续运行期间脚本不因单 provider 失败中断。
+- [x] `provider_health.json` 能反映来源健康状态。
+- [x] `manual_review_candidates.jsonl` 能持续产出可抽样复核的候选。
+- [x] 治理脚本 `--include-web-news-live` 优先读取趋势数据，fallback 时有明确 warning。
+- [x] Windows Task Scheduler 和 Celery Beat 均已支持。
+- [ ] 连续积累至少 7 天真实网络 artifact，验证 provider 稳定性（需要每日定时运行）。
+
+当前状态：代码层和基础设施已全部就绪，需要安装每日任务并连续运行 7 天以上，根据真实趋势调优阈值后，方可标记为完全完成。
 
 ## P3：系统设置页面
 

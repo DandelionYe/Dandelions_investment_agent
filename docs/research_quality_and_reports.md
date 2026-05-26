@@ -11,6 +11,7 @@ P2 分为多个阶段推进：
 | Phase 3 | 全链路 evidence schema | ✅ 已完成 |
 | Phase 4 | 报告产品化 | ✅ 已完成 |
 | Phase 5 | 真实新闻长期监控 | ✅ 代码层已完成 |
+| Phase 5B | 新闻趋势分析与长期观察 | ✅ 代码层已完成（需要连续运行 7 天验证） |
 | Phase 6 | 质量治理基线 | ✅ 已完成 |
 
 ---
@@ -640,6 +641,75 @@ RUN_WEB_NEWS_NETWORK=1 python -m pytest tests/integration/test_web_news_quality_
 - 真实新闻 provider 天然不稳定，部分来源在特定网络环境下可能全部失败。
 - 不会把空新闻结果解释为"无负面舆情"的强结论。
 - 人工抽样候选只生成样本文件，不包含人工标注 UI。
+
+---
+
+## P2 Phase 5B：趋势分析与长期观察 ✅
+
+### 概述
+
+Phase 5B 在 Phase 5 基础上增加趋势分析能力，从 `history.jsonl` 读取多次运行摘要，按 provider 分层聚合指标，判断趋势健康状态。治理脚本 `--include-web-news-live` 优先读取 `trend_summary.json`，不再只看单次 `latest.json`。
+
+### Provider 分层
+
+| 层级 | Provider | 失败影响 | 说明 |
+|------|----------|---------|------|
+| core | eastmoney | warning / blocker | 东方财富个股新闻，股票相关性最高 |
+| secondary | sina, xinhuanet, baidu | watch / warning | 新浪、新华网、百度 RSS fallback |
+| weak | hotrank | watch（不阻断） | 热榜舆情补充源 |
+
+配置在 `configs/web_news_quality_policy.json`。
+
+### 分级规则
+
+- **core provider** 连续失败 >= 3 次：blocker
+- **core provider** success_rate < 40%：warning
+- **secondary provider** success_rate < 20%：watch
+- **weak provider** 失败：watch，不阻断
+
+### 运行方式
+
+```powershell
+# 趋势分析
+python scripts/analyze_web_news_quality_trends.py --window-days 7 --min-runs 3
+
+# 治理脚本（优先读取 trend_summary.json）
+python scripts/run_research_quality_governance.py --include-web-news-live
+```
+
+### 每日定时运行
+
+```powershell
+# Windows Task Scheduler
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prod\install_web_news_quality_task.ps1
+
+# Celery Beat（默认关闭）
+# 设置 WEB_NEWS_QUALITY_BEAT_ENABLED=true 后重启 worker+beat
+```
+
+### Artifact 输出
+
+| 文件 | 说明 |
+|------|------|
+| `trend_summary.json` | 趋势分析完整报告（provider 趋势、评估、严重等级） |
+| `trend_report.md` | 趋势分析 Markdown 报告 |
+| `provider_trends.json` | 按 provider 聚合的趋势指标 |
+
+### 治理接入
+
+`--include-web-news-live` 优先读取 `trend_summary.json`。如果不存在，回退到 `latest.json` 并在治理结果中标记 watch warning。baseline 新增趋势指标：
+
+- `run_count >= 3`（watch）
+- `day_count >= 1`（watch）
+- `core_provider_ok expected true`（warning）
+- `healthy_provider_count >= 1`（warning）
+- `failed_core_provider_count max 0`（warning）
+
+### 测试
+
+```bash
+python -m pytest tests/test_web_news_quality_trends.py tests/test_web_news_quality_scheduler_contract.py -q
+```
 
 ---
 
