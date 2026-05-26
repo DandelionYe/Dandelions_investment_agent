@@ -97,6 +97,7 @@ class ProviderEvaluation:
             "is_empty": self.is_empty,
             "source_counts": self.source_counts,
             "warnings": self.warnings,
+            "classified_items": self.classified_items,
         }
 
 
@@ -445,7 +446,7 @@ class NewsQualityMonitor:
                 relevance_rate=relevance_rate,
                 low_quality_rate=low_quality_rate,
                 is_timeout=is_timeout,
-                is_empty=deduped_total == 0,
+                is_empty=success and deduped_total == 0,
                 source_counts=eval_result.get("source_counts", {}),
                 warnings=eval_result.get("warnings", []),
                 classified_items=classified_with_details,
@@ -563,7 +564,7 @@ class NewsQualityMonitor:
             relevance_rate=relevance_rate,
             low_quality_rate=low_quality_rate,
             is_timeout=is_timeout,
-            is_empty=deduped_total == 0,
+            is_empty=success and deduped_total == 0,
             source_counts=source_counts,
             warnings=warnings,
             classified_items=classified_with_details,

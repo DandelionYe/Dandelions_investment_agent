@@ -1,6 +1,5 @@
 from datetime import date
 
-
 PLACEHOLDER_CONFIDENCE = 0.25
 
 
@@ -27,9 +26,9 @@ def get_placeholder_supplemental_data(symbol: str) -> dict:
             "dividend_yield": 0.025,
         },
         "event_data": {
-            "recent_news_sentiment": "neutral_positive",
-            "policy_risk": "low",
-            "major_event": "无重大负面事件",
+            "recent_news_sentiment": "unknown",
+            "policy_risk": "unknown",
+            "major_event": "公告/新闻数据不可用，无法评估舆情风险",
         },
         "source_metadata": {
             "fundamental_data": {

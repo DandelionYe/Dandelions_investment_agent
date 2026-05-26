@@ -247,8 +247,10 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - 离线 monitor 测试通过（33/33）。
 - `scripts/run_web_news_quality_monitor.py` 可运行并生成 artifacts。
 - 真实网络 smoke 已运行一次，生成完整 artifact。
-- provider 失败降级测试通过。
+- provider 失败降级测试通过：EventService 全部 provider 失败时 placeholder 不再给出误导性"neutral_positive/low risk"结论。
 - 默认研究主链路不因新闻 provider 失败中断。
+- `manual_review_candidates.jsonl` 已验证能正确产出候选样本（离线 fixture 产出 6 条）。
+- `empty_rate` 统计口径已修正：只统计"成功但无数据"，不再双重计入失败。
 
 已知限制：
 - 真实连续运行仍需若干天 artifact 验证（需 Windows Task Scheduler 或 Celery Beat 定时触发）。

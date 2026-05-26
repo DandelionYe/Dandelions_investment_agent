@@ -702,7 +702,7 @@ def test_fetch_events_respects_total_timeout(monkeypatch, capsys):
     # Patch eastmoney to track calls
     provider._fetch_eastmoney_news = slow_source
 
-    result = provider.fetch_events(
+    provider.fetch_events(
         {
             "normalized_symbol": "600519.SH",
             "plain_code": "600519",
@@ -728,3 +728,60 @@ def test_fetch_events_disabled_does_not_make_requests(monkeypatch):
     assert result.metadata.success is False
     assert result.data == []
     assert result.metadata.error_type == "provider_unavailable"
+
+
+class _FailProvider:
+    def fetch_events(self, symbol_info, lookback_days=90):
+        return ProviderResult(
+            provider="cninfo",
+            dataset="stock_zh_a_disclosure_report_cninfo",
+            symbol=symbol_info["normalized_symbol"],
+            as_of=str(date.today()),
+            data=[],
+            raw={},
+            metadata=ProviderMetadata(success=False, error="connection refused", error_type="provider_unavailable"),
+        )
+
+
+def test_event_service_degrades_when_all_providers_fail():
+    """When all event providers fail, placeholder must NOT claim 'no risk'."""
+    service = EventService()
+    service.cninfo_provider = _FailProvider()
+    service.akshare_provider = _FailProvider()
+    service.web_news_provider = _FakeDisabledWebNewsProvider()
+
+    result = service.build(
+        {
+            "symbol": "600519.SH",
+            "name": "贵州茅台",
+            "data_source": "qmt",
+            "symbol_info": {
+                "normalized_symbol": "600519.SH",
+                "plain_code": "600519",
+                "asset_type": "stock",
+            },
+        }
+    )
+
+    event_data = result["data"]["event_data"]
+    # Must not give misleading "positive" or "low risk" when data is unavailable
+    assert event_data["recent_news_sentiment"] != "neutral_positive"
+    assert event_data["policy_risk"] != "low"
+    assert "不可用" in event_data["major_event"] or "无法" in event_data["major_event"]
+    # Must indicate data unavailability
+    assert result["source_metadata"]["event_data"]["source"] == "mock_placeholder"
+
+
+class _FakeDisabledWebNewsProvider:
+    enabled = False
+
+    def fetch_events(self, symbol_info, lookback_days=14):
+        return ProviderResult(
+            provider="web_news",
+            dataset="web_news_search",
+            symbol=symbol_info.get("normalized_symbol", ""),
+            as_of=str(date.today()),
+            data=[],
+            raw={},
+            metadata=ProviderMetadata(success=False, error="disabled", error_type="provider_unavailable"),
+        )

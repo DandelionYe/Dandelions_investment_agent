@@ -5,13 +5,12 @@
 不要求每个 provider 都成功，只要求脚本能完成、生成 artifact、失败被记录。
 """
 
-import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-
-from tests.conftest import requires_network
 
 requires_network = pytest.mark.skipif(
     os.environ.get("RUN_WEB_NEWS_NETWORK") != "1",
@@ -93,19 +92,15 @@ class TestWebNewsQualityMonitorLive:
 
         assert report["overall"]["total_attempts"] == 4
         assert report["targets_count"] == 2
-        # At least some should succeed (or all may fail in bad network)
-        # The key assertion is that it completes without raising
         assert "per_provider" in report
         assert "per_symbol" in report
 
     def test_script_runs_with_artifacts(self, tmp_path):
         """Verify the CLI script can run and produce artifacts."""
-        import subprocess
-
         output_dir = tmp_path / "script_output"
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 str(PROJECT_ROOT / "scripts" / "run_web_news_quality_monitor.py"),
                 "--targets",
                 str(PROJECT_ROOT / "configs" / "web_news_quality_targets.json"),

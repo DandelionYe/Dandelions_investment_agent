@@ -628,6 +628,9 @@ python -m pytest tests/test_web_news_quality_monitor.py -q
 # 已有测试（不应被破坏）
 python -m pytest tests/test_web_news_quality_contract.py tests/test_web_news_provider.py -q
 
+# provider 失败降级测试（EventService 全部 provider 失败时 placeholder 不误导）
+python -m pytest tests/test_web_news_provider.py::test_event_service_degrades_when_all_providers_fail -q
+
 # 真实网络 smoke（默认跳过）
 RUN_WEB_NEWS_NETWORK=1 python -m pytest tests/integration/test_web_news_quality_monitor_live.py -q
 ```
