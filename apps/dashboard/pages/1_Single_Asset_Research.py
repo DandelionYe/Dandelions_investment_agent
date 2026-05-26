@@ -2,9 +2,10 @@
 
 使用方式：通过 Home.py 导航进入，或直接访问 /单票研究 路由。
 """
-from pathlib import Path
-import sys
+# ruff: noqa: E402, I001
 import asyncio
+import sys
+from pathlib import Path
 
 if sys.platform.startswith("win"):
     try:
@@ -26,6 +27,7 @@ from services.report.json_builder import save_json_result
 from services.report.markdown_builder import save_markdown_report
 from services.report.html_builder import save_html_report
 from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
+from services.report.template_config import resolve_report_config
 from services.data.data_quality import (
     build_data_quality_notes,
     format_money_like_value,
@@ -44,13 +46,17 @@ st.set_page_config(page_title="单票研究", page_icon="🔬", layout="wide")
 require_login()
 
 
-def run_research(symbol: str, data_source: str, use_llm: bool) -> dict:
+def run_research(
+    symbol: str, data_source: str, use_llm: bool,
+    report_template: str | None = None, report_theme: str | None = None,
+) -> dict:
     result = run_single_asset_research(
         symbol=symbol, use_llm=use_llm, data_source=data_source,
     )
+    cfg, theme = resolve_report_config(report_template, report_theme)
     json_path = save_json_result(result)
-    markdown_path = save_markdown_report(result)
-    html_path = save_html_report(markdown_path)
+    markdown_path = save_markdown_report(result, template_config=cfg)
+    html_path = save_html_report(markdown_path, theme=theme)
     pdf_path = save_pdf_report_with_playwright(html_path)
     result["_artifact_paths"] = {
         "json": json_path, "markdown": markdown_path,
@@ -196,9 +202,13 @@ def render_hitl_review():
                     thread_id=st.session_state["hitl_thread_id"],
                     modified_state=modified_state if modified_state else None,
                 )
+                cfg, theme = resolve_report_config(
+                    st.session_state.get("report_template"),
+                    st.session_state.get("report_theme"),
+                )
                 json_path = save_json_result(result)
-                markdown_path = save_markdown_report(result)
-                html_path = save_html_report(markdown_path)
+                markdown_path = save_markdown_report(result, template_config=cfg)
+                html_path = save_html_report(markdown_path, theme=theme)
                 pdf_path = save_pdf_report_with_playwright(html_path)
                 result["_artifact_paths"] = {
                     "json": json_path, "markdown": markdown_path,
@@ -412,6 +422,22 @@ with st.sidebar:
         "异步模式（显示实时进度）", value=True, disabled=hitl_mode and use_llm,
         help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。HITL 模式暂不支持异步。",
     )
+
+    st.divider()
+    st.header("报告配置")
+    report_template = st.selectbox(
+        "报告模板",
+        options=["default", "institutional_full", "compact_review", "risk_only"],
+        index=0,
+        help="default: 标准报告; institutional_full: 最完整证据; compact_review: 快速审阅; risk_only: 聚焦风险",
+    )
+    report_theme = st.selectbox(
+        "报告主题",
+        options=["institutional_light", "institutional_dark", "compact_blue"],
+        index=0,
+        help="选择报告的视觉风格",
+    )
+
     if not async_mode:
         st.warning("⚠️ 同步本地模式仅适合单机自用，生成的报告不会进入任务系统，其他用户不可见。")
     run_button = st.button("生成研究报告", type="primary")
@@ -420,12 +446,17 @@ if run_button:
     if not symbol.strip():
         st.error("请输入股票或 ETF 代码。")
     else:
+        # Store template/theme in session for HITL resume
+        st.session_state["report_template"] = report_template
+        st.session_state["report_theme"] = report_theme
+
         if async_mode and not (hitl_mode and use_llm):
             from apps.dashboard.components.progress_poller import (
                 submit_research_task, poll_task_progress, fetch_task_result,
             )
             submitted = submit_research_task(
                 symbol=symbol.strip(), data_source=data_source, use_llm=use_llm,
+                report_template=report_template, report_theme=report_theme,
             )
             if submitted:
                 final_status = poll_task_progress(submitted["task_id"])
@@ -454,7 +485,10 @@ if run_button:
                 except Exception as exc:
                     st.warning(f"HITL 启动失败，回退到自动模式：{exc}")
                     try:
-                        result = run_research(symbol=symbol.strip(), data_source=data_source, use_llm=True)
+                        result = run_research(
+                            symbol=symbol.strip(), data_source=data_source, use_llm=True,
+                            report_template=report_template, report_theme=report_theme,
+                        )
                         st.session_state["last_result"] = result
                         st.session_state["hitl_active"] = False
                         st.success("研究报告生成成功（自动模式）。")
@@ -463,7 +497,10 @@ if run_button:
         else:
             with st.spinner("正在生成研究报告，请稍候……"):
                 try:
-                    result = run_research(symbol=symbol.strip(), data_source=data_source, use_llm=use_llm)
+                    result = run_research(
+                        symbol=symbol.strip(), data_source=data_source, use_llm=use_llm,
+                        report_template=report_template, report_theme=report_theme,
+                    )
                     st.session_state["last_result"] = result
                     st.session_state["hitl_active"] = False
                     st.success("研究报告生成成功。")

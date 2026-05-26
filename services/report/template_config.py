@@ -1,10 +1,17 @@
 """报告模板配置层。
 
 在不破坏现有 API 的前提下，为 Markdown/HTML/PDF 报告提供模板和主题配置。
+
+支持 4 个正式模板预设：
+- default：保持当前用户体验，不造成已有报告大幅破坏。
+- institutional_full：最完整的证据、数据质量、风险降级、历史分位解释。
+- compact_review：适合快速审阅，只保留核心结论、关键证据、主要风险。
+- risk_only：聚焦风险、保护器、数据质量问题，不展开完整投资叙述。
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -22,6 +29,20 @@ SECTION_IDS = [
     "follow_up",
     "disclaimer",
 ]
+
+# 正式模板 ID 集合
+FORMAL_TEMPLATE_IDS = frozenset({
+    "default",
+    "institutional_full",
+    "compact_review",
+    "risk_only",
+})
+
+FORMAL_THEME_IDS = frozenset({
+    "institutional_light",
+    "institutional_dark",
+    "compact_blue",
+})
 
 
 @dataclass
@@ -70,10 +91,97 @@ _THEMES: dict[str, ReportTheme] = {
     ),
 }
 
+# ── 内置模板预设 ──────────────────────────────────────────────
+
+_TEMPLATE_PRESETS: dict[str, ReportTemplateConfig] = {
+    "default": ReportTemplateConfig(
+        template_id="default",
+        theme_id="institutional_light",
+        sections=list(SECTION_IDS),
+        show_evidence=True,
+        show_data_quality=True,
+        show_decision_guard=True,
+        show_disclaimer=True,
+        table_density="normal",
+    ),
+    "institutional_full": ReportTemplateConfig(
+        template_id="institutional_full",
+        theme_id="institutional_light",
+        sections=list(SECTION_IDS),
+        show_evidence=True,
+        show_data_quality=True,
+        show_decision_guard=True,
+        show_disclaimer=True,
+        table_density="normal",
+    ),
+    "compact_review": ReportTemplateConfig(
+        template_id="compact_review",
+        theme_id="compact_blue",
+        sections=[
+            "basic_info",
+            "committee_conclusion",
+            "data_source_and_price",
+            "scorecard",
+            "risk_officer",
+            "decision_guard",
+            "follow_up",
+            "disclaimer",
+        ],
+        show_evidence=True,
+        show_data_quality=False,
+        show_decision_guard=True,
+        show_disclaimer=True,
+        table_density="compact",
+    ),
+    "risk_only": ReportTemplateConfig(
+        template_id="risk_only",
+        theme_id="institutional_dark",
+        sections=[
+            "basic_info",
+            "committee_conclusion",
+            "scorecard",
+            "risk_officer",
+            "decision_guard",
+            "disclaimer",
+        ],
+        show_evidence=False,
+        show_data_quality=True,
+        show_decision_guard=True,
+        show_disclaimer=True,
+        table_density="compact",
+    ),
+}
+
 
 def default_template_config() -> ReportTemplateConfig:
     """返回默认模板配置。"""
     return ReportTemplateConfig()
+
+
+def get_template_preset(template_id: str) -> ReportTemplateConfig:
+    """获取模板预设，未知 ID 抛出 ValueError。
+
+    Parameters
+    ----------
+    template_id : str
+        模板 ID，必须是 FORMAL_TEMPLATE_IDS 中的一个。
+
+    Returns
+    -------
+    ReportTemplateConfig
+        对应的模板配置副本。
+
+    Raises
+    ------
+    ValueError
+        如果 template_id 不在已知模板列表中。
+    """
+    if template_id not in _TEMPLATE_PRESETS:
+        raise ValueError(
+            f"未知模板 ID: {template_id!r}，"
+            f"可用模板: {', '.join(sorted(FORMAL_TEMPLATE_IDS))}"
+        )
+    return copy.deepcopy(_TEMPLATE_PRESETS[template_id])
 
 
 def get_theme(theme_id: str) -> ReportTheme:
@@ -84,8 +192,11 @@ def get_theme(theme_id: str) -> ReportTheme:
 def validate_template_config(config: ReportTemplateConfig) -> list[str]:
     """校验模板配置，返回警告列表（空列表表示无问题）。"""
     warnings: list[str] = []
-    if config.template_id not in ("default",):
-        warnings.append(f"未知 template_id: {config.template_id}")
+    if config.template_id not in FORMAL_TEMPLATE_IDS:
+        warnings.append(
+            f"未知 template_id: {config.template_id}，"
+            f"可用模板: {', '.join(sorted(FORMAL_TEMPLATE_IDS))}"
+        )
     if config.theme_id not in _THEMES:
         warnings.append(f"未知 theme_id: {config.theme_id}，将使用默认主题")
     unknown = [s for s in config.sections if s not in SECTION_IDS]
@@ -95,21 +206,38 @@ def validate_template_config(config: ReportTemplateConfig) -> list[str]:
 
 
 def template_config_from_dict(data: dict) -> ReportTemplateConfig:
-    """从 dict 构造 ReportTemplateConfig。"""
-    sections = data.get("sections")
-    if sections is None:
-        sections = list(SECTION_IDS)
-    return ReportTemplateConfig(
-        template_id=data.get("template_id", "default"),
-        theme_id=data.get("theme_id", "institutional_light"),
-        sections=list(sections),
-        show_evidence=data.get("show_evidence", True),
-        show_data_quality=data.get("show_data_quality", True),
-        show_decision_guard=data.get("show_decision_guard", True),
-        show_disclaimer=data.get("show_disclaimer", True),
-        table_density=data.get("table_density", "normal"),
-        language=data.get("language", "zh-CN"),
-    )
+    """从 dict 构造 ReportTemplateConfig。
+
+    如果 data 包含 template_id 且该 ID 是已知预设，则以预设为基础，
+    data 中的其他字段会覆盖预设值。否则使用默认值作为基础。
+    """
+    template_id = data.get("template_id", "default")
+
+    # Start from preset if known, otherwise from defaults
+    if template_id in _TEMPLATE_PRESETS:
+        cfg = copy.deepcopy(_TEMPLATE_PRESETS[template_id])
+    else:
+        cfg = ReportTemplateConfig(template_id=template_id)
+
+    # Apply overrides from data
+    if "theme_id" in data:
+        cfg.theme_id = data["theme_id"]
+    if "sections" in data:
+        cfg.sections = list(data["sections"])
+    if "show_evidence" in data:
+        cfg.show_evidence = data["show_evidence"]
+    if "show_data_quality" in data:
+        cfg.show_data_quality = data["show_data_quality"]
+    if "show_decision_guard" in data:
+        cfg.show_decision_guard = data["show_decision_guard"]
+    if "show_disclaimer" in data:
+        cfg.show_disclaimer = data["show_disclaimer"]
+    if "table_density" in data:
+        cfg.table_density = data["table_density"]
+    if "language" in data:
+        cfg.language = data["language"]
+
+    return cfg
 
 
 def build_theme_css(theme: ReportTheme) -> str:
@@ -224,3 +352,47 @@ def build_theme_css(theme: ReportTheme) -> str:
             text-decoration: none;
         }}
     """
+
+
+def resolve_report_config(
+    report_template: str | None = None,
+    report_theme: str | None = None,
+) -> tuple[ReportTemplateConfig, ReportTheme]:
+    """从任务参数解析报告模板和主题配置。
+
+    Parameters
+    ----------
+    report_template : str | None
+        模板 ID（如 "default", "institutional_full", "compact_review", "risk_only"）。
+        None 或空字符串使用 "default"。
+    report_theme : str | None
+        主题 ID（如 "institutional_light", "institutional_dark", "compact_blue"）。
+        None 或空字符串使用模板预设的主题。
+
+    Returns
+    -------
+    tuple[ReportTemplateConfig, ReportTheme]
+        解析后的模板配置和主题。
+
+    Raises
+    ------
+    ValueError
+        显式传入未知模板或主题时抛出，避免生产任务静默生成错误模板。
+    """
+    template_id = (report_template or "default").strip() or "default"
+
+    cfg = get_template_preset(template_id)
+
+    # Theme override
+    if report_theme:
+        theme_id = report_theme.strip()
+        if theme_id:
+            if theme_id not in FORMAL_THEME_IDS:
+                raise ValueError(
+                    f"未知主题 ID: {theme_id!r}，"
+                    f"可用主题: {', '.join(sorted(FORMAL_THEME_IDS))}"
+                )
+            cfg.theme_id = theme_id
+
+    theme = get_theme(cfg.theme_id)
+    return cfg, theme

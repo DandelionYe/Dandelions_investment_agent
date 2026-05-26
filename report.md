@@ -211,22 +211,22 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 已知限制：
 - 估值覆盖率仍为 72%（CSMAR 日衍生指标覆盖），evidence schema 不能弥补数据缺失。
 - event_data 在历史样本中统一为 placeholder（Phase 2B 不依赖历史新闻倒查），有 missing_reason。
-- scoring_engine 仍直接读取裸值，未从 evidence_fields 取值（未来 Phase 4 可考虑）。
+- scoring_engine 仍直接读取裸值，未从 evidence_fields 取值（未来质量治理阶段再评估）。
 
-**P2 第四阶段：报告体系产品化**
+**P2 第四阶段：报告体系产品化** ✅
 目标：从“模板开关可用”升级为“报告可长期对外/归档使用”。
 
-需要推进：
-- 定义正式模板版本，例如 `default`, `institutional_full`, `compact_review`, `risk_only`。
-- Markdown/HTML/PDF 三端版式一致，PDF 分页、表格、中文字体、页眉页脚稳定。
-- 报告配置进入任务参数或环境配置，而不是只能函数调用传参。
-- 报告中增加“证据索引”“数据质量摘要”“风险降级解释”“历史分位解释”。
-- 给报告生成做视觉/内容快照测试，避免格式漂移。
+已完成：
+- 定义 4 个正式模板：`default`, `institutional_full`, `compact_review`, `risk_only`。
+- 报告配置已进入 CLI、FastAPI 任务参数和 Streamlit 单票研究页；显式非法模板/主题会报错。
+- Markdown 作为内容真源，HTML/PDF 复用同一 Markdown + theme CSS 链路；PDF 使用 HTML `@page` 版式。
+- 报告新增“数据质量摘要”“证据索引”“风险降级详解”“估值分位解释”，可解释评分、估值、保护器和数据质量。
+- HTML 生成会转义原始 HTML 标签，避免报告归档中保留可执行标签。
+- `tests/test_report_productization_contract.py` 覆盖正式模板、配置解析、内容增强、章节开关、HTML 一致性和确定性。
 
-验收标准：
-- 同一结果生成 Markdown/HTML/PDF 内容一致。
-- 模板变更有快照测试保护。
-- 报告能清楚解释评分、估值、保护器和数据质量。
+验证：
+- `pytest tests/test_report_template_config.py tests/test_report_builders.py tests/test_report_productization_contract.py -q`
+- `ruff check services/report apps/api/schemas/research.py apps/api/task_manager/celery_tasks.py apps/dashboard/components/progress_poller.py apps/dashboard/pages/1_Single_Asset_Research.py main.py tests/test_report_productization_contract.py`
 
 **P2 第五阶段：真实网页新闻/舆情长期验收**
 目标：从“离线新闻样本”升级为“真实 provider 稳定性监控”。

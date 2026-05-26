@@ -12,7 +12,7 @@
 - LLM：DeepSeek OpenAI-compatible API（deepseek-v4-flash / deepseek-v4-pro）。进入 LLM prompt 和 audit metadata 的研究数据会先做瘦身，只保留摘要字段，不传完整同行池、provider_run_log 或原始数据。
 - 编排：LangGraph 双层图 —— 辩论子图（8 节点多轮辩论 + Supervisor + HITL）+ 完整 pipeline 图（6 节点端到端：数据→评分→辩论→HITL→决策保护→验证）。
 - 看板：Streamlit。
-- 报告：JSON → Markdown → HTML → Playwright PDF。
+- 报告：JSON → Markdown → HTML → Playwright PDF，支持正式模板 `default` / `institutional_full` / `compact_review` / `risk_only` 与主题配置。
 - 研究质量：已落地 P0 数据质量回归样本、P2 真实历史回测样本池和全链路 evidence schema，相关 artifact 输出到 `storage/artifacts/`。
 - 当前不会自动下单，也不会调用 QMT 交易接口。
 
@@ -281,7 +281,7 @@ python main.py --symbol 600519.SH --data-source akshare --no-llm
 streamlit run apps/dashboard/Home.py
 ```
 
-页面左侧选择代码、数据源和是否启用 DeepSeek。报告库在 `pages/2_Report_Library.py`，观察池在 `pages/3_观察池.py`。
+页面左侧选择代码、数据源、是否启用 DeepSeek、报告模板和报告主题。报告库在 `pages/2_Report_Library.py`，观察池在 `pages/3_观察池.py`。
 
 ### 人工审核模式（HITL）
 
@@ -617,14 +617,24 @@ python scripts/run_historical_research_quality_backtest.py --allow-price-only
 }
 ```
 
-`normalize_key_fields()` 会为价格、估值、盈利质量、资本结构、行业和事件共 40 个核心字段路径写入 `result["evidence_fields"]`，同时保持原始裸值结构不变。`validate_evidence_fields()` 返回结构化错误，`summarize_evidence_coverage()` 汇总覆盖率、来源分布、质量分布和缺失原因。Markdown 报告在 `show_evidence=true` 时展示证据字段摘要；LLM 输入瘦身时会把完整 `evidence_fields` 压缩为 `evidence_summary`。
+`normalize_key_fields()` 会为价格、估值、盈利质量、资本结构、行业和事件共 40 个核心字段路径写入 `result["evidence_fields"]`，同时保持原始裸值结构不变。`validate_evidence_fields()` 返回结构化错误，`summarize_evidence_coverage()` 汇总覆盖率、来源分布、质量分布和缺失原因。Markdown 报告会展示数据质量摘要、证据索引、风险降级解释和历史/行业分位解释；LLM 输入瘦身时会把完整 `evidence_fields` 压缩为 `evidence_summary`。
 
-报告模板配置已支持章节开关和主题：
+报告体系已产品化，内置 4 个正式模板：
+
+| 模板 | 用途 |
+|------|------|
+| `default` | 默认单机/API 报告，保持完整标准结构 |
+| `institutional_full` | 长期归档和对外审阅，完整展示证据、数据质量、保护器和分位解释 |
+| `compact_review` | 快速审阅，保留核心结论、评分、风险和关键证据 |
+| `risk_only` | 风险复核，聚焦风险、保护器和数据质量 |
+
+CLI、FastAPI 异步任务和 Streamlit 单票研究页均支持 `report_template` / `report_theme` 配置；显式传入未知模板或主题会报错，不会静默回退。配置示例：
 
 ```python
 from services.report.template_config import ReportTemplateConfig
 
 cfg = ReportTemplateConfig(
+    template_id="institutional_full",
     theme_id="institutional_light",  # institutional_light / institutional_dark / compact_blue
     show_evidence=True,
     show_data_quality=True,
@@ -632,6 +642,12 @@ cfg = ReportTemplateConfig(
     show_disclaimer=True,
 )
 md = build_markdown_report(result, template_config=cfg)
+```
+
+命令行示例：
+
+```powershell
+python main.py --symbol 600519.SH --data-source qmt --report-template institutional_full --report-theme institutional_light
 ```
 
 ### 新闻/舆情质量验收

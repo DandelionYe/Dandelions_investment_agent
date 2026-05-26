@@ -2,9 +2,10 @@
 
 import uuid
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
-from apps.api.utils.time_utils import utc_now_iso
+from apps.api.utils.time_utils import utc_now_iso  # noqa: F401 — re-exported for celery_tasks
 
 
 class ResearchRequest(BaseModel):
@@ -25,6 +26,16 @@ class ResearchRequest(BaseModel):
     )
     use_graph: bool = Field(
         default=True, description="是否使用 LangGraph 完整 pipeline"
+    )
+    report_template: Optional[str] = Field(
+        default=None,
+        pattern="^(default|institutional_full|compact_review|risk_only)$",
+        description="报告模板：default / institutional_full / compact_review / risk_only",
+    )
+    report_theme: Optional[str] = Field(
+        default=None,
+        pattern="^(institutional_light|institutional_dark|compact_blue)$",
+        description="报告主题：institutional_light / institutional_dark / compact_blue",
     )
 
 

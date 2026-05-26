@@ -3,9 +3,10 @@
 由于 Streamlit 是服务端渲染框架，无法直接在 Python 中持有 WebSocket 连接。
 使用短间隔 HTTP 轮询（1 秒间隔）实现同等的实时进度体验。
 """
+# ruff: noqa: E402
 
-import time
 import sys
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -166,21 +167,28 @@ def poll_batch_progress(batch_id: str, poll_interval: float = 1.5,
 
 
 def submit_research_task(symbol: str, data_source: str = "mock",
-                         use_llm: bool = True) -> dict | None:
+                         use_llm: bool = True,
+                         report_template: str | None = None,
+                         report_theme: str | None = None) -> dict | None:
     """提交研究任务到 FastAPI 并返回 task_id 等元信息。
 
     Returns:
         {"task_id": str, "status": str, "created_at": str} 或 None
     """
     import requests
+    payload = {
+        "symbol": symbol,
+        "data_source": data_source,
+        "use_llm": use_llm,
+    }
+    if report_template:
+        payload["report_template"] = report_template
+    if report_theme:
+        payload["report_theme"] = report_theme
     try:
         resp = requests.post(
             f"{API_BASE}/api/v1/research/single",
-            json={
-                "symbol": symbol,
-                "data_source": data_source,
-                "use_llm": use_llm,
-            },
+            json=payload,
             headers=auth_headers(),
             timeout=10,
         )

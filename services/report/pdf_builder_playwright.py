@@ -1,6 +1,6 @@
-from pathlib import Path
-import sys
 import asyncio
+import sys
+from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
@@ -50,12 +50,7 @@ def save_pdf_report_with_playwright(
                 path=str(output_path),
                 format="A4",
                 print_background=True,
-                margin={
-                    "top": "18mm",
-                    "right": "16mm",
-                    "bottom": "18mm",
-                    "left": "16mm",
-                },
+                prefer_css_page_size=True,
             )
 
             browser.close()

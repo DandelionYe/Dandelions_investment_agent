@@ -1,6 +1,20 @@
+import html as html_lib
+import re
 from pathlib import Path
 
 import markdown as md
+
+_RAW_HTML_TAG_RE = re.compile(r"<(?=[A-Za-z!/])[^>\n]*>")
+
+
+def _escape_raw_html_tags(markdown_text: str) -> str:
+    """Escape raw HTML tags before Markdown conversion.
+
+    The reports are generated from model/provider text and should not allow
+    embedded HTML or script tags to survive into archived HTML/PDF output.
+    Markdown syntax itself remains available.
+    """
+    return _RAW_HTML_TAG_RE.sub(lambda match: html_lib.escape(match.group(0)), markdown_text)
 
 
 def build_html_report(markdown_text: str, title: str = "投研报告", theme=None) -> str:
@@ -29,15 +43,16 @@ def build_html_report(markdown_text: str, title: str = "投研报告", theme=Non
     css = build_theme_css(theme_obj)
 
     body_html = md.markdown(
-        markdown_text,
+        _escape_raw_html_tags(markdown_text),
         extensions=["tables", "fenced_code", "toc"],
     )
+    safe_title = html_lib.escape(title)
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>{title}</title>
+    <title>{safe_title}</title>
     <style>
         {css}
     </style>

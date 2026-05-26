@@ -110,7 +110,7 @@ def _build_evidence_fields_summary(evidence_fields: dict) -> str:
     if not evidence_fields:
         return "暂无 evidence_fields 数据。"
 
-    from services.data.evidence_schema import summarize_evidence_coverage
+    from services.data.evidence_schema import is_strict_source, summarize_evidence_coverage
 
     summary = summarize_evidence_coverage({"evidence_fields": evidence_fields})
 
@@ -127,6 +127,10 @@ def _build_evidence_fields_summary(evidence_fields: dict) -> str:
             sorted(by_source.items(), key=lambda x: -x[1])
         ]
         lines.append("- 来源分布：" + "、".join(source_parts))
+        strict_count = sum(cnt for src, cnt in by_source.items() if is_strict_source(src))
+        total_sources = sum(by_source.values())
+        strict_rate = strict_count / total_sources if total_sources else 0.0
+        lines.append(f"- strict source 覆盖率：{strict_rate:.0%}（{strict_count}/{total_sources}）")
 
     # Quality distribution
     by_quality = summary.get("by_quality", {})
@@ -145,6 +149,219 @@ def _build_evidence_fields_summary(evidence_fields: dict) -> str:
             sorted(missing_reasons.items(), key=lambda x: -x[1])[:5]
         ]
         lines.append("- 主要缺失原因：" + "、".join(reason_parts))
+
+    return "\n".join(lines)
+
+
+def _escape_table_cell(value: Any) -> str:
+    text = "暂无" if value is None else str(value)
+    return text.replace("\n", " ").replace("\r", " ").replace("|", "\\|")
+
+
+def _build_evidence_index(evidence_fields: dict, limit: int = 15) -> str:
+    """Build an evidence index table showing key fields with provenance.
+
+    Shows field path, display value, source, as_of, freshness, and warnings.
+    Prioritizes fields with warnings or missing data.
+    """
+    if not evidence_fields:
+        return "暂无 evidence_fields 数据。"
+
+    from services.data.evidence_schema import is_evidence_field
+
+    # Separate into problematic and normal fields
+    problematic: list[tuple[str, dict]] = []
+    normal: list[tuple[str, dict]] = []
+
+    for path, ev in evidence_fields.items():
+        if not is_evidence_field(ev):
+            continue
+        quality = ev.get("quality", {})
+        warnings = ev.get("warnings", [])
+        has_issue = (
+            not quality.get("available", False)
+            or quality.get("freshness") in ("estimated", "missing", "unknown")
+            or warnings
+        )
+        if has_issue:
+            problematic.append((path, ev))
+        else:
+            normal.append((path, ev))
+
+    # Show problematic first, then normal, up to limit
+    ordered = problematic + normal
+    shown = ordered[:limit]
+
+    rows = [
+        "| 字段路径 | 数值 | 来源 | 日期 | 质量 | 备注 |",
+        "|---|---|---|---|---|---|",
+    ]
+
+    for path, ev in shown:
+        value = ev.get("value")
+        source = ev.get("source", "unknown")
+        as_of = ev.get("as_of") or "-"
+        quality = ev.get("quality", {})
+        freshness = quality.get("freshness", "unknown")
+        warnings = ev.get("warnings", [])
+
+        # Format value
+        if value is None:
+            display_val = "缺失"
+        elif isinstance(value, float):
+            if abs(value) >= 1e8:
+                display_val = f"{value/1e8:.2f}亿"
+            elif abs(value) >= 1e4:
+                display_val = f"{value/1e4:.2f}万"
+            else:
+                display_val = f"{value:.4f}"
+        else:
+            display_val = str(value)[:20]
+
+        # Format freshness
+        freshness_map = {
+            "fresh": "新鲜", "stale": "过期", "historical": "历史",
+            "estimated": "估算", "missing": "缺失", "unknown": "未知",
+        }
+        freshness_display = freshness_map.get(freshness, freshness)
+
+        # Format notes
+        notes = []
+        if not quality.get("available", False):
+            mr = quality.get("missing_reason")
+            if mr:
+                notes.append(f"缺失: {mr}")
+        for w in warnings[:1]:
+            notes.append(w[:30])
+        note_display = "; ".join(notes) if notes else "-"
+
+        rows.append(
+            f"| {_escape_table_cell(path)} | {_escape_table_cell(display_val)} | "
+            f"{_escape_table_cell(source)} | {_escape_table_cell(as_of)} | "
+            f"{_escape_table_cell(freshness_display)} | {_escape_table_cell(note_display)} |"
+        )
+
+    remaining = len(ordered) - len(shown)
+    if remaining > 0:
+        rows.append(f"| ...另有 {remaining} 个字段 | ... | ... | ... | ... | ... |")
+
+    return "\n".join(rows)
+
+
+def _build_percentile_explanation(valuation_data: dict) -> str:
+    """Build an explanation of percentile values in the report.
+
+    Explains what each percentile means, the data source, as_of, and sample info.
+    """
+    if not valuation_data:
+        return ""
+
+    lines: list[str] = []
+
+    # Historical percentiles
+    for metric, label in [
+        ("pe_percentile", "PE 历史分位"),
+        ("pb_percentile", "PB 历史分位"),
+        ("ps_percentile", "PS 历史分位"),
+    ]:
+        val = valuation_data.get(metric)
+        if val is None:
+            continue
+        source = valuation_data.get(f"{metric}_source", "未记录")
+        sample_count = valuation_data.get(f"{metric}_sample_count")
+        reason = valuation_data.get(f"{metric}_missing_reason")
+
+        line = f"- **{label}**：{val:.0%}"
+        if sample_count:
+            line += f"（基于 {sample_count} 个月度样本）"
+        line += f"，数据来源：{source}"
+        if reason:
+            line += f"，缺失原因：{reason}"
+        lines.append(line)
+
+    # Industry percentiles
+    for metric, label in [
+        ("industry_pe_percentile", "PE 行业分位"),
+        ("industry_pb_percentile", "PB 行业分位"),
+        ("industry_ps_percentile", "PS 行业分位"),
+    ]:
+        val = valuation_data.get(metric)
+        if val is None:
+            continue
+        ind_source = valuation_data.get("industry_valuation_source", "未记录")
+        peer_count = valuation_data.get("industry_valid_peer_count")
+        reason = valuation_data.get(f"{metric}_missing_reason")
+
+        line = f"- **{label}**：{val:.0%}"
+        if peer_count:
+            line += f"（同行有效样本 {peer_count} 只）"
+        line += f"，行业估值来源：{ind_source}"
+        if reason:
+            line += f"，缺失原因：{reason}"
+        lines.append(line)
+
+    if not lines:
+        return "暂无估值分位数据。"
+
+    lines.insert(0, "**分位值含义**：0% 表示历史/行业最低，100% 表示历史/行业最高。50% 表示处于中位水平。")
+    return "\n".join(lines)
+
+
+def _build_risk_degradation_explanation(result: dict) -> str:
+    """Build a risk degradation explanation section.
+
+    Explains whether the decision guard was triggered, why, and the impact.
+    """
+    decision_guard = result.get("decision_guard", {})
+    data_quality = result.get("data_quality", {})
+    event_data = result.get("event_data", {})
+    event_summary = event_data.get("event_summary", {})
+
+    lines: list[str] = []
+
+    # Check if guard was enabled and caused degradation
+    guard_enabled = decision_guard.get("enabled", False)
+    llm_action = decision_guard.get("llm_action", "")
+    final_action = decision_guard.get("final_action", "")
+    was_degraded = guard_enabled and llm_action and final_action and llm_action != final_action
+
+    if was_degraded:
+        lines.append(f"**本次建议被降级**：模型原始建议为「{llm_action}」，"
+                     f"经决策保护器约束后降级为「{final_action}」。")
+    elif guard_enabled:
+        lines.append("**本次建议未被降级**：模型建议在评分和风险约束范围内。")
+    else:
+        lines.append("**决策保护器未启用**。")
+
+    # Explain degradation reasons
+    guard_reasons = decision_guard.get("guard_reasons", [])
+    if guard_reasons:
+        lines.append("")
+        lines.append("**降级/限制原因**：")
+        for reason in guard_reasons:
+            lines.append(f"- {reason}")
+
+    # Data quality impact
+    has_placeholder = data_quality.get("has_placeholder", False)
+    blocking_issues = data_quality.get("blocking_issues", [])
+    if has_placeholder:
+        lines.append("")
+        lines.append("- **存在 placeholder 数据**：部分字段使用占位值，评分可信度受限。")
+    if blocking_issues:
+        lines.append(f"- **存在 {len(blocking_issues)} 个数据质量阻断项**。")
+
+    # Event impact
+    critical_count = event_summary.get("critical_count", 0) or 0
+    if critical_count > 0:
+        lines.append(f"- **存在 {critical_count} 个 critical 级别事件**，系统强制建议为「回避」。")
+
+    # Risk level impact
+    risk_level = decision_guard.get("risk_level")
+    if risk_level == "high":
+        lines.append("- **风险等级为 high**：系统限制最高建议为「观察」。")
+
+    if not lines:
+        return "暂无风险降级信息。"
 
     return "\n".join(lines)
 
@@ -226,7 +443,7 @@ def _build_industry_valuation_table(valuation_data: dict) -> str:
     return "\n".join(rows)
 
 
-def _build_price_freshness_warning(price_data: dict) -> str | None:
+def _build_price_freshness_warning(price_data: dict, report_as_of: str | None = None) -> str | None:
     """Build a staleness warning blockquote for the price section.
 
     Returns ``None`` when price data is not stale.
@@ -236,9 +453,10 @@ def _build_price_freshness_warning(price_data: dict) -> str | None:
         return None
 
     trade_date = price_data.get("latest_trade_date") or "未知"
+    report_date = report_as_of or _today_str()
     return (
         f"> **行情数据可能过期**：最新行情日期为 {trade_date}，"
-        f"报告日期为 {_today_str()}。"
+        f"报告日期为 {report_date}。"
         f"价格、均线、涨跌幅、回撤和波动率可能不代表最新交易日。"
     )
 
@@ -416,7 +634,7 @@ def build_markdown_report(result: dict, template_config=None) -> str:
         ) + "\n\n"
 
     # --- Price freshness display ---
-    freshness_warning = _build_price_freshness_warning(price_data)
+    freshness_warning = _build_price_freshness_warning(price_data, result.get("as_of"))
     qmt_status = result.get("source_metadata", {}).get("qmt_status", {})
     price_chain = _build_price_chain_summary(qmt_status)
 
@@ -427,11 +645,15 @@ def build_markdown_report(result: dict, template_config=None) -> str:
 
     # --- Build conditional sections (avoid nested triple-quoted f-strings) ---
     if cfg.show_data_quality:
+        evidence_fields_summary = _build_evidence_fields_summary(evidence_fields)
         data_quality_section = (
-            f"### 3.2 研究数据层质量报告\n\n"
+            f"### 3.2 数据质量摘要\n\n"
             f"- 整体置信度：{format_confidence(data_quality.get('overall_confidence'))}\n"
             f"- 是否存在 placeholder：{localize_bool(data_quality.get('has_placeholder'))}\n"
             f"- 阻断项：{len(data_quality.get('blocking_issues', []))}\n\n"
+            f"#### 数据证据字段摘要\n\n"
+            f"{evidence_fields_summary}\n\n"
+            f"#### 字段质量明细\n\n"
             f"{field_quality_table}\n\n"
             f"#### 数据质量警告\n\n"
             f"{_as_bullets(data_quality.get('warnings'))}\n\n"
@@ -442,13 +664,16 @@ def build_markdown_report(result: dict, template_config=None) -> str:
         data_quality_section = ""
 
     if cfg.show_evidence:
-        evidence_fields_summary = _build_evidence_fields_summary(evidence_fields)
+        evidence_index = _build_evidence_index(evidence_fields)
         evidence_section = (
             f"### 3.3 EvidenceBundle 摘要\n\n{evidence_preview_table}\n\n"
-            f"### 3.4 数据证据字段摘要\n\n{evidence_fields_summary}"
+            f"### 3.4 证据索引\n\n{evidence_index}"
         )
     else:
         evidence_section = ""
+
+    # Percentile explanation (always shown when valuation data exists)
+    percentile_explanation = _build_percentile_explanation(valuation_data)
 
     if cfg.show_decision_guard:
         guard_section = (
@@ -463,7 +688,9 @@ def build_markdown_report(result: dict, template_config=None) -> str:
             f"- 最终操作建议：{guard_final_action}\n"
             f"- 降级/限制原因：{'; '.join(guard_reasons) if guard_reasons else '暂无'}\n\n"
             f"### 8.2 保护器解释\n\n"
-            f"> {guard_summary}"
+            f"> {guard_summary}\n\n"
+            f"### 8.3 风险降级详解\n\n"
+            f"{_build_risk_degradation_explanation(result)}"
         )
     else:
         guard_section = ""
@@ -544,7 +771,7 @@ def build_markdown_report(result: dict, template_config=None) -> str:
 
 {evidence_section}
 
-### 3.4 行情解读
+### 3.5 行情解读
 
 - 若价格位于 MA20 和 MA60 下方，说明短中期趋势仍偏弱，需要等待趋势修复。
 - 若近60日最大回撤较大，说明中线波动风险需要重点关注。
@@ -572,6 +799,10 @@ def build_markdown_report(result: dict, template_config=None) -> str:
 #### 行业估值提示
 
 {_as_bullets(industry_valuation_warnings)}
+
+### 4.3 估值分位解释
+
+{percentile_explanation}
 
 ## 五、多头观点
 

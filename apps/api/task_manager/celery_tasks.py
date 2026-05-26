@@ -12,11 +12,10 @@ import sys
 from pathlib import Path
 
 from apps.api.celery_app import celery_app
-from apps.api.task_manager.store import get_task_store, get_watchlist_store
+from apps.api.schemas.research import new_task_id, utc_now_iso
 from apps.api.schemas.task import TaskStatus
-from apps.api.schemas.research import utc_now_iso, new_task_id
+from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.websocket.progress_publisher import publish_task_progress
-from pathlib import Path
 
 # 将项目根目录添加到 Python 路径
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -34,15 +33,17 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
 
     Args:
         task_id: 任务 UUID
-        params: {symbol, data_source, use_llm, max_debate_rounds, use_graph}
+        params: {symbol, data_source, use_llm, max_debate_rounds, use_graph,
+                 report_template, report_theme}
 
     Returns:
         包含 score/rating/action/final_opinion 的摘要 dict。
     """
+    from services.report.html_builder import save_html_report
     from services.report.json_builder import save_json_result
     from services.report.markdown_builder import save_markdown_report
-    from services.report.html_builder import save_html_report
     from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
+    from services.report.template_config import resolve_report_config
 
     store = get_task_store()
 
@@ -59,6 +60,8 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
     use_llm = params.get("use_llm", True)
     max_debate_rounds = params.get("max_debate_rounds", 3)
     use_graph = params.get("use_graph", True)
+    report_template = params.get("report_template")
+    report_theme = params.get("report_theme")
     publish_task_progress(task_id, TaskStatus.RUNNING, 0.1, "开始加载数据...", symbol)
 
     try:
@@ -100,9 +103,12 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
         reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
         reports_dir.mkdir(parents=True, exist_ok=True)
 
+        # Resolve report template/theme from task params
+        cfg, theme = resolve_report_config(report_template, report_theme)
+
         json_path_actual = Path(save_json_result(result))
-        markdown_path_actual = Path(save_markdown_report(result))
-        html_path_actual = Path(save_html_report(str(markdown_path_actual)))
+        markdown_path_actual = Path(save_markdown_report(result, template_config=cfg))
+        html_path_actual = Path(save_html_report(str(markdown_path_actual), theme=theme))
 
         for src, dst_name in [
             (json_path_actual, "result.json"),

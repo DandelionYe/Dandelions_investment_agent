@@ -2,10 +2,11 @@ import argparse
 import json
 
 from services.orchestrator.single_asset_research import run_single_asset_research
-from services.report.markdown_builder import save_markdown_report
 from services.report.html_builder import save_html_report
-from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
 from services.report.json_builder import save_json_result
+from services.report.markdown_builder import save_markdown_report
+from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
+from services.report.template_config import resolve_report_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="使用完整 LangGraph 编排流程，而不是默认的顺序单资产流水线",
     )
+    parser.add_argument(
+        "--report-template",
+        default=None,
+        help="报告模板：default / institutional_full / compact_review / risk_only",
+    )
+    parser.add_argument(
+        "--report-theme",
+        default=None,
+        help="报告主题：institutional_light / institutional_dark / compact_blue",
+    )
     return parser
 
 
@@ -46,9 +57,12 @@ def main():
         use_graph=args.use_graph,
     )
 
+    # Resolve report config from CLI args
+    cfg, theme = resolve_report_config(args.report_template, args.report_theme)
+
     json_path = save_json_result(result)
-    markdown_path = save_markdown_report(result)
-    html_path = save_html_report(markdown_path)
+    markdown_path = save_markdown_report(result, template_config=cfg)
+    html_path = save_html_report(markdown_path, theme=theme)
     pdf_path = None
     if args.pdf:
         pdf_path = save_pdf_report_with_playwright(html_path)
