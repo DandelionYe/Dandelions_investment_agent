@@ -78,14 +78,19 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    # Load policy
+    # Load policy — config is required (exit 2 if missing/invalid)
     config_path = Path(args.config)
-    if config_path.exists():
+    if not config_path.exists():
+        print(f"错误: 配置文件不存在: {config_path}", file=sys.stderr)
+        return 2
+    try:
         policy_data = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(policy_data, dict):
+            raise ValueError("配置文件必须是 JSON object")
         policy = TrendPolicy.from_dict(policy_data)
-    else:
-        print(f"警告: 配置文件不存在 {config_path}，使用默认策略", file=sys.stderr)
-        policy = TrendPolicy()
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
+        print(f"错误: 配置文件解析失败: {config_path} — {exc}", file=sys.stderr)
+        return 2
 
     # Override min_runs if specified
     if args.min_runs:

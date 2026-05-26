@@ -69,6 +69,7 @@
         "core_provider_ok": {"expected": true, "severity": "warning", "optional": true},
         "healthy_provider_count": {"min": 1, "severity": "warning", "optional": true},
         "failed_core_provider_count": {"max": 0, "severity": "warning", "optional": true},
+        "missing_core_provider_count": {"max": 0, "severity": "warning", "optional": true},
         "overall.success_rate": {"min": 0.30, "severity": "watch", "optional": true}
       }
     },

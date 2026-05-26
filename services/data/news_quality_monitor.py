@@ -143,6 +143,12 @@ class ProviderHealth:
         return {
             "source": self.source,
             "attempts": self.attempts,
+            "successes": self.successes,
+            "timeouts": self.timeouts,
+            "empty_results": self.empty_results,
+            "total_deduped": self.total_deduped,
+            "total_relevant": self.total_relevant,
+            "total_low_quality": self.total_low_quality,
             "success_rate": round(self.success_rate, 4),
             "timeout_rate": round(self.timeout_rate, 4),
             "empty_rate": round(self.empty_rate, 4),

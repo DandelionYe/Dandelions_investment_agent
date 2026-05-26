@@ -19,7 +19,7 @@ from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 

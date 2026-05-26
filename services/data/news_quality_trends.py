@@ -149,6 +149,7 @@ class TrendSummary:
     failed_provider_count: int
     core_provider_ok: bool
     failed_core_provider_count: int
+    missing_core_provider_count: int
     overall_severity: str  # ok | warning | watch | blocker
     warnings: list[str] = field(default_factory=list)
     provider_trends: list[ProviderTrend] = field(default_factory=list)
@@ -169,6 +170,7 @@ class TrendSummary:
             "failed_provider_count": self.failed_provider_count,
             "core_provider_ok": self.core_provider_ok,
             "failed_core_provider_count": self.failed_core_provider_count,
+            "missing_core_provider_count": self.missing_core_provider_count,
             "overall_severity": self.overall_severity,
             "warnings": self.warnings,
             "provider_trends": [pt.to_dict() for pt in self.provider_trends],
@@ -227,18 +229,23 @@ def _get_tier_config(
 def load_history_runs(
     history_path: Path,
     window_days: int | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], list[str]]:
     """Load runs from history.jsonl, filtering by window_days.
 
     Tolerates: missing file, empty file, corrupt lines, missing per_provider.
-    Returns list of valid run dicts.
+    Returns (valid_runs, parse_warnings).
     """
+    warnings: list[str] = []
+
     if not history_path.exists():
-        return []
+        warnings.append(f"history 文件不存在: {history_path}")
+        return [], warnings
 
     runs: list[dict] = []
     now = datetime.now(ZoneInfo("UTC"))
     cutoff = now - timedelta(days=window_days) if window_days else None
+    corrupt_count = 0
+    missing_pp_count = 0
 
     for _line_num, line in enumerate(history_path.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
@@ -247,7 +254,12 @@ def load_history_runs(
         try:
             entry = json.loads(line)
         except (json.JSONDecodeError, ValueError):
+            corrupt_count += 1
             continue
+
+        # Check per_provider presence
+        if "per_provider" not in entry or not isinstance(entry.get("per_provider"), dict):
+            missing_pp_count += 1
 
         # Filter by window
         if cutoff:
@@ -257,15 +269,30 @@ def load_history_runs(
 
         runs.append(entry)
 
-    return runs
+    if corrupt_count > 0:
+        warnings.append(f"history.jsonl 含 {corrupt_count} 行损坏数据")
+    if missing_pp_count > 0:
+        warnings.append(f"history.jsonl 含 {missing_pp_count} 次运行缺少 per_provider")
+
+    return runs, warnings
 
 
 def aggregate_provider_trends(
     runs: list[dict],
     policy: TrendPolicy,
 ) -> dict[str, ProviderTrend]:
-    """Aggregate runs into per-provider trends."""
+    """Aggregate runs into per-provider trends.
+
+    Initializes all configured providers from policy so that missing
+    core providers are visible in the output.
+    """
     trends: dict[str, ProviderTrend] = {}
+
+    # Initialize all configured providers
+    for tier_name, tier_cfg in policy.provider_tiers.items():
+        for provider in tier_cfg.providers:
+            if provider not in trends:
+                trends[provider] = ProviderTrend(provider=provider, tier=tier_name)
 
     for run in runs:
         per_provider = run.get("per_provider", {})
@@ -280,16 +307,35 @@ def aggregate_provider_trends(
 
             attempts = info.get("attempts", 0)
             pt.attempts += attempts
-            pt.successes += int(info.get("success_rate", 0) * attempts)
-            pt.timeouts += int(info.get("timeout_rate", 0) * attempts)
-            pt.empty_results += int(info.get("empty_rate", 0) * attempts)
+
+            # Prefer raw counts if available, fallback to rate estimation
+            if "successes" in info:
+                pt.successes += info["successes"]
+            else:
+                pt.successes += int(info.get("success_rate", 0) * attempts)
+
+            if "timeouts" in info:
+                pt.timeouts += info["timeouts"]
+            else:
+                pt.timeouts += int(info.get("timeout_rate", 0) * attempts)
+
+            if "empty_results" in info:
+                pt.empty_results += info["empty_results"]
+            else:
+                pt.empty_results += int(info.get("empty_rate", 0) * attempts)
+
             pt.total_latency += info.get("avg_latency_seconds", 0) * attempts
 
-            # Relevance and low quality (from aggregated rates)
-            deduped_est = max(1, attempts)  # approximate
-            pt.total_relevant += int(info.get("avg_relevance_rate", 0) * deduped_est)
-            pt.total_deduped += deduped_est
-            pt.total_low_quality += int(info.get("avg_low_quality_rate", 0) * deduped_est)
+            # Relevance and low quality — prefer raw counts
+            if "total_deduped" in info:
+                pt.total_deduped += info["total_deduped"]
+                pt.total_relevant += info.get("total_relevant", 0)
+                pt.total_low_quality += info.get("total_low_quality", 0)
+            else:
+                deduped_est = max(1, attempts)  # approximate
+                pt.total_relevant += int(info.get("avg_relevance_rate", 0) * deduped_est)
+                pt.total_deduped += deduped_est
+                pt.total_low_quality += int(info.get("avg_low_quality_rate", 0) * deduped_est)
 
             if info.get("last_success_at"):
                 pt.last_success_at = info["last_success_at"]
@@ -361,6 +407,12 @@ def assess_providers(
                     severity = "warning"
                 status = "failed"
 
+            # Missing core provider (initialized but never appeared in runs)
+            if pt.tier == "core" and pt.attempts == 0:
+                issues.append("core provider missing from all runs")
+                severity = "warning"
+                status = "failed"
+
         if issues:
             assessments.append(TrendAssessment(
                 provider=provider,
@@ -402,9 +454,6 @@ def compute_overall_severity(
 
     # Core provider check
     core_providers = set()
-    for tier_cfg in policy.provider_tiers.values():
-        if any(t == "core" for t in [tier_cfg]):
-            pass
     for tier_name, tier_cfg in policy.provider_tiers.items():
         if tier_name == "core":
             core_providers.update(tier_cfg.providers)
@@ -415,7 +464,12 @@ def compute_overall_severity(
             core_ok = False
 
     if policy.core_provider_ok_required and not core_ok:
-        return "blocker"
+        # Missing core is warning, not blocker; consecutive failures are blocker
+        has_consecutive_blocker = any(
+            a.severity == "blocker" for a in assessments
+            if a.provider in core_providers
+        )
+        return "blocker" if has_consecutive_blocker else "warning"
 
     # Check warning-level
     for a in assessments:
@@ -442,10 +496,11 @@ def analyze_trends(
 ) -> TrendSummary:
     """Main entry point: load history, aggregate, assess, return summary."""
     wd = window_days or policy.default_window_days
-    runs = load_history_runs(history_path, window_days=wd)
+    runs, parse_warnings = load_history_runs(history_path, window_days=wd)
 
     trends = aggregate_provider_trends(runs, policy)
-    assessments, warnings = assess_providers(trends, runs, policy)
+    assessments, assessment_warnings = assess_providers(trends, runs, policy)
+    all_warnings = parse_warnings + assessment_warnings
 
     # Day count
     timestamps = []
@@ -474,6 +529,12 @@ def analyze_trends(
         if a.provider in core_providers and a.status == "failed"
     )
 
+    # Missing core: initialized with attempts==0
+    missing_core = sum(
+        1 for pt in trends.values()
+        if pt.tier == "core" and pt.attempts == 0
+    )
+
     healthy_count = sum(1 for a in assessments if a.status == "ok")
     degraded_count = sum(1 for a in assessments if a.status == "degraded")
     failed_count = sum(1 for a in assessments if a.status == "failed")
@@ -490,10 +551,11 @@ def analyze_trends(
         healthy_provider_count=healthy_count,
         degraded_provider_count=degraded_count,
         failed_provider_count=failed_count,
-        core_provider_ok=failed_core == 0,
+        core_provider_ok=failed_core == 0 and missing_core == 0,
         failed_core_provider_count=failed_core,
+        missing_core_provider_count=missing_core,
         overall_severity=overall_severity,
-        warnings=warnings,
+        warnings=all_warnings,
         provider_trends=list(trends.values()),
         assessments=assessments,
     )

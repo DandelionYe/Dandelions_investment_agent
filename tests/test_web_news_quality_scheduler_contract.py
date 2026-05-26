@@ -8,6 +8,8 @@
 """
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -123,6 +125,53 @@ class TestCeleryBeatDefaultOff:
         content = tasks_path.read_text(encoding="utf-8")
         assert "beat.web_news_quality_monitor" in content
         assert "web_news_quality_monitor_beat" in content
+
+
+class TestCeleryProjectRoot:
+
+    def test_celery_project_root_is_repo_root(self):
+        """Celery PROJECT_ROOT should be the repo root, not parents[3]."""
+        celery_app_path = PROJECT_ROOT / "apps" / "api" / "celery_app.py"
+        content = celery_app_path.read_text(encoding="utf-8")
+        # Should use parents[2], not parents[3]
+        assert "parents[2]" in content
+        assert "parents[3]" not in content
+
+
+class TestTrendScriptConfigExitCode:
+
+    def test_config_path_in_source(self):
+        """Trend script should exit 2 when config is missing/invalid."""
+        script_path = PROJECT_ROOT / "scripts" / "analyze_web_news_quality_trends.py"
+        content = script_path.read_text(encoding="utf-8")
+        assert "return 2" in content
+        assert "配置文件不存在" in content or "配置文件解析失败" in content
+
+    def test_invalid_config_structure_returns_exit_2(self, tmp_path):
+        """A JSON file with the wrong top-level type is an invalid config."""
+        script_path = PROJECT_ROOT / "scripts" / "analyze_web_news_quality_trends.py"
+        bad_config = tmp_path / "bad_policy.json"
+        bad_config.write_text("[]", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--config",
+                str(bad_config),
+                "--history-path",
+                str(tmp_path / "missing_history.jsonl"),
+                "--output-dir",
+                str(tmp_path / "out"),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            timeout=30,
+        )
+
+        assert result.returncode == 2
+        assert "配置文件解析失败" in result.stderr
 
 
 class TestPolicyConfig:

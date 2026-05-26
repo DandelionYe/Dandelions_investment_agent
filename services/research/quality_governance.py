@@ -526,6 +526,10 @@ def run_governance(
             artifact_loaded=artifact_loaded,
         )
 
+        # When trend_summary.json is loaded, trend metrics are required.
+        # When falling back to latest.json, trend metrics are optional.
+        using_trend = comp_name == "web_news_live" and artifact_loaded and not trend_fallback_warning
+
         # Add fallback warning for web_news_live
         if trend_fallback_warning and artifact_loaded:
             comp_result.metrics.append(MetricResult(
@@ -556,8 +560,13 @@ def run_governance(
                 ))
                 continue
 
+            # When trend_summary loaded, override optional=False for trend metrics
+            effective_rule = dict(rule)
+            if using_trend and metric_path not in ("overall.success_rate",):
+                effective_rule.pop("optional", None)
+
             actual = extract_metric(artifact, metric_path)
-            result = compare_metric(actual, rule, metric_path, comp_name)
+            result = compare_metric(actual, effective_rule, metric_path, comp_name)
             comp_result.metrics.append(result)
 
         component_results.append(comp_result)
