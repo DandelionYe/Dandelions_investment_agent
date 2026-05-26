@@ -8,7 +8,7 @@ P2 分为多个阶段推进：
 |------|------|------|
 | Phase 1 | 8 个离线构造样本 + 报告模板 + evidence schema + 新闻质量 | ✅ 已完成 |
 | Phase 2 | 50+ 真实历史样本池 + 可重复质量报告 + 验收阈值 | ✅ 已完成：QMT 价格、CSMAR 估值、EVA 股本/BPS、本地 CSMAR 财务报表、严格历史行业；严格 Phase 2B 验收通过 |
-| Phase 3 | 全链路 evidence schema | 待规划 |
+| Phase 3 | 全链路 evidence schema | ✅ 已完成 |
 | Phase 4 | 报告产品化 | 待规划 |
 | Phase 5 | 真实新闻长期监控 | 待规划 |
 | Phase 6 | 质量治理基线 | 待规划 |
@@ -103,17 +103,33 @@ html = build_html_report(markdown_text, title="报告", theme=get_theme("institu
 ```python
 {
     "value": ...,           # 原始值，None 表示缺失
-    "source": "qmt|akshare|local_csmar|web_news|mock|unknown",
+    "source": "qmt_xtdata|local_csmar_daily_derived|local_csmar_financial_statements|"
+              "local_csmar_industry_history|local_csmar_eva_structure_partial|"
+              "akshare|web_news|derived|missing|mock|unknown",
     "as_of": "YYYY-MM-DD", # 数据日期
     "quality": {
         "available": bool,
         "confidence": float | None,  # 0-1
-        "freshness": "fresh|stale|unknown|not_applicable",
+        "freshness": "fresh|stale|historical|estimated|missing|unknown|not_applicable",
         "missing_reason": str | None,
     },
     "warnings": list[str],
 }
 ```
+
+### Source 层级
+
+| Source | 严格性 | 说明 |
+|--------|--------|------|
+| `qmt_xtdata` | strict | QMT 本地历史日 K 线 |
+| `local_csmar_daily_derived` | strict | CSMAR 个股日交易衍生指标（PE/PB/PS/dividend_yield） |
+| `local_csmar_financial_statements` | strict | CSMAR 财务报表（ROE/毛利率/净利率/收入增长/净利润增长/资产负债率/经营现金流质量） |
+| `local_csmar_industry_history` | strict | CSMAR 历史行业分类（EndDate <= as_of） |
+| `local_csmar_eva_structure_partial` | non-strict | EVA 股本/BPS，仅资本结构补充，不等同盈利质量基本面 |
+| `local_csmar_industry_non_strict` | non-strict | 行业分类最新快照 fallback |
+| `akshare` | strict | AKShare 东方财富/腾讯/新浪行情 |
+| `derived` | 视上下文 | 衍生计算值 |
+| `missing` | non-strict | 数据缺失 |
 
 ### 使用方式
 
@@ -121,17 +137,24 @@ html = build_html_report(markdown_text, title="报告", theme=get_theme("institu
 from services.data.evidence_schema import (
     make_evidence_field,
     is_evidence_field,
+    is_strict_source,
     normalize_evidence_field,
     extract_display_value,
     normalize_key_fields,
+    validate_evidence_fields,
+    summarize_evidence_coverage,
 )
 
 # 构造证据字段
-ev = make_evidence_field(42, source="qmt", as_of="2026-05-01")
+ev = make_evidence_field(42, source="qmt_xtdata", as_of="2026-05-01")
 
 # 判断是否为证据字段
 is_evidence_field(ev)  # True
 is_evidence_field(42)  # False
+
+# 判断 source 是否为严格来源
+is_strict_source("qmt_xtdata")                        # True
+is_strict_source("local_csmar_eva_structure_partial")  # False
 
 # 标准化（幂等）
 normalize_evidence_field(ev)    # 已是 evidence field → 补齐缺失 key
@@ -143,14 +166,44 @@ extract_display_value(42)  # 42
 
 # 关键字段统一（写入 result["evidence_fields"]，不修改原始裸值）
 normalize_key_fields(result)
+
+# 校验 evidence_fields 结构
+errors = validate_evidence_fields(result)  # 返回 [{path, error, detail}, ...]
+
+# 汇总覆盖率
+summary = summarize_evidence_coverage(result)
+# {total_required, covered, missing, coverage_rate, by_source, by_quality, missing_reasons}
 ```
 
-### 覆盖的字段路径
+### 覆盖的字段路径（37 个）
 
-- `price_data.close`, `change_20d`, `change_60d`, `avg_turnover_20d`
-- `valuation_data.pe_ttm`, `pb_mrq`, `ps_ttm`, `pe_percentile`, `pb_percentile`, `ps_percentile`, `industry_pe_percentile`, `industry_pb_percentile`, `industry_ps_percentile`
-- `fundamental_data.roe`, `gross_margin`, `net_profit_growth`
-- `event_data.major_event`
+**price_data（8 个）**：`close`, `change_20d`, `change_60d`, `ma20_position`, `ma60_position`, `max_drawdown_60d`, `volatility_60d`, `avg_turnover_20d`
+
+**valuation_data（11 个）**：`pe_ttm`, `pb_mrq`, `ps_ttm`, `dividend_yield`, `market_cap`, `pe_percentile`, `pb_percentile`, `ps_percentile`, `industry_pe_percentile`, `industry_pb_percentile`, `industry_ps_percentile`
+
+**fundamental_data（12 个）**：盈利质量（`roe`, `gross_margin`, `net_margin`, `revenue_ttm`, `net_profit_ttm`, `revenue_growth`, `net_profit_growth`, `debt_ratio`, `operating_cashflow_quality`）+ 资本结构（`total_volume`, `float_volume`, `bps`）
+
+**industry（7 个）**：`industry_code`, `industry_name`, `classification_system`, `peer_count`, `valid_peer_count_pe`, `valid_peer_count_pb`, `valid_peer_count_ps`
+
+**event_data（2 个）**：`recent_news_sentiment`, `policy_risk`
+
+### Source/as_of 推导规则
+
+1. **price_data.\***：source 来自 `source_metadata.price_data`，通常为 `qmt_xtdata`。
+2. **valuation_data.pe_ttm/pb_mrq/ps_ttm/dividend_yield**：source 来自 `source_metadata.valuation_data`。
+3. **valuation_data.industry_\*_percentile**：优先使用 `valuation_data.industry_percentile_source`。只有 `local_csmar_industry_history` 才能标为 strict。non_strict 时 freshness 为 `estimated` 并加 warning。
+4. **fundamental_data 盈利质量字段**：source 来自 `source_metadata.fundamental_source`。EVA partial 不能作为这些字段来源。
+5. **fundamental_data 资本结构字段**：source 来自 `source_metadata.capital_structure_source`。EVA partial 可作为资本结构 source。
+6. **industry.\***：source 来自 `source_metadata.industry_source`。non_strict 必须带 warning。
+7. **event_data.\***：历史样本中缺失时允许，但要有 missing_reason。
+
+### 报告接入
+
+Markdown 报告在 `show_evidence=true` 时展示"数据证据字段摘要"：覆盖率、来源分布、质量分布、主要缺失原因。`show_evidence=false` 时不展示。
+
+### LLM compact context 接入
+
+`compact_research_result_for_llm()` 将 `evidence_fields` 替换为紧凑的 `evidence_summary`（覆盖率、source 分布、最多 15 条 quality_issues），不塞完整 evidence_fields。
 
 ## 4. 网页新闻/舆情质量验收
 
@@ -380,3 +433,36 @@ python -m pytest tests/test_historical_qmt_integration.py -q
 - **行业分位基于历史行业同行池 + CSMAR 日衍生指标计算**：行业分类和同行池严格按 `as_of` 选择，同行 PE/PB/PS 来自 CSMAR Daily Derived 月度快照。
 - 2026 年部分 as_of 可能无法获得完整 120 交易日 forward 数据，标记 coverage_gap。
 - 688646.SH 作为科创板边界例外，不计入主板覆盖比例。
+
+---
+
+## P2 Phase 3：Evidence Schema 全链路化 ✅
+
+### 概述
+
+Phase 3 将 Phase 1 的基础 evidence schema 升级为覆盖所有关键研究字段的统一证据结构。每个字段都有 `value/source/as_of/quality/warnings`，可追溯来源、日期和质量状态。
+
+### 完成内容
+
+1. **37 个核心字段路径全覆盖**：price_data(8)、fundamental_data(12)、valuation_data(11)、industry(7)、event_data(2)。
+2. **15 种标准 source 标识**：包括 `qmt_xtdata`、`local_csmar_daily_derived`、`local_csmar_financial_statements`、`local_csmar_industry_history`、`local_csmar_eva_structure_partial`、`derived`、`missing` 等。
+3. **7 种 freshness 等级**：`fresh`、`stale`、`historical`、`estimated`、`missing`、`unknown`、`not_applicable`。
+4. **strict source 层级**：`is_strict_source()` 区分严格来源和 non-strict 来源（EVA partial、industry non_strict、mock、unknown 等）。
+5. **结构化校验**：`validate_evidence_fields()` 返回 `[{path, error, detail}]`。
+6. **覆盖率汇总**：`summarize_evidence_coverage()` 输出 total/covered/missing/by_source/by_quality/missing_reasons。
+7. **报告接入**：`show_evidence=true` 时展示覆盖率、来源分布、质量分布、缺失原因。
+8. **LLM compact context**：`evidence_summary` 替代完整 `evidence_fields`，保持 token 经济性。
+
+### 测试
+
+```bash
+python -m pytest tests/test_evidence_schema_contract.py -q
+# 47 tests covering make/is/normalize/extract/normalize_key_fields/validate/summarize/strict rules/pipeline
+```
+
+### 已知限制
+
+- 估值覆盖率仍为 72%（CSMAR 日衍生指标覆盖），evidence schema 不能弥补数据缺失。
+- event_data 在历史样本中统一为 placeholder，有 missing_reason。
+- scoring_engine 仍直接读取裸值，未从 evidence_fields 取值（Phase 4 可考虑）。
+- 不会把 non_strict 数据伪装成 strict evidence。

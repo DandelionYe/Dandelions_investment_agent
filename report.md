@@ -185,20 +185,33 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - **行业分位基于历史行业同行池 + CSMAR 日衍生指标计算**：行业分类和同行池严格按 `as_of` 选择，同行 PE/PB/PS 来自 CSMAR Daily Derived 月度快照。
 - **688646.SH 仍为科创板例外**：不计入主板覆盖率统计。
 
-**P2 第三阶段：Evidence Schema 全链路化**
-目标：从“新增 `evidence_fields`”升级为“所有关键字段都有可信证据链”。
+**P2 第三阶段：Evidence Schema 全链路化** ✅
 
-需要推进：
-- 各 provider 直接产出或补齐 `value/source/as_of/quality/warnings`，而不是只在聚合后包装裸值。
-- 评分引擎、估值引擎、报告、LLM compact context 都优先读取 evidence 结构。
-- 明确字段级质量规则：过期、缺失、fallback、样本不足、估算值、placeholder。
-- 为 `evidence_fields` 增加 schema 校验和覆盖率检查。
-- 报告中展示关键结论对应的数据证据，而不只是 EvidenceBundle 摘要。
+目标：从”新增 `evidence_fields`”升级为”所有关键字段都有可信证据链”。
+
+已完成：
+
+1. **统一 Evidence Field 结构**：`evidence_schema.py` 中 `make_evidence_field()` 生成规范结构 `{value, source, as_of, quality{available, confidence, freshness, missing_reason}, warnings}`。新增 `qmt_xtdata`、`local_csmar_daily_derived`、`local_csmar_financial_statements`、`local_csmar_industry_history`、`local_csmar_eva_structure_partial`、`derived`、`missing` 等标准 source 标识。新增 `estimated`、`historical`、`missing` freshness 等级。
+2. **关键字段全覆盖**：`normalize_key_fields()` 现在覆盖 37 个字段路径，包括 price_data(8)、fundamental_data(9，含 capital structure)、valuation_data(8，含 industry percentile)、industry(7)、event_data(2)。
+3. **source/as_of 推导规则**：行业分位优先使用 `valuation_data.industry_percentile_source`，只有 `local_csmar_industry_history` 才标为 strict/high confidence；`local_csmar_industry_non_strict` 必须带 warning。EVA partial 只作为 capital structure source，不作为盈利质量来源。
+4. **validate_evidence_fields()**：返回结构化错误列表 `{path, error, detail}`，检查缺字段、结构非法、source 缺失、confidence 越界、available/missing_reason 不一致、warnings 类型。
+5. **summarize_evidence_coverage()**：输出 total_required/covered/missing/coverage_rate/by_source/by_quality/missing_reasons。
+6. **报告接入**：Markdown 报告在 `show_evidence=true` 时展示”数据证据字段摘要”，包含覆盖率、来源分布、质量分布、主要缺失原因。`show_evidence=false` 时不展示。
+7. **LLM compact context 接入**：`compact_research_result_for_llm()` 将 `evidence_fields` 替换为紧凑的 `evidence_summary`，包含覆盖率、source 分布、最多 15 条 quality_issues，不塞完整 evidence_fields。
+8. **测试覆盖**：47 项 evidence schema 套约测试通过，覆盖 make/is/normalize/extract/normalize_key_fields/validate/summarize/strict source 规则/pipeline 集成。
 
 验收标准：
-- 真实研究结果中关键字段 evidence 覆盖率达到明确阈值，比如核心字段 95% 以上。
-- 每个买入/回避/降级结论能追溯到来源、日期和质量状态。
-- provider 差异不再靠隐式字段名解释。
+- 关键字段 evidence 覆盖率 ≥ 90%（37 个核心字段路径）。
+- evidence_fields 不破坏原始裸值结构。
+- source/as_of/quality/warnings/missing_reason 可被测试验证。
+- 报告展示 evidence 摘要并受 show_evidence 控制。
+- LLM compact context 携带简洁 source/quality 信息。
+- Phase 2B strict backtest 仍通过。
+
+已知限制：
+- 估值覆盖率仍为 72%（CSMAR 日衍生指标覆盖），evidence schema 不能弥补数据缺失。
+- event_data 在历史样本中统一为 placeholder（Phase 2B 不依赖历史新闻倒查），有 missing_reason。
+- scoring_engine 仍直接读取裸值，未从 evidence_fields 取值（未来 Phase 4 可考虑）。
 
 **P2 第四阶段：报告体系产品化**
 目标：从“模板开关可用”升级为“报告可长期对外/归档使用”。

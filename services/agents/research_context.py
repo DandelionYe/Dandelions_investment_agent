@@ -10,6 +10,61 @@ from __future__ import annotations
 
 from typing import Any
 
+# ── Evidence source/quality compact summary ────────────────────────
+
+def _build_evidence_source_summary(evidence_fields: dict[str, Any]) -> dict[str, Any]:
+    """Build a compact summary of evidence source/quality for LLM context.
+
+    Instead of passing full evidence_fields, extract:
+    - source distribution (count by source label)
+    - low-quality / missing / non-strict fields with warnings
+    - overall coverage rate
+    """
+    if not evidence_fields:
+        return {}
+
+    source_counts: dict[str, int] = {}
+    quality_issues: list[str] = []
+
+    for path, ev in evidence_fields.items():
+        if not isinstance(ev, dict):
+            continue
+        source = ev.get("source", "unknown")
+        source_counts[source] = source_counts.get(source, 0) + 1
+
+        quality = ev.get("quality", {})
+        if not isinstance(quality, dict):
+            continue
+
+        available = quality.get("available", False)
+        freshness = quality.get("freshness", "unknown")
+        missing_reason = quality.get("missing_reason")
+        warnings = ev.get("warnings", [])
+
+        if not available:
+            reason = missing_reason or "unknown"
+            quality_issues.append(f"{path}: 缺失({reason})")
+        elif freshness in ("estimated", "missing", "unknown"):
+            quality_issues.append(f"{path}: 质量={freshness}")
+        if warnings:
+            for w in warnings:
+                quality_issues.append(f"{path}: {w}")
+
+    total = len(evidence_fields)
+    available_count = sum(
+        1 for ev in evidence_fields.values()
+        if isinstance(ev, dict) and ev.get("quality", {}).get("available", False)
+    )
+
+    return {
+        "total_fields": total,
+        "available_count": available_count,
+        "coverage_rate": round(available_count / total, 2) if total > 0 else 0.0,
+        "source_distribution": source_counts,
+        "quality_issues": quality_issues[:15],  # cap at 15 to stay compact
+    }
+
+
 # ── Allowlists ────────────────────────────────────────────────────────
 
 _TOP_LEVEL_KEYS = frozenset({
@@ -197,7 +252,7 @@ def compact_research_result_for_llm(research_result: dict[str, Any]) -> dict[str
 
     evidence_fields = research_result.get("evidence_fields")
     if isinstance(evidence_fields, dict):
-        result["evidence_fields"] = evidence_fields
+        result["evidence_summary"] = _build_evidence_source_summary(evidence_fields)
 
     # data_quality: keep a compact version
     dq = research_result.get("data_quality")

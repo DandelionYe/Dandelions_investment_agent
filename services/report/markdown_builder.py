@@ -101,6 +101,54 @@ def _build_evidence_preview(evidence_bundle: dict, limit: int = 8) -> str:
     return "\n".join(rows)
 
 
+def _build_evidence_fields_summary(evidence_fields: dict) -> str:
+    """Build a concise evidence fields summary for the report.
+
+    Shows coverage rate, source distribution, and key quality issues.
+    Does NOT dump full evidence_fields.
+    """
+    if not evidence_fields:
+        return "暂无 evidence_fields 数据。"
+
+    from services.data.evidence_schema import summarize_evidence_coverage
+
+    summary = summarize_evidence_coverage(evidence_fields)
+
+    lines = [
+        f"- 核心字段覆盖率：{summary['coverage_rate']:.0%}"
+        f"（{summary['covered']}/{summary['total_required']}）",
+    ]
+
+    # Source distribution
+    by_source = summary.get("by_source", {})
+    if by_source:
+        source_parts = [
+            f"{src}({cnt})" for src, cnt in
+            sorted(by_source.items(), key=lambda x: -x[1])
+        ]
+        lines.append("- 来源分布：" + "、".join(source_parts))
+
+    # Quality distribution
+    by_quality = summary.get("by_quality", {})
+    if by_quality:
+        quality_parts = [
+            f"{q}({cnt})" for q, cnt in
+            sorted(by_quality.items(), key=lambda x: -x[1])
+        ]
+        lines.append("- 质量分布：" + "、".join(quality_parts))
+
+    # Missing reasons
+    missing_reasons = summary.get("missing_reasons", {})
+    if missing_reasons:
+        reason_parts = [
+            f"{reason}({cnt})" for reason, cnt in
+            sorted(missing_reasons.items(), key=lambda x: -x[1])[:5]
+        ]
+        lines.append("- 主要缺失原因：" + "、".join(reason_parts))
+
+    return "\n".join(lines)
+
+
 def _format_count(value: Any) -> str:
     if value is None:
         return "暂无"
@@ -300,6 +348,7 @@ def build_markdown_report(result: dict, template_config=None) -> str:
     debate_result = result.get("debate_result", {})
     data_quality = result.get("data_quality", {})
     evidence_bundle = result.get("evidence_bundle", {})
+    evidence_fields = result.get("evidence_fields", {})
     analysis_mode = result.get("analysis_mode")
     analysis_warnings = result.get("analysis_warnings", [])
 
@@ -393,7 +442,11 @@ def build_markdown_report(result: dict, template_config=None) -> str:
         data_quality_section = ""
 
     if cfg.show_evidence:
-        evidence_section = f"### 3.3 EvidenceBundle 摘要\n\n{evidence_preview_table}"
+        evidence_fields_summary = _build_evidence_fields_summary(evidence_fields)
+        evidence_section = (
+            f"### 3.3 EvidenceBundle 摘要\n\n{evidence_preview_table}\n\n"
+            f"### 3.4 数据证据字段摘要\n\n{evidence_fields_summary}"
+        )
     else:
         evidence_section = ""
 
