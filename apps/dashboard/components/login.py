@@ -1,15 +1,16 @@
 """Streamlit 登录组件。
 
 在侧边栏渲染登录表单。登录后 token 存储在 st.session_state 中，
-同时持久化到本地文件，刷新页面后自动恢复登录状态。
+同时持久化到 URL query params，刷新页面后自动恢复登录状态。
+每个浏览器的 URL 是独立的，不会跨用户共享。
 
 RBAC 支持：
 - 登录后调用 /api/v1/auth/me 获取并保存 auth_role。
 - 提供 current_user()、current_role()、is_admin() helper。
 """
 
+import base64
 import json
-from pathlib import Path
 
 import requests
 import streamlit as st
@@ -17,15 +18,16 @@ from requests import Response
 
 API_BASE = "http://localhost:8000"
 
-_TOKEN_FILE = Path(__file__).resolve().parents[3] / "storage" / ".session_token.json"
+_AUTH_PARAM = "auth"
 
 
-def _restore_from_file() -> bool:
-    """尝试从本地文件恢复登录状态。"""
+def _restore_from_query_params() -> bool:
+    """尝试从 URL query params 恢复登录状态（每个浏览器独立）。"""
+    auth_param = st.query_params.get(_AUTH_PARAM)
+    if not auth_param:
+        return False
     try:
-        if not _TOKEN_FILE.exists():
-            return False
-        data = json.loads(_TOKEN_FILE.read_text(encoding="utf-8"))
+        data = json.loads(base64.b64decode(auth_param))
         if data.get("access_token"):
             st.session_state["auth_token"] = data["access_token"]
             st.session_state["refresh_token"] = data.get("refresh_token", "")
@@ -37,26 +39,19 @@ def _restore_from_file() -> bool:
     return False
 
 
-def _save_to_file(access_token: str, refresh_token: str, username: str) -> None:
-    """将登录信息持久化到本地文件。"""
-    try:
-        _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _TOKEN_FILE.write_text(json.dumps({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "username": username,
-        }, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+def _save_to_query_params(access_token: str, refresh_token: str, username: str) -> None:
+    """将登录信息持久化到 URL query params（每个浏览器独立）。"""
+    auth_data = base64.b64encode(json.dumps({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "username": username,
+    }).encode()).decode()
+    st.query_params[_AUTH_PARAM] = auth_data
 
 
-def _clear_file() -> None:
-    """清除本地文件中的登录信息。"""
-    try:
-        if _TOKEN_FILE.exists():
-            _TOKEN_FILE.unlink()
-    except Exception:
-        pass
+def _clear_query_params() -> None:
+    """清除 URL query params 中的登录信息。"""
+    st.query_params.clear()
 
 
 def require_login() -> str | None:
@@ -70,8 +65,8 @@ def require_login() -> str | None:
     if "auth_token" in st.session_state:
         return st.session_state["auth_token"]
 
-    # 尝试从文件恢复
-    if _restore_from_file():
+    # 尝试从 URL 恢复（每个浏览器独立，不会跨用户共享）
+    if _restore_from_query_params():
         return st.session_state["auth_token"]
 
     # 未登录：渲染登录表单
@@ -94,8 +89,8 @@ def require_login() -> str | None:
                     st.session_state["auth_token"] = data["access_token"]
                     st.session_state["refresh_token"] = data["refresh_token"]
                     st.session_state["auth_user"] = username
-                    # 持久化到文件
-                    _save_to_file(data["access_token"], data["refresh_token"], username)
+                    # 持久化到 URL（每个浏览器独立）
+                    _save_to_query_params(data["access_token"], data["refresh_token"], username)
                     # 获取用户角色
                     _fetch_user_info(data["access_token"])
                     st.success(f"欢迎，{username}！")
@@ -266,7 +261,7 @@ def _refresh_auth_token() -> bool:
 
 def _logout() -> None:
     """清除登录状态。"""
-    _clear_file()
+    _clear_query_params()
     st.session_state.pop("auth_token", None)
     st.session_state.pop("refresh_token", None)
     st.session_state.pop("auth_user", None)
