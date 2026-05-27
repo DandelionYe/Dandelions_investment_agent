@@ -193,3 +193,54 @@ Provider 分层：
 - 风控限额、人工确认、撤销/回滚机制。
 - QMT 下单接口隔离和模拟盘验收。
 - 异常处理和日志归档。
+
+## 公网访问方案（讨论中）
+
+目标：将系统访问权限从本地扩展到公网，5-10 个用户通过互联网访问，使用本机配置（DeepSeek API Key 等）。按需启动，不 24/7 运行。
+
+当前架构：FastAPI (localhost:8000) + Streamlit (localhost:8501) + Redis/Celery，JWT 认证 + RBAC 已就位。
+
+### 方案 A：内网穿透（最快，免费）
+
+用 ngrok 或 frp 把本地端口暴露到公网，获得临时 URL。
+
+- 优点：5 分钟搞定，不需要云服务器，不需要改代码
+- 缺点：URL 每次重启会变（免费版），速度取决于穿透服务，不适合长期使用
+- 适合：临时分享给朋友试用
+- 成本：免费
+
+### 方案 B：云服务器部署（最稳定）
+
+把整个系统部署到云服务器（阿里云/腾讯云/AWS），绑定域名 + HTTPS。
+
+- 优点：稳定、专业、可绑定域名、固定 IP
+- 缺点：需要云服务器（~50-100 元/月），需要域名（~50 元/年），需要配置 Nginx + SSL，数据不在本地
+- 适合：长期对外提供服务，多人同时使用
+- 成本：~100 元/月
+
+### 方案 C：Cloudflare Tunnel + 本地反向代理（推荐）
+
+```
+外部用户 → Cloudflare Tunnel → 本地 Caddy (:80/443) → Streamlit (:8501) / FastAPI (:8000)
+```
+
+- 优点：免费，稳定，全球 CDN，自动 HTTPS，不需要公网 IP，不需要端口映射，按需启动
+- 缺点：依赖本机开机，上行带宽有限，需要安装 cloudflared + Caddy
+- 适合：5-10 用户按需访问，数据在本地
+- 成本：免费
+
+实现步骤：
+
+1. 注册 Cloudflare 账号，安装 `cloudflared`
+2. 配置 Caddy 反向代理（Streamlit + FastAPI 统一入口）
+3. 创建 Cloudflare Tunnel，绑定域名
+4. 修改 CORS 配置（`.env` 中 `CORS_ORIGINS` 加上 Cloudflare 域名）
+5. Streamlit 启动参数加 `--server.address 0.0.0.0`
+6. 创建外部用户账号
+
+注意事项：
+
+- QMT 数据源可被外部用户使用：数据获取发生在本机 Celery Worker 进程中，只要本机 XtMiniQMT 在后台运行，外部用户提交的任务会自动通过 QMT 获取行情数据。无需外部用户安装 QMT。
+- DeepSeek API Key 用本机配置，所有用户共享
+- JWT Secret 需要重新生成强密码（公网环境）
+- Rate Limiting 需要收紧（防暴力破解）
