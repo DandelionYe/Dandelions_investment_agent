@@ -12,7 +12,8 @@ param(
     [int]$CeleryConcurrency = 2,
     [int]$RedisWaitSeconds = 5,
     [switch]$SkipRedis,
-    [switch]$SkipBeat
+    [switch]$SkipBeat,
+    [switch]$PublicTunnel
 )
 
 $ErrorActionPreference = "Stop"
@@ -163,9 +164,24 @@ Start-Sleep -Seconds 1
 Write-Host "[5/5] Opening Streamlit dashboard window..." -ForegroundColor Cyan
 Start-ServiceWindow `
     -Title "Dandelions Streamlit :$StreamlitPort" `
-    -Command "$Streamlit run apps/dashboard/Home.py --server.port $StreamlitPort"
+    -Command "$Streamlit run apps/dashboard/Home.py --server.port $StreamlitPort --server.address 0.0.0.0"
+
+if ($PublicTunnel) {
+    Start-Sleep -Seconds 2
+    Write-Host "[+] Opening ngrok tunnel window..." -ForegroundColor Cyan
+    $TunnelScript = Join-Path $PSScriptRoot "start_public_tunnel.ps1"
+    if (Test-Path -LiteralPath $TunnelScript) {
+        $TunnelCommand = "& " + (Quote-PSLiteral $PowerShellExe) + " -NoProfile -ExecutionPolicy Bypass -File " + (Quote-PSLiteral $TunnelScript) + " -StreamlitPort $StreamlitPort"
+        Start-ServiceWindow -Title "Dandelions ngrok Tunnel" -Command $TunnelCommand
+    } else {
+        Write-Host "  [WARN] Tunnel script not found: $TunnelScript" -ForegroundColor Yellow
+    }
+}
 
 Write-Host "`nStarted service windows." -ForegroundColor Green
 Write-Host "FastAPI:   http://127.0.0.1:$ApiPort/docs"
 Write-Host "Streamlit: http://127.0.0.1:$StreamlitPort"
+if ($PublicTunnel) {
+    Write-Host "Public:    Check the ngrok tunnel window for the public URL" -ForegroundColor Yellow
+}
 Write-Host "Close each service window with Ctrl+C when testing is finished."
