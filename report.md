@@ -89,7 +89,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - [x] 批量扫描 batch 管理：`watchlist_scheduler_check`、`scan_watchlist`、`trigger_scan` 均创建 batch 并传入 batch_id
 - [x] Dashboard 条件触发器配置 UI：添加/编辑观察项时可配置 price_change_pct、score_threshold、volume_spike_ratio
 - [x] Dashboard 条件触发器展示：详情面板显示当前配置，支持编辑
-- [x] 端到端集成测试：`tests/integration/test_watchlist_scan_e2e.py` 覆盖创建→扫描→结果关联、batch 进度、条件评估、防重复、owner 隔离
+- [x] 端到端集成测试：`tests/integration/test_watchlist_scan_e2e.py` 覆盖创建→扫描→结果关联、batch 进度、条件评估、防重复、owner 隔离（15/15 passed）
 - [x] 真实行情验收脚本：`scripts/verify_watchlist_triggers.py` 支持 QMT/AKShare 数据源
 
 **待验收（需真实环境运行）：**

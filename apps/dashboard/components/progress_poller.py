@@ -126,13 +126,13 @@ def poll_batch_progress(batch_id: str, poll_interval: float = 1.5,
                 timeout=5,
             )
             if resp.status_code >= 400:
-                status_text.error(f"查询失败 [{resp.status_code}]")
+                status_text.error(f"查询失败 [{resp.status_code}]: {resp.text[:200]}")
                 time.sleep(poll_interval)
                 continue
             data = resp.json()
         except requests.ConnectionError:
             status_text.error("无法连接 API 服务。")
-            return {"status": "failed"}
+            return {"status": "failed", "error_message": "API 连接失败"}
         except Exception as exc:
             status_text.warning(f"轮询异常：{exc}")
             time.sleep(poll_interval)

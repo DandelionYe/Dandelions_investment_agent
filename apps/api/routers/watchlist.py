@@ -301,6 +301,7 @@ async def get_scan_progress(batch_id: str, user: dict = Depends(get_current_user
         batch = _manager().get_scan_progress(batch_id)
         if not is_admin(user) and batch.get("owner_username", "default") != user["username"]:
             raise HTTPException(status_code=404, detail=f"扫描批次不存在：{batch_id}")
+        batch["batch_id"] = batch.pop("id", batch_id)
         return batch
     except KeyError:
         raise HTTPException(status_code=404, detail=f"扫描批次不存在：{batch_id}")

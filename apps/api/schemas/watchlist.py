@@ -129,6 +129,17 @@ class TagSummary(BaseModel):
     color: str
 
 
+class ScanHistoryEntry(BaseModel):
+    id: str
+    symbol: str
+    score: Optional[float] = None
+    rating: Optional[str] = None
+    action: Optional[str] = None
+    status: str
+    created_at: str
+    completed_at: Optional[str] = None
+
+
 class WatchlistItemResponse(BaseModel):
     id: str
     symbol: str
@@ -147,6 +158,7 @@ class WatchlistItemResponse(BaseModel):
     last_action: Optional[str] = None
     last_scan_at: Optional[str] = None
     next_scan_at: Optional[str] = None
+    scan_history: list[ScanHistoryEntry] = []
     created_at: str
     updated_at: str
 

@@ -138,6 +138,13 @@ def _load_items(folder_id=None, tag_id=None, enabled=None) -> list[dict]:
 
 # ── 操作 ───────────────────────────────────────────────────────
 
+def _load_item_detail(item_id: str) -> dict | None:
+    """获取单个观察项详情（含 scan_history）。"""
+    if st.session_state["wl_api_ok"]:
+        return _api_call("GET", f"/api/v1/watchlist/items/{item_id}")
+    return _get_store().get_item(item_id)
+
+
 def _trigger_scan(item_ids=None, folder_id=None):
     if st.session_state["wl_api_ok"]:
         body = {"trigger_type": "manual"}
@@ -356,7 +363,7 @@ if items:
     )
 
     if selected_symbol:
-        item = next((it for it in items if it["id"] == selected_symbol), None)
+        item = _load_item_detail(selected_symbol)
         if item:
             c1, c2, c3, c4 = st.columns(4)
             with c1:

@@ -775,9 +775,11 @@ class WatchlistStore:
 
         allowed = {
             "symbol", "asset_type", "asset_name", "folder_id", "schedule_config",
-            "notes", "target_action", "enabled",
+            "notes", "target_action", "enabled", "next_scan_at",
         }
-        updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
+        nullable_fields = {"next_scan_at"}
+        updates = {k: v for k, v in kwargs.items()
+                   if k in allowed and (v is not None or k in nullable_fields)}
         if "schedule_config" in updates and isinstance(updates["schedule_config"], dict):
             updates["schedule_config"] = json.dumps(updates["schedule_config"], ensure_ascii=False)
         if "enabled" in updates:

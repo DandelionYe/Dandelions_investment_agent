@@ -261,14 +261,19 @@ class TestAntiRepeat:
         folder = wl_store.create_folder("f")
         item = wl_store.add_item("600519.SH", "stock", folder["id"])
 
-        # 手动设置 last_scan_at 为 45 分钟前
-        from apps.api.utils.time_utils import utc_now_iso
+        # 手动设置 last_scan_at 为 45 分钟前（直接操作 DB）
         from datetime import timedelta
         old_time = (datetime.now(timezone.utc) - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        wl_store.update_item(item["id"], last_scan_at=old_time)
+        import sqlite3
+        conn = sqlite3.connect(wl_store._db_path)
+        conn.execute("UPDATE watchlist_items SET last_scan_at = ? WHERE id = ?",
+                     (old_time, item["id"]))
+        conn.commit()
+        conn.close()
 
         updated = wl_store.get_item(item["id"])
         last_scan = updated.get("last_scan_at")
+        assert last_scan is not None
         last_dt = datetime.fromisoformat(last_scan.replace("Z", "+00:00"))
         elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
         assert elapsed >= 1800  # 应允许触发
