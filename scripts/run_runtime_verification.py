@@ -6,7 +6,7 @@ Streamlit, MiniQMT, PDF) without starting or stopping anything.
 Usage:
     python scripts/run_runtime_verification.py
     python scripts/run_runtime_verification.py --strict
-    python scripts/run_runtime_verification.py --include-qmt --include-network
+    python scripts/run_runtime_verification.py --include-qmt --include-streamlit --include-websocket
     python scripts/run_runtime_verification.py --output-dir storage/artifacts/verification
 """
 
@@ -204,7 +204,7 @@ def check_fastapi_health() -> CheckResult:
     return CheckResult(
         name="fastapi_health",
         category="api",
-        status="pass" if all_ok else "warning",
+        status="pass" if all_ok else "fail",
         severity="blocker",
         message="API/DB/Redis all healthy" if all_ok else f"api={api_ok} db={db_ok} redis={redis_ok}",
         details=data,
@@ -244,11 +244,12 @@ def check_fastapi_auth() -> CheckResult:
         )
     try:
         import requests  # noqa: PLC0415
-        resp = requests.post(
+        session = requests.Session()
+        session.trust_env = False
+        resp = session.post(
             f"http://127.0.0.1:{port}/api/v1/auth/login",
             json={"username": username, "password": password},
             timeout=10,
-            trust_env=False,
         )
         if resp.status_code == 200:
             return CheckResult(
@@ -451,11 +452,14 @@ def check_qmt() -> CheckResult:
 def check_local_data_paths() -> CheckResult:
     """Check if CSMAR/EVA/local data paths are accessible."""
     storage = PROJECT_ROOT / "storage"
-    data_dir = storage / "data"
+    ref = storage / "reference"
     ok_paths = []
     missing_paths = []
     for label, p in [
-        ("storage/data", data_dir),
+        ("data/raw/csmar", PROJECT_ROOT / "data" / "raw" / "csmar"),
+        ("storage/reference/csmar_industry.sqlite", ref / "csmar_industry.sqlite"),
+        ("storage/reference/csmar_eva_structure.sqlite", ref / "csmar_eva_structure.sqlite"),
+        ("storage/reference/csmar_daily_derived_snapshots.sqlite", ref / "csmar_daily_derived_snapshots.sqlite"),
         ("storage/artifacts", storage / "artifacts"),
         ("configs", PROJECT_ROOT / "configs"),
     ]:
@@ -463,24 +467,37 @@ def check_local_data_paths() -> CheckResult:
             ok_paths.append(label)
         else:
             missing_paths.append(label)
-    status = "pass" if not missing_paths else "warning"
+    if missing_paths:
+        status = "warning"
+        msg = f"Missing: {', '.join(missing_paths)}"
+    else:
+        status = "pass"
+        msg = f"All {len(ok_paths)} paths accessible"
     return CheckResult(
         name="local_data_paths",
         category="data",
         status=status,
         severity="watch",
-        message=f"Accessible: {', '.join(ok_paths)}" if not missing_paths else f"Missing: {', '.join(missing_paths)}",
+        message=msg,
         details={"accessible": ok_paths, "missing": missing_paths},
     )
 
 
 def check_pdf_generation() -> CheckResult:
     """Check if PDF generation dependencies are available."""
+    import io  # noqa: PLC0415
+
     missing = []
     for mod in ["playwright", "weasyprint", "markdown"]:
         try:
-            __import__(mod)
+            old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            try:
+                __import__(mod)
+            finally:
+                sys.stdout = old_stdout
         except Exception:  # noqa: BLE001
+            sys.stdout = old_stdout
             missing.append(mod)
     if not missing:
         return CheckResult(
@@ -554,7 +571,7 @@ def run_verification(args: argparse.Namespace) -> VerificationReport:
     has_warning = any(c.status == "warning" for c in checks)
     has_any_fail = any(c.status == "fail" for c in checks)
 
-    if has_blocker_fail or (args.strict and has_any_fail):
+    if has_blocker_fail or (args.strict and (has_warning or has_any_fail)):
         overall = "fail"
     elif has_warning or has_any_fail:
         overall = "warning"
@@ -593,7 +610,7 @@ def _generate_markdown(report: VerificationReport) -> str:
         "## Summary",
         "",
         "| Status | Count |",
-        "|--------|-------||",
+        "|--------|-------|",
     ]
     for status in ("pass", "warning", "fail", "skipped"):
         lines.append(f"| {status} | {report.summary.get(status, 0)} |")
@@ -666,10 +683,6 @@ def parse_args() -> argparse.Namespace:
         help="Enable MiniQMT real connection check",
     )
     parser.add_argument(
-        "--include-network", action="store_true",
-        help="Enable real network checks (reserved for future use)",
-    )
-    parser.add_argument(
         "--include-streamlit", action="store_true",
         help="Enable Streamlit port check",
     )
@@ -707,13 +720,14 @@ def main() -> int:
         print(f"Latest:    {output_dir / 'latest.json'}")
         print()
 
-    # Exit code: blocker fail => 1, strict + any fail => 1, otherwise 0
+    # Exit code: blocker fail => 1, strict + any fail/warning => 1, otherwise 0
     has_blocker_fail = any(
         c["status"] == "fail" and c["severity"] == "blocker"
         for c in report.checks
     )
     has_any_fail = any(c["status"] == "fail" for c in report.checks)
-    if has_blocker_fail or (args.strict and has_any_fail):
+    has_warning = any(c["status"] == "warning" for c in report.checks)
+    if has_blocker_fail or (args.strict and (has_any_fail or has_warning)):
         return 1
     return 0
 

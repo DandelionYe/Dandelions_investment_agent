@@ -28,27 +28,34 @@ def api_base_url() -> str:
     return os.getenv("DANDELIONS_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
-def test_api_health_returns_ok(api_base_url: str):
-    resp = requests.get(f"{api_base_url}/api/v1/health", timeout=10, trust_env=False)
+@pytest.fixture
+def api_session() -> requests.Session:
+    session = requests.Session()
+    session.trust_env = False
+    return session
+
+
+def test_api_health_returns_ok(api_base_url: str, api_session: requests.Session):
+    resp = api_session.get(f"{api_base_url}/api/v1/health", timeout=10)
     assert resp.status_code == 200
     data = resp.json()
     assert data["api"]["status"] == "ok"
 
 
-def test_api_health_redis_ok(api_base_url: str):
-    resp = requests.get(f"{api_base_url}/api/v1/health", timeout=10, trust_env=False)
+def test_api_health_redis_ok(api_base_url: str, api_session: requests.Session):
+    resp = api_session.get(f"{api_base_url}/api/v1/health", timeout=10)
     assert resp.status_code == 200
     data = resp.json()
     assert data["redis"]["status"] == "ok"
 
 
-def test_api_health_db_ok(api_base_url: str):
-    resp = requests.get(f"{api_base_url}/api/v1/health", timeout=10, trust_env=False)
+def test_api_health_db_ok(api_base_url: str, api_session: requests.Session):
+    resp = api_session.get(f"{api_base_url}/api/v1/health", timeout=10)
     assert resp.status_code == 200
     data = resp.json()
     assert data["db"]["status"] == "ok"
 
 
-def test_api_unauthenticated_returns_401(api_base_url: str):
-    resp = requests.get(f"{api_base_url}/api/v1/research/history", timeout=10, trust_env=False)
+def test_api_unauthenticated_returns_401(api_base_url: str, api_session: requests.Session):
+    resp = api_session.get(f"{api_base_url}/api/v1/research/history", timeout=10)
     assert resp.status_code == 401

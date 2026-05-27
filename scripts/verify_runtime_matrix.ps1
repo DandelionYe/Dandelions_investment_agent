@@ -15,7 +15,6 @@ param(
     [string]$OutputDir = "",
     [switch]$Strict,
     [switch]$IncludeQmt,
-    [switch]$IncludeNetwork,
     [switch]$IncludeStreamlit,
     [switch]$IncludeWebsocket
 )
@@ -52,9 +51,6 @@ if ($Strict) {
 }
 if ($IncludeQmt) {
     $pyArgs += "--include-qmt"
-}
-if ($IncludeNetwork) {
-    $pyArgs += "--include-network"
 }
 if ($IncludeStreamlit) {
     $pyArgs += "--include-streamlit"

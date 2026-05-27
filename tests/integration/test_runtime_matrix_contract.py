@@ -7,6 +7,7 @@ They run by default without any external dependencies.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -153,6 +154,35 @@ class TestRunnerImportable:
             from scripts.run_runtime_verification import run_verification  # noqa: F401
         finally:
             sys.path.pop(0)
+
+
+class TestRuntimeSemantics:
+    def test_fastapi_partial_health_is_blocker_failure(self, monkeypatch):
+        """A 200 response with unhealthy internals must fail the blocker check."""
+        sys.path.insert(0, str(PROJECT_ROOT))
+        try:
+            import scripts.run_runtime_verification as mod
+
+            monkeypatch.setattr(mod, "_tcp_port_open", lambda *_args, **_kwargs: True)
+            monkeypatch.setattr(
+                mod,
+                "_http_get",
+                lambda *_args, **_kwargs: (
+                    200,
+                    json.dumps({
+                        "api": {"status": "ok"},
+                        "db": {"status": "error"},
+                        "redis": {"status": "ok"},
+                    }),
+                ),
+            )
+
+            result = mod.check_fastapi_health()
+        finally:
+            sys.path.pop(0)
+
+        assert result.status == "fail"
+        assert result.severity == "blocker"
 
 
 # ---------------------------------------------------------------------------
