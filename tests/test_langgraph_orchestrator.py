@@ -5,6 +5,7 @@ LangGraph 多轮辩论编排器测试。
 HITL 中断/恢复、错误处理路径、向后兼容性。
 """
 
+import pytest
 
 from services.agents.langgraph_orchestrator import (
     _node_assemble_result,
@@ -22,6 +23,44 @@ from services.agents.langgraph_orchestrator import (
     resume_hitl_debate,
     start_hitl_debate,
 )
+
+
+class _FakeClient:
+    """Fake DeepSeekClient that skips __init__ (no API key needed).
+
+    chat_json delegates to DeepSeekClient.chat_json via class lookup so that
+    test-level monkeypatch on the class method takes effect.
+    """
+
+    fast_model = "test-model"
+
+    @property
+    def chat_json(self):
+        from services.llm.deepseek_client import DeepSeekClient
+        return DeepSeekClient.chat_json.__get__(self, DeepSeekClient)
+
+
+@pytest.fixture(autouse=True)
+def _mock_deepseek_client(monkeypatch):
+    """Prevent DeepSeekClient instantiation in CI (no API key).
+
+    Mocks get_deepseek_client across all agent modules so constructors
+    don't call the real DeepSeekClient.__init__.
+    """
+    fake = _FakeClient()
+
+    import services.agents.bull_analyst as ba
+    import services.agents.bear_analyst as bea
+    import services.agents.risk_officer as ro
+    import services.agents.committee_secretary as cs
+    import services.agents.supervisor as sv
+
+    monkeypatch.setattr(ba, "get_deepseek_client", lambda: fake)
+    monkeypatch.setattr(bea, "get_deepseek_client", lambda: fake)
+    monkeypatch.setattr(ro, "get_deepseek_client", lambda: fake)
+    monkeypatch.setattr(cs, "get_deepseek_client", lambda: fake)
+    monkeypatch.setattr(sv, "get_deepseek_client", lambda: fake)
+
 
 # ── 测试数据 ──────────────────────────────────────────────────────
 

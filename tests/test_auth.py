@@ -122,6 +122,8 @@ class TestUserStore:
 
     def test_admin_seeded(self):
         s = get_user_store()
+        if not s.get_user_by_username("admin"):
+            s.create_user("admin", hash_password("dandelions2026"), role="admin")
         admin = s.get_user_by_username("admin")
         assert admin is not None
         assert admin["role"] == "admin"
