@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Dandelions Investment Agent - 网页新闻/舆情每日质量监控
 # =============================================================================
 # 运行 monitor + trend analyzer，输出日志到 storage/logs/web_news_quality/
@@ -18,7 +18,13 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+# Fix encoding for Windows PowerShell 5.1 (chcp 65001 + UTF-8 I/O)
+try { chcp 65001 > $null } catch {}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding  = $Utf8NoBom
+[Console]::OutputEncoding = $Utf8NoBom
+$OutputEncoding = $Utf8NoBom
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
@@ -39,6 +45,9 @@ function Write-Log {
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
 }
 
+# Force Python child processes to use UTF-8 for stdout/stderr
+$env:PYTHONIOENCODING = "utf-8"
+
 Write-Log "=== 网页新闻/舆情每日质量监控开始 ==="
 Write-Log "Project Root: $ProjectRoot"
 Write-Log "Sources: $Sources"
@@ -47,33 +56,43 @@ Write-Log "Timeout: ${TimeoutSeconds}s"
 
 # Step 1: Run monitor
 Write-Log "--- Step 1: 运行 news quality monitor ---"
-$monitorArgs = @(
-    (Join-Path $ProjectRoot "scripts\run_web_news_quality_monitor.py"),
-    "--sources", $Sources,
-    "--limit", $Limit,
-    "--timeout-seconds", $TimeoutSeconds,
-    "--output-dir", (Join-Path $ProjectRoot "storage\artifacts\web_news_quality\live")
-)
+$monitorStdout = "$LogsDir\monitor_stdout_$DateStr.log"
+$monitorStderr = "$LogsDir\monitor_stderr_$DateStr.log"
 
-$monitorProcess = Start-Process -FilePath $VenvPython -ArgumentList $monitorArgs `
-    -WorkingDirectory $ProjectRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogsDir\monitor_stdout_$DateStr.log" -RedirectStandardError "$LogsDir\monitor_stderr_$DateStr.log"
-
-$monitorExit = $monitorProcess.ExitCode
+try {
+    $monitorOutput = & $VenvPython `
+        (Join-Path $ProjectRoot "scripts\run_web_news_quality_monitor.py") `
+        "--sources" $Sources `
+        "--limit" $Limit `
+        "--timeout-seconds" $TimeoutSeconds `
+        "--output-dir" (Join-Path $ProjectRoot "storage\artifacts\web_news_quality\live") `
+        2>&1
+    $monitorExit = $LASTEXITCODE
+    $monitorOutput | Out-File -FilePath $monitorStdout -Encoding UTF8
+} catch {
+    $_ | Out-File -FilePath $monitorStderr -Encoding UTF8
+    $monitorExit = 1
+}
 Write-Log "Monitor exit code: $monitorExit"
 
 # Step 2: Run trend analyzer
 Write-Log "--- Step 2: 运行 trend analyzer ---"
-$trendArgs = @(
-    (Join-Path $ProjectRoot "scripts\analyze_web_news_quality_trends.py"),
-    "--window-days", $WindowDays,
-    "--min-runs", $MinRuns,
-    "--output-dir", (Join-Path $ProjectRoot "storage\artifacts\web_news_quality\live")
-)
+$trendStdout = "$LogsDir\trend_stdout_$DateStr.log"
+$trendStderr = "$LogsDir\trend_stderr_$DateStr.log"
 
-$trendProcess = Start-Process -FilePath $VenvPython -ArgumentList $trendArgs `
-    -WorkingDirectory $ProjectRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$LogsDir\trend_stdout_$DateStr.log" -RedirectStandardError "$LogsDir\trend_stderr_$DateStr.log"
-
-$trendExit = $trendProcess.ExitCode
+try {
+    $trendOutput = & $VenvPython `
+        (Join-Path $ProjectRoot "scripts\analyze_web_news_quality_trends.py") `
+        "--window-days" $WindowDays `
+        "--min-runs" $MinRuns `
+        "--output-dir" (Join-Path $ProjectRoot "storage\artifacts\web_news_quality\live") `
+        2>&1
+    $trendExit = $LASTEXITCODE
+    $trendOutput | Out-File -FilePath $trendStdout -Encoding UTF8
+} catch {
+    $_ | Out-File -FilePath $trendStderr -Encoding UTF8
+    $trendExit = 1
+}
 Write-Log "Trend analyzer exit code: $trendExit"
 
 # Determine overall exit code

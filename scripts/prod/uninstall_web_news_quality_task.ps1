@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # Dandelions Investment Agent - 卸载 Windows Task Scheduler 每日新闻质量监控
 # =============================================================================
 #
@@ -13,7 +13,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+# Fix encoding for Windows PowerShell 5.1 (chcp 65001 + UTF-8 I/O)
+try { chcp 65001 > $null } catch {}
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding  = $Utf8NoBom
+[Console]::OutputEncoding = $Utf8NoBom
+$OutputEncoding = $Utf8NoBom
 
 $existingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $existingTask) {
