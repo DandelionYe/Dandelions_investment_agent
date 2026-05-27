@@ -211,9 +211,16 @@ def check_fastapi_health() -> CheckResult:
     )
 
 
+def _get_auth_credentials() -> tuple[str, str | None]:
+    """Return (username, password) from env vars with .env fallback."""
+    import os  # noqa: PLC0415
+    username = os.getenv("AUTH_ADMIN_USER") or _read_dotenv_value(PROJECT_ROOT, "AUTH_ADMIN_USER") or "admin"
+    password = os.getenv("AUTH_ADMIN_PASS") or _read_dotenv_value(PROJECT_ROOT, "AUTH_ADMIN_PASS")
+    return username, password
+
+
 def check_fastapi_auth() -> CheckResult:
     """Check auth endpoint — skipped if no test credentials."""
-    import os  # noqa: PLC0415
     port = _get_api_port()
     if not _tcp_port_open("127.0.0.1", port):
         return CheckResult(
@@ -223,8 +230,7 @@ def check_fastapi_auth() -> CheckResult:
             severity="warning",
             message="API port not reachable, skipping auth check",
         )
-    username = os.getenv("AUTH_ADMIN_USER", "admin")
-    password = os.getenv("AUTH_ADMIN_PASS")
+    username, password = _get_auth_credentials()
     if not password:
         return CheckResult(
             name="fastapi_auth",
@@ -353,7 +359,7 @@ def check_celery_beat() -> CheckResult:
 
 
 def check_websocket() -> CheckResult:
-    """Basic WebSocket connectivity — skipped unless --include-websocket."""
+    """WebSocket smoke — authenticates then connects to a task endpoint."""
     port = _get_api_port()
     if not _tcp_port_open("127.0.0.1", port):
         return CheckResult(
@@ -375,25 +381,76 @@ def check_websocket() -> CheckResult:
             message="websockets library not installed",
         )
 
-    async def _try_connect() -> bool:
+    username, password = _get_auth_credentials()
+    if not password:
+        return CheckResult(
+            name="websocket_connect",
+            category="websocket",
+            status="skipped",
+            severity="warning",
+            message="No auth credentials, skipping WebSocket smoke",
+        )
+
+    # Get access token via login
+    try:
+        import requests  # noqa: PLC0415
+        session = requests.Session()
+        session.trust_env = False
+        resp = session.post(
+            f"http://127.0.0.1:{port}/api/v1/auth/login",
+            json={"username": username, "password": password},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return CheckResult(
+                name="websocket_connect",
+                category="websocket",
+                status="warning",
+                severity="warning",
+                message=f"Auth login failed (HTTP {resp.status_code}), skipping WebSocket smoke",
+            )
+        token = resp.json().get("access_token")
+        if not token:
+            return CheckResult(
+                name="websocket_connect",
+                category="websocket",
+                status="warning",
+                severity="warning",
+                message="No access_token in login response",
+            )
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            name="websocket_connect",
+            category="websocket",
+            status="warning",
+            severity="warning",
+            message=f"Auth login error: {exc}",
+        )
+
+    # Connect to a fake task endpoint — expects "任务不存在" error
+    async def _try_ws() -> tuple[bool, str]:
         try:
             async with websockets.connect(
-                f"ws://127.0.0.1:{port}/ws/ping",
-                open_timeout=3,
-                close_timeout=2,
-            ):
-                return True
-        except Exception:  # noqa: BLE001
-            return False
+                f"ws://127.0.0.1:{port}/ws/task/runtime_smoke_check?token={token}",
+                open_timeout=5,
+                close_timeout=3,
+            ) as ws:
+                msg = await asyncio.wait_for(ws.recv(), timeout=5)
+                data = json.loads(msg)
+                if data.get("type") == "error" and "不存在" in data.get("detail", ""):
+                    return True, "WebSocket + auth + route verified"
+                return False, f"Unexpected response: {msg[:200]}"
+        except Exception as exc:  # noqa: BLE001
+            return False, str(exc)
 
     try:
-        ok = asyncio.run(_try_connect())
+        ok, detail = asyncio.run(_try_ws())
         return CheckResult(
             name="websocket_connect",
             category="websocket",
             status="pass" if ok else "warning",
             severity="warning",
-            message="WebSocket endpoint reachable" if ok else "WebSocket connection failed",
+            message=detail,
         )
     except Exception as exc:  # noqa: BLE001
         return CheckResult(
@@ -483,37 +540,41 @@ def check_local_data_paths() -> CheckResult:
     )
 
 
-def check_pdf_generation() -> CheckResult:
-    """Check if PDF generation dependencies are available."""
+def _module_available(name: str) -> bool:
+    """Check if a Python module can be imported without side effects."""
     import io  # noqa: PLC0415
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        __import__(name)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        sys.stdout = old_stdout
 
-    missing = []
-    for mod in ["playwright", "weasyprint", "markdown"]:
-        try:
-            old_stdout = sys.stdout
-            sys.stdout = io.StringIO()
-            try:
-                __import__(mod)
-            finally:
-                sys.stdout = old_stdout
-        except Exception:  # noqa: BLE001
-            sys.stdout = old_stdout
-            missing.append(mod)
-    if not missing:
+
+def check_pdf_generation() -> CheckResult:
+    """Check if the primary PDF backend (Playwright) is available."""
+    has_playwright = _module_available("playwright")
+    has_weasyprint = _module_available("weasyprint")
+
+    if has_playwright:
         return CheckResult(
             name="pdf_dependencies",
             category="pdf",
             status="pass",
             severity="warning",
-            message="PDF generation dependencies available",
+            message="Playwright PDF backend available",
+            details={"playwright": True, "weasyprint_legacy": has_weasyprint},
         )
     return CheckResult(
         name="pdf_dependencies",
         category="pdf",
         status="warning",
         severity="warning",
-        message=f"Missing PDF dependencies: {', '.join(missing)}",
-        details={"missing": missing},
+        message="Playwright not installed (--pdf will fail)",
+        details={"playwright": False, "weasyprint_legacy": has_weasyprint},
     )
 
 

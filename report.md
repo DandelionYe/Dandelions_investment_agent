@@ -63,7 +63,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
   - `test_streamlit_runtime_smoke.py`（RUN_STREAMLIT_INTEGRATION=1）
   - `test_qmt_runtime_smoke.py`（RUN_QMT_INTEGRATION=1）
 - [x] README.md 运行态验收矩阵章节
-- [ ] 真实运行验收：启动全部服务后执行 verify_runtime_matrix.ps1 并归档 artifact
+- [x] 真实运行验收：启动全部服务后执行 verify_runtime_matrix.ps1 并归档 artifact
 - [ ] CI 集成：GitHub Actions 或等价 CI 中区分 offline / opt-in 测试
 
 ## P1：观察池条件触发器真实行情验收
