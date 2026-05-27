@@ -22,7 +22,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 
 | 优先级 | 开发项 | 当前状态 | 验收目标 |
 |---|---|---|---|
-| P0 | 运行态集成验收与 CI 服务矩阵 | 代码层已完成；验收矩阵骨架、统一入口脚本、pytest marker 分层、runtime smoke 测试已落地，待真实运行验收 | 一条命令或一组固定命令完成服务启动、核心 smoke、artifact 归档和失败定位 |
+| P0 | 运行态集成验收与 CI 服务矩阵 | 已完成；验收矩阵骨架、统一入口脚本、pytest marker 分层、runtime smoke 测试、真实运行验收、CI workflow 和本地 offline CI 脚本均已落地 | 一条命令或一组固定命令完成服务启动、核心 smoke、artifact 归档和失败定位 |
 | P1 | 观察池条件触发器真实行情验收 | 未完成；CRUD、批量扫描和权限已具备，真实行情触发链路仍需验收 | 小型真实观察池覆盖触发/未触发、批量扫描、进度推送、报告关联和失败降级 |
 | P2 | 网页新闻/舆情连续运行验证 | 代码层全部就绪（趋势分析、分层治理、Task Scheduler、Celery Beat）；需要安装每日任务并连续运行 7 天以上 | 通过 Windows Task Scheduler 或 Celery Beat 连续运行，确认 provider 稳定性和阈值 |
 | P3 | 系统设置页面 | 未开始 | 把常用 `.env` 配置迁移到可视化设置页，并保留安全边界 |
@@ -50,7 +50,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - CI 明确区分离线必跑测试和外部依赖测试。
 - 每次关键发布前能生成本地验收记录，保存到 `storage/artifacts/verification/` 或等价目录。
 
-**代码层已完成（待真实运行验收）：**
+**已完成：**
 
 - [x] pytest markers 分层：integration / live / qmt / network / data_quality / api / redis / celery / websocket / streamlit / pdf / runtime / slow
 - [x] 统一验收入口脚本：`scripts/verify_runtime_matrix.ps1` + `scripts/run_runtime_verification.py`
@@ -63,8 +63,8 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
   - `test_streamlit_runtime_smoke.py`（RUN_STREAMLIT_INTEGRATION=1）
   - `test_qmt_runtime_smoke.py`（RUN_QMT_INTEGRATION=1）
 - [x] README.md 运行态验收矩阵章节
-- [x] 真实运行验收：启动全部服务后执行 verify_runtime_matrix.ps1 并归档 artifact
-- [ ] CI 集成：GitHub Actions 或等价 CI 中区分 offline / opt-in 测试
+- [x] 真实运行验收：启动全部服务后执行 verify_runtime_matrix.ps1 并归档 artifact（latest.json 显示 pass）
+- [x] CI 集成：GitHub Actions workflow（`.github/workflows/ci.yml`）+ 本地 offline CI 脚本（`scripts/run_offline_ci.ps1`）+ CI workflow contract 测试（`tests/test_ci_workflow_contract.py`）
 
 ## P1：观察池条件触发器真实行情验收
 

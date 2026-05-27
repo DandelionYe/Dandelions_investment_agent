@@ -7,6 +7,25 @@ on:
     branches: ["main"]
 
 jobs:
+  lint:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ruff
+        run: python -m pip install ruff
+
+      - name: Ruff lint (CI-scoped)
+        run: |
+          python -m ruff check scripts/run_runtime_verification.py tests/test_ci_workflow_contract.py tests/integration/test_runtime_matrix_contract.py main.py services/orchestrator/single_asset_research.py services/research/scoring_engine.py services/research/decision_guard.py
+
   test:
     runs-on: windows-latest
     env:
@@ -43,6 +62,9 @@ jobs:
           python -m py_compile services/data/providers/web_news_provider.py services/research/event_engine.py
           python -m py_compile services/orchestrator/single_asset_research.py
 
-      - name: Run targeted tests
+      - name: Runtime matrix contract tests
+        run: python -m pytest tests/integration/test_runtime_matrix_contract.py -q -p no:cacheprovider
+
+      - name: Stable offline tests
         run: |
-          python -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py -q -p no:cacheprovider
+          python -m pytest tests/test_cli.py tests/test_llm_json_guard.py tests/test_security_config.py tests/test_celery_schedule.py tests/test_provider_errors.py tests/test_web_news_provider.py tests/test_report_pipeline.py tests/test_valuation_percentile.py tests/test_scoring_engine.py tests/test_decision_guard.py tests/test_evidence_schema_contract.py tests/test_data_quality_regression_contract.py tests/test_production_operations_contract.py tests/test_historical_samples_contract.py tests/test_research_quality_baseline_contract.py tests/test_auth.py tests/test_rbac_auth_admin.py tests/test_rbac_report_access.py tests/test_rbac_task_access.py tests/test_rbac_watchlist_access.py tests/test_dashboard_rbac_contract.py tests/test_dashboard_auth_client.py tests/test_langgraph_orchestrator.py tests/test_watchlist_store.py tests/test_ci_workflow_contract.py --deselect tests/test_report_pipeline.py::test_qmt_industry_valuation_reaches_pipeline_evidence_and_reports -q -p no:cacheprovider

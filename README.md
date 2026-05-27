@@ -882,6 +882,54 @@ python scripts/manual_tests/test_etf_code_format.py
 
 覆盖范围：决策保护器全部边界/评分引擎边缘值/报告生成降级/LangGraph 多轮辩论与 HITL/观察池 CRUD 与调度/WebSocket 消息格式与降级/JWT 认证与密码哈希/用户 CRUD/QMT-AKShare-mock 数据链路/估值事件标准化。
 
+### CI 服务矩阵
+
+默认 GitHub Actions（`.github/workflows/ci.yml`）在 `windows-latest` + Python 3.13 上运行，包含三个 job：
+
+**lint job：**
+- Ruff 检查 CI 相关和核心稳定文件（非全仓库，因为部分历史代码有已知 lint 问题）
+
+**test job：**
+- Runtime matrix contract tests（`tests/integration/test_runtime_matrix_contract.py`）
+- Stable offline tests（25 个测试文件，显式列表）
+
+默认 CI **不运行**的 opt-in 测试类别：
+
+| 类别 | 环境变量 | 原因 |
+|------|----------|------|
+| QMT 本地集成 | `RUN_QMT_INTEGRATION` | 需要 MiniQMT 本地服务 |
+| 网络数据源 | `RUN_AKSHARE_NETWORK` / `RUN_WEB_NEWS_NETWORK` | 需要真实网络 |
+| FastAPI/Celery/Redis 运行态 | `RUN_RUNTIME_INTEGRATION` | 需要服务运行中 |
+| WebSocket | `RUN_RUNTIME_INTEGRATION` | 需要服务运行中 |
+| Streamlit | `RUN_STREAMLIT_INTEGRATION` | 需要 Streamlit 运行中 |
+| 数据质量回归 | `RUN_DATA_QUALITY_REGRESSION` | 需要 MiniQMT + 本地参考库 |
+| 历史回测 | `RUN_HISTORICAL_QMT_BACKTEST` | 需要 MiniQMT |
+
+**本地复现默认 CI：**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_offline_ci.ps1
+```
+
+输出 artifact 到 `storage/artifacts/verification/offline_ci/<timestamp>/`，包含 `summary.json`、`summary.md`、`ruff_output.txt`、`pytest_runtime_contract.txt`、`pytest_offline.txt`。最新结果同步到 `storage/artifacts/verification/offline_ci/latest.json`。
+
+支持参数：`-SkipRuff`、`-SkipPytest`、`-OutputDir <path>`。
+
+**手动运行 runtime live 验收（opt-in）：**
+
+```powershell
+# 启动全部服务后运行
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_runtime_matrix.ps1 -IncludeStreamlit -IncludeQmt -IncludeWebsocket
+```
+
+**CI workflow contract 测试：**
+
+```powershell
+python -m pytest tests/test_ci_workflow_contract.py -q
+```
+
+验证 CI workflow 的平台、Python 版本、环境变量、服务启动和测试调用是否符合契约。
+
 ## Agent 架构与 LangGraph 编排
 
 当前 Agent 系统由 5 个独立角色类 + LangGraph 多轮辩论工作流组成：
