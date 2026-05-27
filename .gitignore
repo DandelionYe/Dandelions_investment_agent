@@ -45,3 +45,4 @@ data/raw/
 storage/reference/*.sqlite
 storage/reference/*.md
 storage/reference/*.csv
+storage/.session_token.json

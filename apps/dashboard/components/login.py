@@ -1,18 +1,62 @@
 """Streamlit 登录组件。
 
-在侧边栏渲染登录表单。登录后 token 存储在 st.session_state 中。
-所有后续 API 调用自动携带 token，过期时自动刷新。
+在侧边栏渲染登录表单。登录后 token 存储在 st.session_state 中，
+同时持久化到本地文件，刷新页面后自动恢复登录状态。
 
 RBAC 支持：
 - 登录后调用 /api/v1/auth/me 获取并保存 auth_role。
 - 提供 current_user()、current_role()、is_admin() helper。
 """
 
+import json
+from pathlib import Path
+
 import requests
 import streamlit as st
 from requests import Response
 
 API_BASE = "http://localhost:8000"
+
+_TOKEN_FILE = Path(__file__).resolve().parents[3] / "storage" / ".session_token.json"
+
+
+def _restore_from_file() -> bool:
+    """尝试从本地文件恢复登录状态。"""
+    try:
+        if not _TOKEN_FILE.exists():
+            return False
+        data = json.loads(_TOKEN_FILE.read_text(encoding="utf-8"))
+        if data.get("access_token"):
+            st.session_state["auth_token"] = data["access_token"]
+            st.session_state["refresh_token"] = data.get("refresh_token", "")
+            st.session_state["auth_user"] = data.get("username", "")
+            _fetch_user_info(data["access_token"])
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _save_to_file(access_token: str, refresh_token: str, username: str) -> None:
+    """将登录信息持久化到本地文件。"""
+    try:
+        _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _TOKEN_FILE.write_text(json.dumps({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "username": username,
+        }, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _clear_file() -> None:
+    """清除本地文件中的登录信息。"""
+    try:
+        if _TOKEN_FILE.exists():
+            _TOKEN_FILE.unlink()
+    except Exception:
+        pass
 
 
 def require_login() -> str | None:
@@ -24,6 +68,10 @@ def require_login() -> str | None:
     """
     # 已登录
     if "auth_token" in st.session_state:
+        return st.session_state["auth_token"]
+
+    # 尝试从文件恢复
+    if _restore_from_file():
         return st.session_state["auth_token"]
 
     # 未登录：渲染登录表单
@@ -46,6 +94,8 @@ def require_login() -> str | None:
                     st.session_state["auth_token"] = data["access_token"]
                     st.session_state["refresh_token"] = data["refresh_token"]
                     st.session_state["auth_user"] = username
+                    # 持久化到文件
+                    _save_to_file(data["access_token"], data["refresh_token"], username)
                     # 获取用户角色
                     _fetch_user_info(data["access_token"])
                     st.success(f"欢迎，{username}！")
@@ -216,6 +266,7 @@ def _refresh_auth_token() -> bool:
 
 def _logout() -> None:
     """清除登录状态。"""
+    _clear_file()
     st.session_state.pop("auth_token", None)
     st.session_state.pop("refresh_token", None)
     st.session_state.pop("auth_user", None)
