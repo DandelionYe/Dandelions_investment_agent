@@ -35,9 +35,11 @@ def _api_get(path: str, params: dict | None = None) -> dict | list | None:
     try:
         resp = authenticated_request("GET", path, params=params, timeout=10)
         if resp.status_code >= 400:
+            st.warning(f"API 请求失败 [{resp.status_code}]: {resp.text[:200]}")
             return None
         return resp.json()
-    except Exception:
+    except Exception as exc:
+        st.warning(f"API 请求异常: {exc}")
         return None
 
 
@@ -105,7 +107,7 @@ st.title("📚 研究报告库")
 st.caption("查看、筛选和下载已经生成的投研报告。")
 
 # 通过 API 获取任务列表
-tasks = fetch_task_history(page=1, page_size=200)
+tasks = fetch_task_history(page=1, page_size=100)
 
 if not tasks:
     st.info("当前还没有生成过报告。请先到 Home 页面生成一份单票研究报告。")
