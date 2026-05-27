@@ -37,3 +37,10 @@ with col3:
         st.subheader("📊 报告库")
         st.caption("浏览历史生成的研究报告，按评级/操作建议筛选，查看详细评分和辩论结果。")
         st.page_link("pages/2_Report_Library.py", label="进入报告库 →", icon="📊")
+
+col4, col5, col6 = st.columns(3)
+with col4:
+    with st.container(border=True):
+        st.subheader("⚙️ 系统设置")
+        st.caption("可视化编辑 .env 配置：LLM、数据源、QMT、行业分类、CSMAR、新闻、认证等。仅管理员可访问。")
+        st.page_link("pages/4_系统设置.py", label="进入系统设置 →", icon="⚙️")
