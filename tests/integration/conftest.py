@@ -45,6 +45,18 @@ def require_web_news_network() -> None:
 
 
 @pytest.fixture
+def require_runtime_integration() -> None:
+    if not _env_enabled("RUN_RUNTIME_INTEGRATION"):
+        pytest.skip("set RUN_RUNTIME_INTEGRATION=1 to run runtime smoke tests")
+
+
+@pytest.fixture
+def require_streamlit_integration() -> None:
+    if not _env_enabled("RUN_STREAMLIT_INTEGRATION"):
+        pytest.skip("set RUN_STREAMLIT_INTEGRATION=1 to run Streamlit smoke tests")
+
+
+@pytest.fixture
 def api_base_url() -> str:
     return os.getenv("DANDELIONS_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 

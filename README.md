@@ -817,6 +817,62 @@ python -m pytest tests/test_historical_qmt_integration.py -q
 
 `tests/integration/` 下已有默认跳过的真实环境 smoke 测试，覆盖 AKShare 网络、Celery/Redis、FastAPI 研究任务、QMT 本地接口、WebSocket 进度推送和网页新闻网络源。按文档设置对应环境变量后再运行，避免默认测试依赖外部服务。
 
+### 运行态验收矩阵
+
+一键检查当前所有服务运行状态，不启动、不停止任何服务：
+
+```powershell
+# 默认检查（FastAPI、Redis、Celery 为 blocker；其余 warning/skipped）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_runtime_matrix.ps1
+
+# 严格模式（warning 也视为失败）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_runtime_matrix.ps1 -Strict
+
+# 启用可选检查
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_runtime_matrix.ps1 -IncludeStreamlit -IncludeQmt -IncludeWebsocket
+```
+
+或直接运行 Python：
+
+```powershell
+python scripts/run_runtime_verification.py
+python scripts/run_runtime_verification.py --strict --include-qmt --include-streamlit --include-websocket
+```
+
+输出 artifact 到 `storage/artifacts/verification/<timestamp>/`，包含 `summary.json`、`summary.md`、`service_status.json`、`environment_snapshot.json`。最新结果同步到 `storage/artifacts/verification/latest.json`。
+
+**检查项与阻断策略：**
+
+| 检查项 | 类别 | 默认行为 | 说明 |
+|--------|------|----------|------|
+| Python 环境 | env | blocker | 版本和 venv 路径 |
+| Redis ping | redis | blocker | CELERY_BROKER_URL 连通性 |
+| FastAPI health | api | blocker | API/DB/Redis 健康端点 |
+| FastAPI auth | api | skipped | 需要 AUTH_ADMIN_PASS |
+| Celery worker | celery | blocker | inspect ping |
+| Celery beat | celery | watch | celerybeat-schedule 文件新鲜度 |
+| 本地数据路径 | data | watch | storage/configs 目录存在性 |
+| WebSocket | websocket | opt-in | 需要 --include-websocket |
+| Streamlit | streamlit | opt-in | 需要 --include-streamlit |
+| MiniQMT | qmt | opt-in | 需要 --include-qmt |
+| PDF 依赖 | pdf | warning | playwright/weasyprint |
+
+**运行态 smoke 测试 opt-in 命令：**
+
+```powershell
+# 运行态 smoke（需要 FastAPI + Redis + Celery 运行中）
+$env:RUN_RUNTIME_INTEGRATION='1'
+python -m pytest tests/integration/test_api_runtime_smoke.py tests/integration/test_redis_celery_runtime_smoke.py tests/integration/test_websocket_runtime_smoke.py -q
+
+# Streamlit smoke
+$env:RUN_STREAMLIT_INTEGRATION='1'
+python -m pytest tests/integration/test_streamlit_runtime_smoke.py -q
+
+# QMT smoke
+$env:RUN_QMT_INTEGRATION='1'
+python -m pytest tests/integration/test_qmt_runtime_smoke.py -q
+```
+
 手动数据源验证脚本位于 `scripts/manual_tests/`：
 
 ```powershell

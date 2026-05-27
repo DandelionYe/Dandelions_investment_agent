@@ -8,6 +8,14 @@ markers = [
     "qmt: tests that require a local QMT/xtquant environment",
     "network: tests that require external network data sources",
     "data_quality: data quality regression tests against live QMT",
+    "api: tests that require a running FastAPI server",
+    "redis: tests that require a running Redis instance",
+    "celery: tests that require a running Celery worker or beat",
+    "websocket: tests that require WebSocket connectivity",
+    "streamlit: tests that require a running Streamlit server",
+    "pdf: tests that verify PDF generation dependencies or output",
+    "runtime: runtime verification matrix smoke tests",
+    "slow: tests that take more than a few seconds to complete",
 ]
 
 [tool.ruff]
