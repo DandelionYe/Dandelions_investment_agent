@@ -23,7 +23,7 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 | 优先级 | 开发项 | 当前状态 | 验收目标 |
 |---|---|---|---|
 | P0 | 运行态集成验收与 CI 服务矩阵 | 已完成；验收矩阵骨架、统一入口脚本、pytest marker 分层、runtime smoke 测试、真实运行验收、CI workflow 和本地 offline CI 脚本均已落地 | 一条命令或一组固定命令完成服务启动、核心 smoke、artifact 归档和失败定位 |
-| P1 | 观察池条件触发器真实行情验收 | 未完成；CRUD、批量扫描和权限已具备，真实行情触发链路仍需验收 | 小型真实观察池覆盖触发/未触发、批量扫描、进度推送、报告关联和失败降级 |
+| P1 | 观察池条件触发器真实行情验收 | 代码层已完成；WebSocket 进度推送、条件触发器 UI、集成测试、验收脚本已落地，待真实环境运行验收 | 小型真实观察池覆盖触发/未触发、批量扫描、进度推送、报告关联和失败降级 |
 | P2 | 网页新闻/舆情连续运行验证 | 代码层全部就绪（趋势分析、分层治理、Task Scheduler、Celery Beat）；需要安装每日任务并连续运行 7 天以上 | 通过 Windows Task Scheduler 或 Celery Beat 连续运行，确认 provider 稳定性和阈值 |
 | P3 | 系统设置页面 | 未开始 | 把常用 `.env` 配置迁移到可视化设置页，并保留安全边界 |
 | P3 | 组合优化 / 多资产配置 | 未开始 | 在单票研究和观察池稳定后，支持组合层评分、仓位建议和风险汇总 |
@@ -82,6 +82,21 @@ robocopy "D:\迅投QMT极速交易系统交易终端 万联证券版\datadir" "D
 - 至少准备一个小型观察池样本，覆盖触发和未触发两类结果。
 - 扫描结果可复现，并能解释数据来源和 missing_reason。
 - 普通用户只能看到自己的观察池、批次和报告；admin 范围明确。
+
+**已完成：**
+
+- [x] WebSocket 进度推送接入：`scan_single_watchlist_item` 完成/失败时调用 `publish_batch_progress` + `update_batch_progress`
+- [x] 批量扫描 batch 管理：`watchlist_scheduler_check`、`scan_watchlist`、`trigger_scan` 均创建 batch 并传入 batch_id
+- [x] Dashboard 条件触发器配置 UI：添加/编辑观察项时可配置 price_change_pct、score_threshold、volume_spike_ratio
+- [x] Dashboard 条件触发器展示：详情面板显示当前配置，支持编辑
+- [x] 端到端集成测试：`tests/integration/test_watchlist_scan_e2e.py` 覆盖创建→扫描→结果关联、batch 进度、条件评估、防重复、owner 隔离
+- [x] 真实行情验收脚本：`scripts/verify_watchlist_triggers.py` 支持 QMT/AKShare 数据源
+
+**待验收（需真实环境运行）：**
+
+- [ ] 启动 FastAPI + Celery worker + Redis，在 Dashboard 添加观察项并配置条件触发器，手动触发扫描验证全链路
+- [ ] 运行 `python scripts/verify_watchlist_triggers.py --data-source qmt` 验证真实行情触发判断
+- [ ] 准备小型观察池样本（如 600519.SH + 000001.SZ），覆盖触发和未触发两类结果
 
 ## P2：网页新闻/舆情连续运行验证
 

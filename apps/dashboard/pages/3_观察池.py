@@ -374,6 +374,19 @@ if items:
             if sc.get("mode") == "cron":
                 st.caption(f"⏰ Crontab: `{sc.get('cron_expression', '-')}` | 下次扫描: {item.get('next_scan_at', '-')}")
 
+            # 条件触发器
+            ct = sc.get("condition_triggers") or {}
+            active_triggers = {k: v for k, v in ct.items() if v is not None}
+            if active_triggers:
+                trigger_parts = []
+                if "price_change_pct" in active_triggers:
+                    trigger_parts.append(f"涨跌幅 >= {active_triggers['price_change_pct']}%")
+                if "score_threshold" in active_triggers:
+                    trigger_parts.append(f"评分 >= {active_triggers['score_threshold']}")
+                if "volume_spike_ratio" in active_triggers:
+                    trigger_parts.append(f"量比 >= {active_triggers['volume_spike_ratio']}")
+                st.caption("🔔 条件触发: " + " | ".join(trigger_parts))
+
             # 标签
             tag_names = [t["name"] for t in (item.get("tags") or [])]
             if tag_names:
@@ -429,6 +442,46 @@ if items:
                         _get_store().update_item(item["id"], target_action=new_target)
                     st.rerun()
 
+            # 条件触发器编辑
+            with st.expander("🔔 编辑条件触发器", expanded=False):
+                sc = item.get("schedule_config", {})
+                ct = sc.get("condition_triggers") or {}
+                edit_ct1, edit_ct2, edit_ct3 = st.columns(3)
+                with edit_ct1:
+                    new_price = st.number_input(
+                        "涨跌幅（%）", min_value=0.0, max_value=20.0,
+                        value=float(ct.get("price_change_pct") or 0), step=0.5,
+                        key=f"edit_ct_price_{item['id']}",
+                    )
+                with edit_ct2:
+                    new_score = st.number_input(
+                        "评分阈值", min_value=0.0, max_value=100.0,
+                        value=float(ct.get("score_threshold") or 0), step=5.0,
+                        key=f"edit_ct_score_{item['id']}",
+                    )
+                with edit_ct3:
+                    new_volume = st.number_input(
+                        "量比倍数", min_value=0.0, max_value=100.0,
+                        value=float(ct.get("volume_spike_ratio") or 0), step=0.5,
+                        key=f"edit_ct_volume_{item['id']}",
+                    )
+                if st.button("保存触发器", key=f"save_ct_{item['id']}"):
+                    new_ct = {}
+                    if new_price > 0:
+                        new_ct["price_change_pct"] = new_price
+                    if new_score > 0:
+                        new_ct["score_threshold"] = new_score
+                    if new_volume > 0:
+                        new_ct["volume_spike_ratio"] = new_volume
+                    new_sc = {**sc, "condition_triggers": new_ct}
+                    if st.session_state["wl_api_ok"]:
+                        _api_call("PUT", f"/api/v1/watchlist/items/{item['id']}",
+                                  json={"schedule_config": new_sc})
+                    else:
+                        _get_store().update_item(item["id"], schedule_config=new_sc)
+                    st.success("条件触发器已更新")
+                    st.rerun()
+
             # 历史扫描记录
             st.divider()
             st.subheader("📜 扫描历史")
@@ -479,6 +532,20 @@ if st.session_state.get("wl_show_add_item"):
                                               key="add_cron",
                                               help="工作日 9:00 = 0 9 * * 1-5")
 
+                st.caption("条件触发器（满足任一条件自动触发扫描）")
+                ct_price = st.number_input(
+                    "涨跌幅阈值（%）", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
+                    key="add_ct_price", help="如 5.0 表示涨跌幅超 5% 时触发，0 表示不启用",
+                )
+                ct_score = st.number_input(
+                    "评分阈值", min_value=0.0, max_value=100.0, value=0.0, step=5.0,
+                    key="add_ct_score", help="如 80 表示上次评分 ≥80 时触发，0 表示不启用",
+                )
+                ct_volume = st.number_input(
+                    "成交量异动倍数", min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                    key="add_ct_volume", help="如 3.0 表示成交量超 3 倍均量时触发，0 表示不启用",
+                )
+
                 tag_options = {t["id"]: t["name"] for t in tags}
                 tag_ids = []
                 if tag_options:
@@ -491,6 +558,13 @@ if st.session_state.get("wl_show_add_item"):
                 with c1:
                     if st.button("确认添加", use_container_width=True):
                         if symbol and folder_id:
+                            condition_triggers = {}
+                            if ct_price > 0:
+                                condition_triggers["price_change_pct"] = ct_price
+                            if ct_score > 0:
+                                condition_triggers["score_threshold"] = ct_score
+                            if ct_volume > 0:
+                                condition_triggers["volume_spike_ratio"] = ct_volume
                             body = {
                                 "symbol": symbol,
                                 "asset_type": asset_type,
@@ -501,7 +575,7 @@ if st.session_state.get("wl_show_add_item"):
                                 "schedule_config": {
                                     "mode": mode,
                                     "cron_expression": cron_expr,
-                                    "condition_triggers": {},
+                                    "condition_triggers": condition_triggers,
                                 },
                                 "tag_ids": tag_ids,
                             }

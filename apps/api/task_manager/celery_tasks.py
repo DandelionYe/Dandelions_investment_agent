@@ -15,7 +15,7 @@ from apps.api.celery_app import celery_app
 from apps.api.schemas.research import new_task_id, utc_now_iso
 from apps.api.schemas.task import TaskStatus
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
-from apps.api.websocket.progress_publisher import publish_task_progress
+from apps.api.websocket.progress_publisher import publish_batch_progress, publish_task_progress
 
 # 将项目根目录添加到 Python 路径
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -221,14 +221,23 @@ def watchlist_scheduler_check() -> dict:
     from datetime import datetime, timezone
     store = get_watchlist_store()
 
-    # 1. cron 到期检查
+    # 1. cron 到期检查 — 按 owner 分组创建 batch
     due_items = store.get_due_items()
     triggered_ids: set = set()
+    due_by_owner: dict[str, list[dict]] = {}
     for item in due_items:
-        scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled")
+        owner = item.get("owner_username", "default")
+        due_by_owner.setdefault(owner, []).append(item)
         triggered_ids.add(str(item["id"]))
+    for owner, owner_items in due_by_owner.items():
+        item_ids = [it["id"] for it in owner_items]
+        batch_id = store.create_batch("scheduled", item_ids, owner_username=owner)
+        for item in owner_items:
+            scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled",
+                                             batch_id=batch_id)
 
     # 2. 条件触发器检查
+    condition_triggered: dict[str, list[dict]] = {}  # owner -> items
     all_enabled = store.get_all_enabled_items()
     for item in all_enabled:
         item_id = str(item["id"])
@@ -273,10 +282,18 @@ def watchlist_scheduler_check() -> dict:
             triggered = True
 
         if triggered:
-            scan_single_watchlist_item.delay(item_id, trigger_type="condition")
+            owner = item.get("owner_username", "default")
+            condition_triggered.setdefault(owner, []).append(item)
             triggered_ids.add(item_id)
 
-    return {"due_count": len(due_items), "condition_count": len(triggered_ids) - len(due_items)}
+    for owner, owner_items in condition_triggered.items():
+        item_ids = [it["id"] for it in owner_items]
+        batch_id = store.create_batch("condition", item_ids, owner_username=owner)
+        for item in owner_items:
+            scan_single_watchlist_item.delay(str(item["id"]), trigger_type="condition",
+                                             batch_id=batch_id)
+
+    return {"due_count": len(due_items), "condition_count": len(condition_triggered)}
 
 
 @celery_app.task(
@@ -306,9 +323,42 @@ def scan_watchlist() -> dict:
         batch_id = store.create_batch("scheduled", item_ids, owner_username=owner)
         batch_ids.append(batch_id)
         for item in owner_items:
-            scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled")
+            scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled",
+                                             batch_id=batch_id)
 
     return {"batch_ids": batch_ids, "total": len(items)}
+
+
+def _update_and_publish_batch(
+    wl_store, batch_id: str, item_id: str, symbol: str,
+    status: str = "completed",
+    item_score: float | None = None,
+    item_rating: str | None = None,
+) -> None:
+    """更新 batch 进度计数并推送 WebSocket 消息。"""
+    try:
+        batch = wl_store.get_batch(batch_id)
+        completed = batch.get("completed_items", 0)
+        failed = batch.get("failed_items", 0)
+        if status == "completed":
+            completed += 1
+        else:
+            failed += 1
+        updated = wl_store.update_batch_progress(batch_id, completed, failed)
+        publish_batch_progress(
+            batch_id=batch_id,
+            status=updated.get("status", "running"),
+            total_items=updated.get("total_items", 0),
+            completed_items=completed,
+            failed_items=failed,
+            item_id=item_id,
+            item_symbol=symbol,
+            item_status=status,
+            item_score=item_score,
+            item_rating=item_rating,
+        )
+    except Exception:
+        pass  # batch 进度更新失败不阻断主流程
 
 
 @celery_app.task(
@@ -317,12 +367,14 @@ def scan_watchlist() -> dict:
     default_retry_delay=120,
     acks_late=True,
 )
-def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") -> dict:
+def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
+                                batch_id: str | None = None) -> dict:
     """扫描单个观察项。
 
     1. 创建 research_task 记录（关联 schedule_id = item_id）
     2. 调用现有研究 pipeline
     3. 更新观察项的扫描结果和 next_scan_at
+    4. 更新 batch 进度并推送 WebSocket（如果提供了 batch_id）
 
     由 watchlist_scheduler_check / scan_watchlist / 手动触发共用。
     """
@@ -405,6 +457,13 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
             if next_scan:
                 wl_store.update_item(item_id, next_scan_at=next_scan)
 
+        # 更新 batch 进度并推送 WebSocket
+        if batch_id:
+            _update_and_publish_batch(wl_store, batch_id, item_id, symbol,
+                                      status="completed",
+                                      item_score=result.get("score"),
+                                      item_rating=result.get("rating"))
+
         return {
             "item_id": item_id,
             "symbol": symbol,
@@ -419,6 +478,10 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled") ->
                                  completed_at=utc_now_iso(), error_message=str(exc))
         publish_task_progress(
             task_id, TaskStatus.FAILED, 0.0, "", symbol, error_message=str(exc))
+        # 更新 batch 进度（失败）
+        if batch_id:
+            _update_and_publish_batch(wl_store, batch_id, item_id, symbol,
+                                      status="failed")
         raise
 
 

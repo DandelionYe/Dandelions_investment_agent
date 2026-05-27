@@ -380,7 +380,8 @@ class WatchlistManager:
 
         from apps.api.task_manager.celery_tasks import scan_single_watchlist_item
         for item in items:
-            scan_single_watchlist_item.delay(item["id"], trigger_type=trigger_type)
+            scan_single_watchlist_item.delay(item["id"], trigger_type=trigger_type,
+                                             batch_id=batch_id)
 
         return {
             "batch_id": batch_id,
