@@ -113,6 +113,53 @@ if not tasks:
     st.info("当前还没有生成过报告。请先到 Home 页面生成一份单票研究报告。")
     st.stop()
 
+
+@st.cache_data(ttl=3600)
+def _resolve_company_names(symbols: tuple[str, ...]) -> dict[str, str]:
+    """批量解析 symbol → 公司名称。优先 QMT → AKShare → symbol 本身。"""
+    result: dict[str, str] = {}
+    unresolved: list[str] = []
+
+    # 1. 尝试 QMT
+    try:
+        from xtquant import xtdata
+        for sym in symbols:
+            try:
+                detail = xtdata.get_instrument_detail(sym)
+                if isinstance(detail, dict):
+                    name = (
+                        detail.get("InstrumentName")
+                        or detail.get("instrument_name")
+                        or detail.get("name")
+                    )
+                    if name:
+                        result[sym] = name
+                        continue
+            except Exception:
+                pass
+            unresolved.append(sym)
+    except ImportError:
+        unresolved = list(symbols)
+
+    # 2. AKShare 降级
+    if unresolved:
+        try:
+            from services.data.akshare_provider import get_company_name_akshare
+            for sym in unresolved:
+                name = get_company_name_akshare(sym)
+                result[sym] = name if name else sym
+        except Exception:
+            for sym in unresolved:
+                if sym not in result:
+                    result[sym] = sym
+
+    return result
+
+
+# 收集所有 unique symbols 并批量解析公司名称
+all_symbols = list({t.get("symbol", "") for t in tasks if t.get("status") == "completed"})
+name_map = _resolve_company_names(tuple(sorted(all_symbols)))
+
 # 构建报告列表
 rows = []
 for t in tasks:
@@ -121,10 +168,12 @@ for t in tasks:
     task_id = t["task_id"]
     report_info = fetch_report_info(task_id)
     available_formats = report_info.get("formats", []) if report_info else []
+    symbol = t.get("symbol", "")
 
     rows.append({
         "task_id": task_id,
-        "symbol": t.get("symbol", ""),
+        "symbol": symbol,
+        "company_name": name_map.get(symbol, symbol),
         "score": t.get("score"),
         "rating": t.get("rating"),
         "action": t.get("action"),
@@ -144,9 +193,9 @@ with st.sidebar:
     st.header("筛选条件")
 
     keyword = st.text_input(
-        "搜索代码",
+        "搜索代码或名称",
         value="",
-        placeholder="例如：600519",
+        placeholder="例如：600519 或 贵州茅台",
     )
 
     rating_options = ["全部"] + sorted(df["rating"].dropna().astype(str).unique().tolist())
@@ -161,6 +210,7 @@ if keyword.strip():
     kw = keyword.strip().lower()
     filtered_df = filtered_df[
         filtered_df["symbol"].astype(str).str.lower().str.contains(kw)
+        | filtered_df["company_name"].astype(str).str.lower().str.contains(kw)
     ]
 
 if selected_rating != "全部":
@@ -173,6 +223,7 @@ st.subheader("报告列表")
 
 display_columns = [
     "symbol",
+    "company_name",
     "score",
     "rating",
     "action",
@@ -190,7 +241,7 @@ if filtered_df.empty:
     st.stop()
 
 symbol_options = [
-    f'{row["symbol"]} - {row.get("rating", "-")} - {row.get("completed_at", "-")}'
+    f'{row["symbol"]} {row.get("company_name", "")} - {row.get("rating", "-")} - {row.get("completed_at", "-")}'
     for _, row in filtered_df.iterrows()
 ]
 
@@ -202,7 +253,7 @@ selected_row = filtered_df.iloc[selected_index]
 task_id = selected_row["task_id"]
 available_formats = selected_row["available_formats"]
 
-st.subheader(f"报告详情 — {selected_row['symbol']}")
+st.subheader(f"报告详情 — {selected_row['symbol']} {selected_row.get('company_name', '')}")
 
 col1, col2, col3 = st.columns(3)
 with col1:

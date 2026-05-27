@@ -14,6 +14,41 @@ from services.network.proxy_policy import disable_proxy_for_current_process
 
 disable_proxy_for_current_process()
 
+
+def get_company_name_akshare(symbol: str) -> str | None:
+    """通过 AKShare stock_individual_info_em 获取公司名称。
+
+    Args:
+        symbol: 股票代码，如 600519.SH
+
+    Returns:
+        公司名称字符串，获取失败返回 None
+    """
+    try:
+        import akshare as ak
+        code = symbol.split(".")[0]
+        df = ak.stock_individual_info_em(symbol=code)
+        if df is None or df.empty:
+            return None
+        # DataFrame 有 item/value 两列，查找"股票简称"或"名称"行
+        item_col = None
+        value_col = None
+        for col in df.columns:
+            col_str = str(col).strip().lower()
+            if col_str in ("item", "项目", "指标"):
+                item_col = col
+            elif col_str in ("value", "值", "数值"):
+                value_col = col
+        if item_col is None or value_col is None:
+            return None
+        for _, row in df.iterrows():
+            item = str(row[item_col]).strip()
+            if item in ("股票简称", "证券简称", "名称", "简称"):
+                return str(row[value_col]).strip()
+        return None
+    except Exception:
+        return None
+
 import akshare as ak  # noqa: E402  # Proxy policy must be applied before importing akshare.
 
 

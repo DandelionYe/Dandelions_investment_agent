@@ -24,6 +24,22 @@ LLM_JSON_FALLBACK_WARNING = (
 )
 
 
+def _resolve_company_name(symbol: str, current_name: str, data_source: str) -> str:
+    """解析公司名称。如果 provider 返回的名称就是 symbol 本身，尝试用 AKShare 获取真实名称。"""
+    # 如果已经有真实名称（QMT 返回的），直接使用
+    if current_name and current_name != symbol and not current_name.startswith("Mock Asset"):
+        return current_name
+    # 尝试 AKShare 获取
+    try:
+        from services.data.akshare_provider import get_company_name_akshare
+        name = get_company_name_akshare(symbol)
+        if name:
+            return name
+    except Exception:
+        pass
+    return current_name
+
+
 def _load_asset_data(symbol: str, data_source: str) -> dict:
     if data_source == "mock":
         return ResearchDataAggregator().enrich(get_mock_asset_data(symbol))
@@ -31,13 +47,17 @@ def _load_asset_data(symbol: str, data_source: str) -> dict:
     if data_source == "akshare":
         asset_data = get_akshare_asset_data(symbol)
         asset_data["data_source_chain"] = ["akshare"]
-        return ResearchDataAggregator().enrich(asset_data)
+        result = ResearchDataAggregator().enrich(asset_data)
+        result["name"] = _resolve_company_name(symbol, result.get("name", ""), "akshare")
+        return result
 
     if data_source == "qmt":
         try:
             asset_data = get_qmt_asset_data(symbol)
             asset_data["data_source_chain"] = ["qmt"]
-            return ResearchDataAggregator().enrich(asset_data)
+            result = ResearchDataAggregator().enrich(asset_data)
+            result["name"] = _resolve_company_name(symbol, result.get("name", ""), "qmt")
+            return result
         except ProviderUnavailableError as qmt_error:
             fallback_data = get_akshare_asset_data(symbol)
             fallback_data["data_source_chain"] = ["qmt_failed", "akshare_fallback"]
@@ -57,7 +77,9 @@ def _load_asset_data(symbol: str, data_source: str) -> dict:
                 },
                 *fallback_data.get("provider_run_log", []),
             ]
-            return ResearchDataAggregator().enrich(fallback_data)
+            result = ResearchDataAggregator().enrich(fallback_data)
+            result["name"] = _resolve_company_name(symbol, result.get("name", ""), "akshare")
+            return result
 
     raise ValueError(f"不支持的数据源：{data_source}")
 
