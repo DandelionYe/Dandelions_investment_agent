@@ -1,0 +1,186 @@
+{
+  "positions": [
+    {"symbol": "600519.SH", "asset_type": "stock", "asset_name": "贵州茅台"},
+    {"symbol": "000001.SZ", "asset_type": "stock", "asset_name": "平安银行"},
+    {"symbol": "601318.SH", "asset_type": "stock", "asset_name": "中国平安"},
+    {"symbol": "300750.SZ", "asset_type": "stock", "asset_name": "宁德时代"}
+  ],
+  "research_results": {
+    "600519.SH": {
+      "symbol": "600519.SH",
+      "name": "贵州茅台",
+      "asset_type": "stock",
+      "score": 85,
+      "rating": "B+",
+      "action": "分批买入",
+      "score_breakdown": {
+        "trend_momentum": 18,
+        "liquidity": 14,
+        "fundamental_quality": 18,
+        "valuation": 12,
+        "risk_control": 17,
+        "event_policy": 6
+      },
+      "decision_guard": {
+        "enabled": true,
+        "score": 85,
+        "rating": "B+",
+        "risk_level": "medium",
+        "final_action": "分批买入"
+      },
+      "price_data": {
+        "close": 1800.0,
+        "volatility_60d": 0.25,
+        "max_drawdown_60d": -0.12
+      },
+      "valuation_data": {
+        "pe_percentile": 0.65,
+        "pb_percentile": 0.70,
+        "industry_name": "食品饮料"
+      },
+      "event_data": {
+        "event_summary": {
+          "high_severity_count": 0,
+          "critical_count": 0,
+          "risk_flags": []
+        }
+      },
+      "data_quality": {
+        "has_placeholder": false,
+        "blocking_issues": []
+      }
+    },
+    "000001.SZ": {
+      "symbol": "000001.SZ",
+      "name": "平安银行",
+      "asset_type": "stock",
+      "score": 68,
+      "rating": "C",
+      "action": "谨慎观察",
+      "score_breakdown": {
+        "trend_momentum": 12,
+        "liquidity": 10,
+        "fundamental_quality": 14,
+        "valuation": 10,
+        "risk_control": 14,
+        "event_policy": 8
+      },
+      "decision_guard": {
+        "enabled": true,
+        "score": 68,
+        "rating": "C",
+        "risk_level": "medium",
+        "final_action": "谨慎观察"
+      },
+      "price_data": {
+        "close": 12.5,
+        "volatility_60d": 0.30,
+        "max_drawdown_60d": -0.18
+      },
+      "valuation_data": {
+        "pe_percentile": 0.35,
+        "pb_percentile": 0.25,
+        "industry_name": "银行"
+      },
+      "event_data": {
+        "event_summary": {
+          "high_severity_count": 0,
+          "critical_count": 0,
+          "risk_flags": []
+        }
+      },
+      "data_quality": {
+        "has_placeholder": false,
+        "blocking_issues": []
+      }
+    },
+    "601318.SH": {
+      "symbol": "601318.SH",
+      "name": "中国平安",
+      "asset_type": "stock",
+      "score": 75,
+      "rating": "B",
+      "action": "观察",
+      "score_breakdown": {
+        "trend_momentum": 15,
+        "liquidity": 12,
+        "fundamental_quality": 16,
+        "valuation": 10,
+        "risk_control": 16,
+        "event_policy": 6
+      },
+      "decision_guard": {
+        "enabled": true,
+        "score": 75,
+        "rating": "B",
+        "risk_level": "medium",
+        "final_action": "观察"
+      },
+      "price_data": {
+        "close": 55.0,
+        "volatility_60d": 0.28,
+        "max_drawdown_60d": -0.15
+      },
+      "valuation_data": {
+        "pe_percentile": 0.40,
+        "pb_percentile": 0.30,
+        "industry_name": "保险"
+      },
+      "event_data": {
+        "event_summary": {
+          "high_severity_count": 0,
+          "critical_count": 0,
+          "risk_flags": []
+        }
+      },
+      "data_quality": {
+        "has_placeholder": false,
+        "blocking_issues": []
+      }
+    },
+    "300750.SZ": {
+      "symbol": "300750.SZ",
+      "name": "宁德时代",
+      "asset_type": "stock",
+      "score": 78,
+      "rating": "B",
+      "action": "观察",
+      "score_breakdown": {
+        "trend_momentum": 16,
+        "liquidity": 13,
+        "fundamental_quality": 15,
+        "valuation": 10,
+        "risk_control": 14,
+        "event_policy": 10
+      },
+      "decision_guard": {
+        "enabled": true,
+        "score": 78,
+        "rating": "B",
+        "risk_level": "high",
+        "final_action": "观察"
+      },
+      "price_data": {
+        "close": 220.0,
+        "volatility_60d": 0.55,
+        "max_drawdown_60d": -0.35
+      },
+      "valuation_data": {
+        "pe_percentile": 0.50,
+        "pb_percentile": 0.45,
+        "industry_name": "新能源"
+      },
+      "event_data": {
+        "event_summary": {
+          "high_severity_count": 1,
+          "critical_count": 0,
+          "risk_flags": ["产能过剩风险"]
+        }
+      },
+      "data_quality": {
+        "has_placeholder": false,
+        "blocking_issues": []
+      }
+    }
+  }
+}

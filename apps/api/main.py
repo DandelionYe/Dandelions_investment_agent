@@ -15,7 +15,7 @@ from apps.api.limiter import limiter
 
 import os
 
-from apps.api.routers import research, reports, health, watchlist, ws, auth
+from apps.api.routers import research, reports, health, watchlist, ws, auth, portfolio
 from apps.api.middleware.error_handler import (
     global_error_handler,
     key_error_handler,
@@ -110,6 +110,7 @@ app.include_router(health.router)
 app.include_router(watchlist.router)
 app.include_router(ws.router)
 app.include_router(auth.router)
+app.include_router(portfolio.router)
 
 
 @app.get("/")

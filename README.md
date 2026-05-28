@@ -14,6 +14,7 @@
 - 看板：Streamlit。
 - 报告：JSON → Markdown → HTML → Playwright PDF，支持正式模板 `default` / `institutional_full` / `compact_review` / `risk_only` 与主题配置。
 - 研究质量：已落地 P0 数据质量回归样本、P2 真实历史回测样本池、全链路 evidence schema、报告产品化、网页新闻质量监控和研究质量治理，相关 artifact 输出到 `storage/artifacts/`。
+- 组合分析 MVP：多标的组合评分汇总、行业/资产暴露、风险汇总、目标仓位建议、再平衡提示，输出 JSON/Markdown 报告。所有输出为研究建议，不构成交易指令。
 - 当前不会自动下单，也不会调用 QMT 交易接口。
 
 ## 已落地能力总览
@@ -52,6 +53,7 @@ apps/
       1_Single_Asset_Research.py  单票研究（参数输入 + 生成 + 6 维度渲染）
       2_Report_Library.py         报告库
       3_观察池.py                  观察池管理（分组/标签/条件触发器/批量扫描）
+      5_组合分析.py                组合分析（多标的评分汇总/风险暴露/仓位建议）
     components/
       progress_poller.py    进度轮询组件
       login.py              登录组件（JWT token 管理 + 自动刷新）
@@ -64,6 +66,7 @@ apps/
       auth.py                认证与用户管理端点（login/refresh/me/register/users）
       reports.py             报告下载端点（按 task owner 授权）
       watchlist.py           观察池端点（17 个：文件夹/项/标签 CRUD + 扫描）
+      portfolio.py           组合分析端点（POST /api/v1/portfolio/analyze）
       ws.py                  WebSocket 端点（3 个：task/batch/events + token 验证）
     schemas/
       auth.py                认证 Pydantic 模型
