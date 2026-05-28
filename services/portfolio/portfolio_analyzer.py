@@ -102,6 +102,7 @@ def analyze_portfolio(
         result = research_results.get(symbol)
         h = _analyze_holding(symbol, pos, result)
         holdings.append(h)
+        global_warnings.extend(f"{symbol}: {warning}" for warning in h.data_warnings)
         if not result:
             global_missing.append(f"{symbol}: 无研究结果，请先运行单票研究或观察池扫描")
 
@@ -260,8 +261,9 @@ def _allocate_weights(
         for i in range(len(raw_weights)):
             raw_weights[i] = (raw_weights[i] / total_raw) * investable
     else:
-        equal = investable / len(holdings) if holdings else 0
-        raw_weights = [equal] * len(holdings)
+        # No scored research data means no defensible target allocation.
+        # Keep the portfolio in cash instead of manufacturing equal weights.
+        raw_weights = [0.0] * len(holdings)
 
     # Step 4: Single-holding cap (hard) — excess redistributed to uncapped
     # Iterate: cap → redistribute → re-cap → ...

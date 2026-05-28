@@ -214,8 +214,9 @@ def _load_research_results(
                 except (json.JSONDecodeError, OSError):
                     pass
 
-            # Priority 2: task summary fields
-            summary: dict = {}
+            # Priority 2: task summary fields, enriched with watchlist snapshot for
+            # fields that task rows do not carry (valuation/risk/event snapshots).
+            summary: dict = dict(wl_snapshot_map.get(symbol, {}))
             if task.get("score") is not None:
                 summary["score"] = task["score"]
             if task.get("rating"):

@@ -23,7 +23,7 @@ class PortfolioAnalyzeRequest(BaseModel):
     )
     # Source B: from watchlist
     watchlist_folder_id: Optional[str] = Field(
-        default=None,
+        default=None, min_length=1,
         description="从观察池文件夹读取持仓（与 positions 二选一）"
     )
     use_watchlist_all: bool = Field(

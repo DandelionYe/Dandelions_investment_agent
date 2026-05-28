@@ -118,8 +118,13 @@ else:
     num_positions = st.number_input("标的数量", min_value=1, max_value=20, value=3,
                                     key="num_positions")
 
+    header_cols = st.columns([2, 1, 2, 1])
+    for col, label in zip(header_cols, ["代码", "类型", "名称", "当前权重%"]):
+        with col:
+            st.caption(label)
+
     for i in range(num_positions):
-        cols = st.columns([2, 1, 2])
+        cols = st.columns([2, 1, 2, 1])
         with cols[0]:
             symbol = st.text_input(f"代码 {i+1}", key=f"sym_{i}",
                                    placeholder="600519.SH")
@@ -131,11 +136,22 @@ else:
         with cols[2]:
             asset_name = st.text_input(f"名称 {i+1}", key=f"name_{i}",
                                        label_visibility="collapsed")
+        with cols[3]:
+            current_weight = st.number_input(
+                f"当前权重 {i+1}",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=1.0,
+                key=f"weight_{i}",
+                label_visibility="collapsed",
+            )
         if symbol:
             positions.append({
                 "symbol": symbol,
                 "asset_type": asset_type,
                 "asset_name": asset_name,
+                "current_weight": current_weight / 100,
             })
 
     if st.button("🔍 生成组合分析", type="primary", use_container_width=True):
@@ -196,7 +212,10 @@ if result:
                 "建议": h.get("action") or "-",
                 "风险": h.get("risk_level") or "-",
                 "行业": h.get("industry") or "-",
+                "当前权重": f"{h.get('current_weight', 0):.1%}",
                 "目标权重": f"{h.get('target_weight', 0):.1%}",
+                "变动": f"{h.get('delta_weight', 0):+.1%}",
+                "再平衡": h.get("rebalance_action") or "-",
                 "警告": "; ".join(h.get("data_warnings", [])) or "-",
             })
         df = pd.DataFrame(df_data)
@@ -226,6 +245,15 @@ if result:
         st.subheader("再平衡建议")
         for s in suggestions:
             st.write(f"- {s}")
+
+    rebal_details = [
+        h for h in holdings
+        if h.get("rebalance_reason")
+    ]
+    if rebal_details:
+        st.subheader("再平衡明细")
+        for h in rebal_details:
+            st.write(f"- **{h['symbol']}**: {h['rebalance_reason']}")
 
     # 缺失数据
     missing = result.get("missing_reasons", [])

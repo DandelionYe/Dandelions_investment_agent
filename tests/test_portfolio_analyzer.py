@@ -72,6 +72,17 @@ class TestMissingData:
         # Missing should get less weight than a scored holding
         assert missing_h.target_weight < good_h.target_weight
 
+    def test_all_missing_results_allocate_to_cash(self):
+        """If every holding lacks research data, do not manufacture target weights."""
+        positions = [
+            {"symbol": "A.SH", "asset_type": "stock"},
+            {"symbol": "B.SH", "asset_type": "stock"},
+        ]
+        analysis = analyze_portfolio(positions, {})
+        assert all(h.target_weight == 0 for h in analysis.holdings)
+        assert analysis.cash_weight == 1.0
+        assert analysis.portfolio_score is None
+
 
 class TestIndustryCap:
 

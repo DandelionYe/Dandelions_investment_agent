@@ -121,13 +121,25 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
                 "detail": path,
             })
 
-    # Check 8: risk profile differences
-    c_score = results["conservative"]["analysis"]["portfolio_score"]
-    a_score = results["aggressive"]["analysis"]["portfolio_score"]
+    # Check 8: risk profile differences. Total score can stay equal when
+    # holdings are capped, so compare target weights directly.
+    conservative_weights = {
+        h["symbol"]: h["target_weight"]
+        for h in results["conservative"]["analysis"]["holdings"]
+    }
+    aggressive_weights = {
+        h["symbol"]: h["target_weight"]
+        for h in results["aggressive"]["analysis"]["holdings"]
+    }
+    changed_symbols = [
+        symbol
+        for symbol, conservative_weight in conservative_weights.items()
+        if abs(conservative_weight - aggressive_weights.get(symbol, 0.0)) > 0.001
+    ]
     checks.append({
         "check": "risk_profiles_differ",
-        "status": "pass" if c_score != a_score else "warning",
-        "detail": f"conservative={c_score}, aggressive={a_score}",
+        "status": "pass" if changed_symbols else "warning",
+        "detail": f"changed_symbols={changed_symbols or 'none'}",
     })
 
     overall = "pass"
