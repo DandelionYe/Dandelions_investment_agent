@@ -39,9 +39,9 @@ class ConditionTriggers(BaseModel):
         description="最低风险等级阈值（low/medium/high，触发当实际风险 ≥ 此级别）"
     )
     # ── Event triggers ────────────────────────────────────────
-    event_severity_min: Optional[Literal["low", "medium", "high"]] = Field(
+    event_severity_min: Optional[Literal["low", "medium", "high", "critical"]] = Field(
         default=None,
-        description="最低事件严重性阈值（low/medium/high，触发当事件严重性 ≥ 此级别）"
+        description="最低事件严重性阈值（low/medium/high/critical，触发当事件严重性 ≥ 此级别）"
     )
     event_keywords: list[str] = Field(
         default_factory=list,

@@ -359,6 +359,21 @@ def _update_and_publish_batch(
         pass  # batch 进度更新失败不阻断主流程
 
 
+def _extract_structured_risk_review(result: dict) -> dict | None:
+    """Return structured risk_review for condition triggers, if available."""
+    risk_review = result.get("risk_review")
+    if isinstance(risk_review, dict):
+        return risk_review
+
+    debate_result = result.get("debate_result")
+    if isinstance(debate_result, dict):
+        debate_risk = debate_result.get("risk_review")
+        if isinstance(debate_risk, dict):
+            return debate_risk
+
+    return None
+
+
 @celery_app.task(
     name="watchlist.scan_single_item",
     max_retries=1,
@@ -449,7 +464,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
         # Build trigger snapshot for future condition evaluation
         trigger_snapshot = {
             "valuation_data": result.get("valuation_data"),
-            "risk_review": result.get("risk_review"),
+            "risk_review": _extract_structured_risk_review(result),
             "event_data": result.get("event_data"),
             "score": result.get("score"),
         }

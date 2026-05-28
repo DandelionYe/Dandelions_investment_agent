@@ -56,6 +56,7 @@ class VerificationReport:
     quote_error_count: int
     categories_seen: list[str]
     acceptance_status: str
+    acceptance_failures: list[str]
     checks: list[dict[str, Any]]
 
 
@@ -201,11 +202,17 @@ def verify_watchlist(
         ))
 
     acceptance_status = "pass"
-    if require_triggered_and_untriggered and configured_items > 0:
+    acceptance_failures: list[str] = []
+    if require_triggered_and_untriggered:
+        if configured_items == 0:
+            acceptance_failures.append("no configured watchlist items with condition triggers")
         if triggered_count == 0:
-            acceptance_status = "fail"
+            acceptance_failures.append("no configured item evaluated as triggered")
         if non_triggered_count == 0:
-            acceptance_status = "fail"
+            acceptance_failures.append("no configured item evaluated as non-triggered")
+
+    if acceptance_failures:
+        acceptance_status = "fail"
 
     if any(c.status == "fail" for c in checks):
         acceptance_status = "fail"
@@ -227,20 +234,24 @@ def verify_watchlist(
         quote_error_count=quote_error_count,
         categories_seen=sorted(categories_seen),
         acceptance_status=acceptance_status,
+        acceptance_failures=acceptance_failures,
         checks=[asdict(c) for c in checks],
     )
 
 
 def _ensure_sample_items(store) -> None:
     """Create or update sample watchlist items for verification."""
-    folders = store.list_folders()
+    owner_username = "default"
+    folders = store.list_folders(owner_username=owner_username)
     sample_folder = next((f for f in folders if f["name"] == "验收样本"), None)
     if sample_folder:
         folder_id = sample_folder["id"]
-    elif folders:
-        folder_id = folders[0]["id"]
     else:
-        folder = store.create_folder("验收样本", description="自动创建的验收观察池样本")
+        folder = store.create_folder(
+            "验收样本",
+            description="自动创建的验收观察池样本",
+            owner_username=owner_username,
+        )
         folder_id = folder["id"]
 
     samples = [
@@ -271,10 +282,27 @@ def _ensure_sample_items(store) -> None:
     ]
 
     existing_items = store.get_all_enabled_items()
-    existing_symbols = {i["symbol"] for i in existing_items}
+    owner_items = [
+        i for i in existing_items
+        if i.get("owner_username", "default") == owner_username
+    ]
+    existing_sample_items = {
+        i["symbol"]: i for i in owner_items
+        if i.get("folder_id") == folder_id
+    }
+    existing_symbols = {i["symbol"] for i in owner_items}
 
     for sample in samples:
-        if sample["symbol"] not in existing_symbols:
+        existing_sample = existing_sample_items.get(sample["symbol"])
+        if existing_sample:
+            store.update_item(
+                existing_sample["id"],
+                owner_username=owner_username,
+                asset_type=sample["asset_type"],
+                asset_name=sample.get("asset_name", ""),
+                schedule_config=sample["schedule_config"],
+            )
+        elif sample["symbol"] not in existing_symbols:
             try:
                 store.add_item(
                     symbol=sample["symbol"],
@@ -282,6 +310,7 @@ def _ensure_sample_items(store) -> None:
                     folder_id=folder_id,
                     schedule_config=sample["schedule_config"],
                     asset_name=sample.get("asset_name", ""),
+                    owner_username=owner_username,
                 )
             except Exception:
                 pass
@@ -325,6 +354,14 @@ def write_artifacts(
         "## Checks",
         "",
     ]
+    if report.acceptance_failures:
+        check_header_index = md_lines.index("## Checks")
+        md_lines[check_header_index:check_header_index] = [
+            "## Acceptance Failures",
+            "",
+            *[f"- {failure}" for failure in report.acceptance_failures],
+            "",
+        ]
     for c in report.checks:
         icon = {"pass": "PASS", "fail": "FAIL", "warning": "WARN", "skipped": "SKIP",
                 "error": "ERR"}.get(c["status"], "?")
@@ -376,6 +413,8 @@ def main():
     print(f"评估类别: {', '.join(report.categories_seen) or 'none'}")
     print(f"总体状态: {report.overall_status}")
     print(f"验收状态: {report.acceptance_status}")
+    if report.acceptance_failures:
+        print(f"验收失败原因: {'; '.join(report.acceptance_failures)}")
     print()
 
     for check in report.checks:

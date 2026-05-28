@@ -191,6 +191,23 @@ class TestValuationTriggers:
         assert result.triggered is False
 
 
+    def test_valuation_percentile_uses_real_pe_percentile_fraction(self):
+        """Real valuation_data stores percentile fractions in pe_percentile."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"valuation_percentile_max": 30.0}}}
+        latest = {"valuation_data": {"pe_percentile": 0.20, "pb_percentile": 0.45}}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is True
+
+    def test_valuation_percentile_real_fraction_above_threshold(self):
+        """Fractional PE percentile above the percentage threshold does not trigger."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"valuation_percentile_max": 30.0}}}
+        latest = {"valuation_data": {"pe_percentile": 0.50, "pb_percentile": 0.10}}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is False
+
+
 class TestRiskTriggers:
 
     def test_risk_level_high_triggers(self):
@@ -218,6 +235,27 @@ class TestRiskTriggers:
         assert len(result.missing_reasons) > 0
 
 
+    def test_risk_level_reads_structured_debate_result(self):
+        """The pipeline may keep top-level risk_review as text and structured data in debate_result."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"risk_level_min": "medium"}}}
+        latest = {
+            "risk_review": "overall risk is medium",
+            "debate_result": {"risk_review": {"risk_level": "high"}},
+        }
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is True
+
+    def test_risk_level_text_snapshot_does_not_crash(self):
+        """Text-only risk_review is treated as missing structured risk data."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"risk_level_min": "medium"}}}
+        latest = {"risk_review": "overall risk is medium"}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is False
+        assert any("risk_level" in reason for reason in result.missing_reasons)
+
+
 class TestEventTriggers:
 
     def test_event_severity_high_triggers(self):
@@ -235,6 +273,33 @@ class TestEventTriggers:
         latest = {"event_data": {"max_severity": "low"}}
         result = evaluate_condition_triggers(item, latest_result=latest)
         assert result.triggered is False
+
+    def test_event_severity_uses_real_events_list(self):
+        """Real event_data stores severities on events, not max_severity."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"event_severity_min": "high"}}}
+        latest = {"event_data": {"events": [
+            {"title": "minor", "severity": "medium"},
+            {"title": "major", "severity": "high"},
+        ]}}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is True
+
+    def test_event_severity_critical_counts_as_high_or_above(self):
+        """Critical event severity should satisfy a high threshold."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"event_severity_min": "high"}}}
+        latest = {"event_data": {"events": [{"title": "critical event", "severity": "critical"}]}}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is True
+
+    def test_event_severity_uses_real_event_summary(self):
+        """Event summaries can indicate high/critical severity even without event rows."""
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        item = {"schedule_config": {"condition_triggers": {"event_severity_min": "high"}}}
+        latest = {"event_data": {"event_summary": {"high_severity_count": 1, "critical_count": 0}}}
+        result = evaluate_condition_triggers(item, latest_result=latest)
+        assert result.triggered is True
 
     def test_event_keywords_match(self):
         """事件关键词匹配时触发。"""

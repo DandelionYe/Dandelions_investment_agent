@@ -530,7 +530,7 @@ if items:
                         key=f"edit_ct_risk_{item['id']}",
                     )
                 with edit_risk2:
-                    sev_options = ["不启用", "low", "medium", "high"]
+                    sev_options = ["不启用", "low", "medium", "high", "critical"]
                     current_sev = ct.get("event_severity_min") or "不启用"
                     new_sev = st.selectbox(
                         "最低事件严重性", options=sev_options,

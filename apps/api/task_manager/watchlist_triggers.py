@@ -136,7 +136,7 @@ def evaluate_condition_triggers(
         result.categories_evaluated.append("valuation_percentile_max")
         threshold = ct["valuation_percentile_max"]
         val_data = _get_valuation_data(latest_result)
-        pct = val_data.get("valuation_percentile") if val_data else None
+        pct = _get_valuation_percentile(val_data)
         if pct is not None:
             if pct <= threshold:
                 result.triggered = True
@@ -166,7 +166,7 @@ def evaluate_condition_triggers(
         result.categories_evaluated.append("event_severity_min")
         threshold = ct["event_severity_min"]
         event_data = _get_event_data(latest_result)
-        severity = event_data.get("max_severity") if event_data else None
+        severity = _get_event_max_severity(event_data)
         if severity is not None:
             if _level_gte(severity, threshold):
                 result.triggered = True
@@ -200,27 +200,118 @@ def evaluate_condition_triggers(
 def _get_valuation_data(latest_result: dict | None) -> dict | None:
     if not latest_result:
         return None
-    return latest_result.get("valuation_data")
+    data = latest_result.get("valuation_data")
+    return data if isinstance(data, dict) else None
 
 
 def _get_risk_review(latest_result: dict | None) -> dict | None:
     if not latest_result:
         return None
-    return latest_result.get("risk_review")
+    data = latest_result.get("risk_review")
+    if isinstance(data, dict):
+        return data
+    debate_result = latest_result.get("debate_result")
+    if isinstance(debate_result, dict):
+        debate_risk = debate_result.get("risk_review")
+        if isinstance(debate_risk, dict):
+            return debate_risk
+    return None
 
 
 def _get_event_data(latest_result: dict | None) -> dict | None:
     if not latest_result:
         return None
-    return latest_result.get("event_data")
+    data = latest_result.get("event_data")
+    return data if isinstance(data, dict) else None
 
 
-_LEVEL_ORDER = {"low": 0, "medium": 1, "high": 2}
+_LEVEL_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
-def _level_gte(actual: str, threshold: str) -> bool:
+def _level_rank(level: Any) -> int | None:
+    if level is None:
+        return None
+    return _LEVEL_ORDER.get(str(level).lower())
+
+
+def _level_gte(actual: Any, threshold: Any) -> bool:
     """Return True if actual level >= threshold level."""
-    return _LEVEL_ORDER.get(actual, -1) >= _LEVEL_ORDER.get(threshold, -1)
+    actual_rank = _level_rank(actual)
+    threshold_rank = _level_rank(threshold)
+    if actual_rank is None or threshold_rank is None:
+        return False
+    return actual_rank >= threshold_rank
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_percentile(value: Any) -> float | None:
+    number = _as_float(value)
+    if number is None:
+        return None
+    if 0 <= number <= 1:
+        return number * 100
+    return number
+
+
+def _get_valuation_percentile(valuation_data: dict | None) -> float | None:
+    """Return a 0-100 valuation percentile from real pipeline fields.
+
+    The research pipeline stores historical valuation percentiles as fractions
+    in pe_percentile/pb_percentile/ps_percentile. Keep compatibility with the
+    synthetic valuation_percentile field used by earlier tests.
+    """
+    if not isinstance(valuation_data, dict):
+        return None
+
+    explicit = _as_float(valuation_data.get("valuation_percentile"))
+    if explicit is not None:
+        return explicit
+
+    for key in ("pe_percentile", "pb_percentile", "ps_percentile"):
+        percentile = _normalize_percentile(valuation_data.get(key))
+        if percentile is not None:
+            return percentile
+    return None
+
+
+def _get_event_max_severity(event_data: dict | None) -> str | None:
+    """Return the highest event severity from real event_engine output."""
+    if not isinstance(event_data, dict):
+        return None
+
+    explicit = event_data.get("max_severity") or event_data.get("severity")
+    if _level_rank(explicit) is not None:
+        return str(explicit).lower()
+
+    best_level: str | None = None
+    best_rank = -1
+    events = event_data.get("events") or event_data.get("announcements") or []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            severity = event.get("severity")
+            rank = _level_rank(severity)
+            if rank is not None and rank > best_rank:
+                best_rank = rank
+                best_level = str(severity).lower()
+
+    summary = event_data.get("event_summary")
+    if isinstance(summary, dict):
+        critical_count = _as_float(summary.get("critical_count")) or 0
+        high_count = _as_float(summary.get("high_severity_count")) or 0
+        if critical_count > 0 and _LEVEL_ORDER["critical"] > best_rank:
+            return "critical"
+        if high_count > 0 and _LEVEL_ORDER["high"] > best_rank:
+            return "high"
+
+    return best_level
 
 
 def _match_event_keywords(event_data: dict, keywords: list[str]) -> list[str]:
@@ -228,6 +319,8 @@ def _match_event_keywords(event_data: dict, keywords: list[str]) -> list[str]:
     matched = []
     announcements = event_data.get("announcements") or event_data.get("events") or []
     for ann in announcements:
+        if not isinstance(ann, dict):
+            continue
         title = ann.get("title") or ann.get("name") or ""
         for kw in keywords:
             if kw.lower() in title.lower():
