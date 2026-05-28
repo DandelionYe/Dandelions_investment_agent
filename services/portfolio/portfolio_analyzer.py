@@ -40,8 +40,10 @@ class HoldingAnalysis:
     industry: str | None = None
     pe_percentile: float | None = None
     pb_percentile: float | None = None
+    current_weight: float = 0.0  # user's current weight (0 if unknown)
     raw_weight: float = 0.0  # weight before constraints
     target_weight: float = 0.0  # weight after constraints
+    delta_weight: float = 0.0  # target - current
     rebalance_action: str | None = None  # "add" / "reduce" / "hold"
     rebalance_reason: str | None = None
     data_warnings: list[str] = field(default_factory=list)
@@ -151,6 +153,7 @@ def _analyze_holding(
         symbol=symbol,
         asset_type=pos.get("asset_type", "stock"),
         asset_name=pos.get("asset_name", ""),
+        current_weight=pos.get("current_weight") or 0.0,
     )
 
     if not result:
@@ -208,23 +211,23 @@ def _allocate_weights(
     """Heuristic weight allocation based on score, risk, and constraints.
 
     Steps:
-    1. Compute raw weight from score/action (higher score → more weight)
-    2. Apply risk/volatility penalty
-    3. Normalize to (1 - cash_weight)
-    4. Apply single-holding cap
-    5. Apply industry cap
-    6. Re-normalize
+    1. Compute raw weight from score/action
+    2. Apply risk/volatility discount (always penalizes high risk)
+    3. Normalize to investable
+    4. Apply single-holding cap (hard)
+    5. Apply industry cap (hard) — excess goes to cash, NOT redistributed
+    6. Compute delta_weight and rebalance_action
     """
     if not holdings:
         return
 
     investable = 1.0 - constraints.min_cash_weight
 
-    # Profile multipliers
-    profile_mult = {
-        "conservative": {"score_boost": 0.5, "risk_penalty": 2.0},
-        "balanced": {"score_boost": 1.0, "risk_penalty": 1.0},
-        "aggressive": {"score_boost": 1.5, "risk_penalty": 0.5},
+    # Profile multipliers — score_boost scales preference, risk_discount is always <= 1.0
+    profile_cfg = {
+        "conservative": {"score_boost": 0.5, "high_risk_discount": 0.4, "medium_risk_discount": 0.7},
+        "balanced": {"score_boost": 1.0, "high_risk_discount": 0.6, "medium_risk_discount": 0.85},
+        "aggressive": {"score_boost": 1.5, "high_risk_discount": 0.8, "medium_risk_discount": 0.95},
     }[risk_profile]
 
     # Step 1: Raw weight from score
@@ -234,67 +237,107 @@ def _allocate_weights(
             raw_weights.append(0.0)
             continue
         base = h.score / 100.0
-        # Action boost
         action_mult = _action_multiplier(h.action)
-        w = base * action_mult * profile_mult["score_boost"]
-        raw_weights.append(max(w, 0.01))  # minimum 1% if has score
+        w = base * action_mult * profile_cfg["score_boost"]
+        raw_weights.append(max(w, 0.01))
 
-    # Step 2: Risk/volatility penalty
+    # Step 2: Risk/volatility discount — high risk ALWAYS gets lower weight
     for i, h in enumerate(holdings):
-        penalty = 1.0
+        discount = 1.0
         if h.risk_level == "high":
-            penalty *= (1.0 / profile_mult["risk_penalty"])
+            discount *= profile_cfg["high_risk_discount"]
+        elif h.risk_level == "medium":
+            discount *= profile_cfg["medium_risk_discount"]
         if h.volatility_60d and h.volatility_60d > 0.5:
-            penalty *= 0.7
+            discount *= 0.7
         if h.max_drawdown_60d and h.max_drawdown_60d < -0.3:
-            penalty *= 0.8
-        raw_weights[i] *= penalty
+            discount *= 0.8
+        raw_weights[i] *= discount
 
-    # Step 3: Normalize
+    # Step 3: Normalize to investable
     total_raw = sum(raw_weights)
     if total_raw > 0:
         for i in range(len(raw_weights)):
             raw_weights[i] = (raw_weights[i] / total_raw) * investable
     else:
-        # Equal weight if all scores missing
         equal = investable / len(holdings) if holdings else 0
         raw_weights = [equal] * len(holdings)
 
-    # Step 4: Single-holding cap (hard constraint)
-    for i in range(len(raw_weights)):
-        if raw_weights[i] > constraints.max_single_weight:
-            raw_weights[i] = constraints.max_single_weight
+    # Step 4: Single-holding cap (hard) — excess redistributed to uncapped
+    # Iterate: cap → redistribute → re-cap → ...
+    for _ in range(5):
+        excess = 0.0
+        uncapped = []
+        for i in range(len(raw_weights)):
+            if raw_weights[i] > constraints.max_single_weight:
+                excess += raw_weights[i] - constraints.max_single_weight
+                raw_weights[i] = constraints.max_single_weight
+            else:
+                uncapped.append(i)
+        if excess <= 0:
+            break
+        if not uncapped:
+            break  # all capped, excess goes to cash
+        uncapped_total = sum(raw_weights[i] for i in uncapped)
+        if uncapped_total > 0:
+            for i in uncapped:
+                raw_weights[i] += excess * (raw_weights[i] / uncapped_total)
+        else:
+            break
 
-    # Step 5: Industry cap (hard constraint)
+    # Final hard cap: guarantee no holding exceeds max_single_weight
+    # If caps make total < investable, remainder becomes cash
+    for i in range(len(raw_weights)):
+        raw_weights[i] = min(raw_weights[i], constraints.max_single_weight)
+
+    # Step 5: Industry cap (hard) — excess goes to cash, NOT redistributed
+    # This ensures industry cap is never violated by subsequent normalization
     for _ in range(3):
-        industry_weights: dict[str, float] = {}
+        industry_totals: dict[str, float] = {}
         for i, h in enumerate(holdings):
             ind = h.industry or "未分类"
-            industry_weights[ind] = industry_weights.get(ind, 0) + raw_weights[i]
+            industry_totals[ind] = industry_totals.get(ind, 0) + raw_weights[i]
 
-        for ind, total in industry_weights.items():
+        for ind, total in industry_totals.items():
             if total > constraints.max_industry_weight:
                 scale = constraints.max_industry_weight / total
                 for i, h in enumerate(holdings):
                     if (h.industry or "未分类") == ind:
                         raw_weights[i] *= scale
 
-    # Step 6: Final normalization — distribute remaining investable weight
-    total_after_caps = sum(raw_weights)
-    if total_after_caps > 0 and total_after_caps != investable:
-        scale = investable / total_after_caps
-        for i in range(len(raw_weights)):
-            raw_weights[i] *= scale
+    # NO post-cap normalization — excess becomes cash. This prevents
+    # industry/single caps from being invalidated.
 
-    # Re-apply single cap after normalization (may reduce total below investable → more cash)
-    for i in range(len(raw_weights)):
-        if raw_weights[i] > constraints.max_single_weight:
-            raw_weights[i] = constraints.max_single_weight
-
-    # Assign
+    # Assign weights
     for i, h in enumerate(holdings):
         h.raw_weight = round(raw_weights[i], 4)
         h.target_weight = round(raw_weights[i], 4)
+
+    # Step 6: Compute delta_weight and rebalance_action
+    _REBALANCE_THRESHOLD = 0.02  # 2% delta triggers rebalance suggestion
+    for h in holdings:
+        h.delta_weight = round(h.target_weight - h.current_weight, 4)
+        if h.current_weight <= 0:
+            # No current position — this is a new holding suggestion
+            h.rebalance_action = "add" if h.target_weight > 0 else None
+            h.rebalance_reason = (
+                f"建议建仓 {h.target_weight:.1%}" if h.target_weight > 0 else None
+            )
+        elif abs(h.delta_weight) <= _REBALANCE_THRESHOLD:
+            h.rebalance_action = "hold"
+            h.rebalance_reason = "仓位接近目标，维持"
+        elif h.delta_weight > 0:
+            h.rebalance_action = "add"
+            h.rebalance_reason = (
+                f"当前 {h.current_weight:.1%} → 目标 {h.target_weight:.1%}，"
+                f"建议加仓 {h.delta_weight:.1%}"
+            )
+        else:
+            h.rebalance_action = "reduce"
+            h.rebalance_reason = (
+                f"当前 {h.current_weight:.1%} → 目标 {h.target_weight:.1%}，"
+                f"建议减仓 {abs(h.delta_weight):.1%}"
+            )
 
 
 def _action_multiplier(action: str | None) -> float:

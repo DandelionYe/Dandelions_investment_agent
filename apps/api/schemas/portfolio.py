@@ -2,7 +2,7 @@
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class PortfolioPosition(BaseModel):
@@ -48,6 +48,24 @@ class PortfolioAnalyzeRequest(BaseModel):
         description="最低现金比例（0-0.5）"
     )
 
+    @model_validator(mode="after")
+    def validate_source_exclusivity(self):
+        """Ensure exactly one position source is specified."""
+        has_positions = len(self.positions) > 0
+        has_folder = self.watchlist_folder_id is not None
+        has_all = self.use_watchlist_all
+
+        sources = sum([has_positions, has_folder, has_all])
+        if sources == 0:
+            raise ValueError(
+                "请提供 positions 或 watchlist_folder_id 或 use_watchlist_all 之一"
+            )
+        if sources > 1:
+            raise ValueError(
+                "positions、watchlist_folder_id、use_watchlist_all 互斥，请只指定一种来源"
+            )
+        return self
+
 
 class HoldingResponse(BaseModel):
     symbol: str
@@ -62,7 +80,9 @@ class HoldingResponse(BaseModel):
     industry: Optional[str] = None
     pe_percentile: Optional[float] = None
     pb_percentile: Optional[float] = None
+    current_weight: float = 0.0
     target_weight: float = 0.0
+    delta_weight: float = 0.0
     rebalance_action: Optional[str] = None
     rebalance_reason: Optional[str] = None
     data_warnings: list[str] = Field(default_factory=list)

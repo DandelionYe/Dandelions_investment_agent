@@ -33,19 +33,25 @@ def analyze(
 ) -> PortfolioAnalyzeResponse:
     """Execute portfolio analysis.
 
-    Two input modes:
+    Input sources (mutually exclusive, enforced by schema validator):
     A. positions: explicit list of holdings
-    B. watchlist_folder_id / use_watchlist_all: load from user's watchlist
+    B. watchlist_folder_id: load from a specific folder
+    C. use_watchlist_all: load all enabled items
     """
     owner = scope_username(user) if not is_admin(user) else username
 
-    # ── Resolve positions ─────────────────────────────────────
+    # ── Resolve positions (schema validator ensures exactly one source) ──
     if req.positions:
         positions = [
-            {"symbol": p.symbol, "asset_type": p.asset_type, "asset_name": p.asset_name}
+            {
+                "symbol": p.symbol,
+                "asset_type": p.asset_type,
+                "asset_name": p.asset_name,
+                "current_weight": p.current_weight or 0.0,
+            }
             for p in req.positions
         ]
-    elif req.watchlist_folder_id or req.use_watchlist_all:
+    else:
         positions = _load_positions_from_watchlist(
             req.watchlist_folder_id, owner
         )
@@ -54,14 +60,10 @@ def analyze(
                 status_code=404,
                 detail="观察池中无启用的标的，请先添加观察项",
             )
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="请提供 positions 或 watchlist_folder_id / use_watchlist_all",
-        )
 
-    # ── Load research results ─────────────────────────────────
-    research_results = _load_research_results(positions, owner)
+    # ── Load research results with watchlist fallback ──────────
+    wl_snapshot_map = _build_watchlist_snapshot_map(owner)
+    research_results = _load_research_results(positions, owner, wl_snapshot_map)
 
     # ── Analyze ───────────────────────────────────────────────
     constraints = Constraints(
@@ -102,7 +104,9 @@ def analyze(
                 industry=h.industry,
                 pe_percentile=h.pe_percentile,
                 pb_percentile=h.pb_percentile,
+                current_weight=h.current_weight,
                 target_weight=h.target_weight,
+                delta_weight=h.delta_weight,
                 rebalance_action=h.rebalance_action,
                 rebalance_reason=h.rebalance_reason,
                 data_warnings=h.data_warnings,
@@ -140,53 +144,93 @@ def _load_positions_from_watchlist(
             "symbol": it["symbol"],
             "asset_type": it.get("asset_type", "stock"),
             "asset_name": it.get("asset_name", ""),
+            "current_weight": 0.0,  # watchlist doesn't track current_weight
         }
         for it in items
     ]
 
 
-def _load_research_results(
-    positions: list[dict], owner: str | None
-) -> dict[str, dict]:
-    """Load latest completed research results for each symbol.
+def _build_watchlist_snapshot_map(owner: str | None) -> dict[str, dict]:
+    """Build a map of symbol → watchlist item data for fallback."""
+    wl = get_watchlist_store()
+    if owner:
+        items = [
+            it for it in wl.get_all_enabled_items()
+            if it.get("owner_username", "default") == owner
+        ]
+    else:
+        items = wl.get_all_enabled_items()
 
-    Priority: result JSON file > task summary > empty.
+    snapshot: dict[str, dict] = {}
+    for it in items:
+        sym = it["symbol"]
+        entry: dict = {}
+        if it.get("last_score") is not None:
+            entry["score"] = it["last_score"]
+        if it.get("last_rating"):
+            entry["rating"] = it["last_rating"]
+        if it.get("last_action"):
+            entry["action"] = it["last_action"]
+        snap = it.get("last_trigger_snapshot")
+        if isinstance(snap, dict):
+            # Merge trigger snapshot data (valuation_data, risk_review, event_data)
+            for key in ("valuation_data", "risk_review", "event_data", "score"):
+                if key in snap and snap[key] is not None:
+                    entry[key] = snap[key]
+        if entry:
+            snapshot[sym] = entry
+    return snapshot
+
+
+def _load_research_results(
+    positions: list[dict], owner: str | None, wl_snapshot_map: dict[str, dict]
+) -> dict[str, dict]:
+    """Load research results with fallback chain.
+
+    Priority: result JSON > task summary > watchlist last fields > missing.
     """
     task_store = get_task_store()
     results: dict[str, dict] = {}
 
     for pos in positions:
         symbol = pos["symbol"]
+
         # Find latest completed task for this symbol
         tasks, _ = task_store.list_tasks(
             symbol=symbol, status="completed", username=owner, page=1, page_size=1
         )
-        if not tasks:
+
+        # Priority 1: result JSON file
+        if tasks:
+            task = tasks[0]
+            report_paths = task.get("report_paths") or {}
+            json_path = report_paths.get("json", "")
+            if json_path and Path(json_path).exists():
+                try:
+                    results[symbol] = json.loads(
+                        Path(json_path).read_text(encoding="utf-8")
+                    )
+                    continue
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            # Priority 2: task summary fields
+            summary: dict = {}
+            if task.get("score") is not None:
+                summary["score"] = task["score"]
+            if task.get("rating"):
+                summary["rating"] = task["rating"]
+            if task.get("action"):
+                summary["action"] = task["action"]
+            if summary:
+                results[symbol] = summary
+                continue
+
+        # Priority 3: watchlist last fields
+        if symbol in wl_snapshot_map:
+            results[symbol] = wl_snapshot_map[symbol]
             continue
 
-        task = tasks[0]
-        report_paths = task.get("report_paths") or {}
-        json_path = report_paths.get("json", "")
-
-        # Try loading full result JSON
-        if json_path and Path(json_path).exists():
-            try:
-                results[symbol] = json.loads(
-                    Path(json_path).read_text(encoding="utf-8")
-                )
-                continue
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        # Fallback: task summary fields
-        summary: dict = {}
-        if task.get("score") is not None:
-            summary["score"] = task["score"]
-        if task.get("rating"):
-            summary["rating"] = task["rating"]
-        if task.get("action"):
-            summary["action"] = task["action"]
-        if summary:
-            results[symbol] = summary
+        # Priority 4: no data → analyzer will record missing_reasons
 
     return results

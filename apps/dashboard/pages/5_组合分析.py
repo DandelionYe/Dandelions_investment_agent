@@ -4,27 +4,22 @@
 系统不会自动下单。
 """
 
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.append(str(PROJECT_ROOT))
 
 from apps.dashboard.components.login import (
     authenticated_request,
     require_login,
-    is_admin,
-    current_user,
 )
 
 st.set_page_config(page_title="组合分析", page_icon="📊", layout="wide")
 require_login()
-
-API_BASE = "http://localhost:8000"
 
 
 def _api_call(method: str, path: str, **kwargs):

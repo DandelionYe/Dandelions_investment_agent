@@ -63,15 +63,28 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
     # Holdings table
     lines.append("## 持仓明细")
     lines.append("")
-    lines.append("| 标的 | 名称 | 评分 | 评级 | 建议 | 风险 | 目标权重 |")
-    lines.append("|------|------|------|------|------|------|----------|")
+    lines.append("| 标的 | 名称 | 评分 | 评级 | 建议 | 风险 | 当前权重 | 目标权重 | 变动 | 再平衡 |")
+    lines.append("|------|------|------|------|------|------|----------|----------|------|--------|")
     for h in a.holdings:
         score_str = f"{h.score:.0f}" if h.score is not None else "N/A"
+        delta_str = f"{h.delta_weight:+.1%}" if h.current_weight > 0 else "-"
+        rebal_str = h.rebalance_action or "-"
         lines.append(
             f"| {h.symbol} | {h.asset_name} | {score_str} | {h.rating or '-'} "
-            f"| {h.action or '-'} | {h.risk_level or '-'} | {h.target_weight:.1%} |"
+            f"| {h.action or '-'} | {h.risk_level or '-'} "
+            f"| {h.current_weight:.1%} | {h.target_weight:.1%} "
+            f"| {delta_str} | {rebal_str} |"
         )
     lines.append("")
+
+    # Rebalance details
+    rebal_items = [h for h in a.holdings if h.rebalance_reason]
+    if rebal_items:
+        lines.append("### 再平衡详情")
+        lines.append("")
+        for h in rebal_items:
+            lines.append(f"- **{h.symbol}**: {h.rebalance_reason}")
+        lines.append("")
 
     # Industry exposure
     lines.append("## 行业暴露")
