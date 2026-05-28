@@ -3,14 +3,14 @@
 仅 admin 可访问。修改后需重启 FastAPI / Celery worker 生效。
 """
 
-import os
-import re
 import sys
 from pathlib import Path
 
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from apps.dashboard.settings_config import read_env, resolve_project_root, write_env
+
+PROJECT_ROOT = resolve_project_root(Path(__file__))
 sys.path.append(str(PROJECT_ROOT))
 
 from apps.dashboard.components.login import is_admin, require_login
@@ -125,64 +125,9 @@ CONFIG_GROUPS = {
 }
 
 
-# ── .env 读写 ──────────────────────────────────────────────────
-
-def read_env() -> dict[str, str]:
-    """读取 .env 文件为 dict。"""
-    env = {}
-    if not ENV_PATH.exists():
-        return env
-    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            env[key.strip()] = value.strip()
-    return env
-
-
-def write_env(updates: dict[str, str], sensitive_keys: set[str]) -> None:
-    """更新 .env 文件。敏感字段值为 **** 或空时不覆盖。"""
-    if not ENV_PATH.exists():
-        return
-    content = ENV_PATH.read_text(encoding="utf-8")
-    lines = content.splitlines()
-    new_lines = []
-    updated_keys = set()
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            new_lines.append(line)
-            continue
-        if "=" not in stripped:
-            new_lines.append(line)
-            continue
-        key, _, old_value = stripped.partition("=")
-        key = key.strip()
-        if key in updates:
-            new_value = updates[key]
-            # 敏感字段：值为 **** 或空时不覆盖
-            if key in sensitive_keys and (new_value in ("****", "")):
-                new_lines.append(line)
-            else:
-                new_lines.append(f"{key}={new_value}")
-            updated_keys.add(key)
-        else:
-            new_lines.append(line)
-
-    # 追加新增的 key
-    for key, value in updates.items():
-        if key not in updated_keys and value:
-            new_lines.append(f"{key}={value}")
-
-    ENV_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-
-
 # ── 渲染 ──────────────────────────────────────────────────────
 
-env_values = read_env()
+env_values = read_env(ENV_PATH)
 
 tab_names = list(CONFIG_GROUPS.keys()) + ["状态"]
 tabs = st.tabs(tab_names)
@@ -239,7 +184,7 @@ for i, (group_name, fields) in enumerate(CONFIG_GROUPS.items()):
         st.divider()
         if st.button(f"💾 保存 {group_name} 配置", key=f"save_{group_name}",
                      use_container_width=True):
-            write_env(changes, SENSITIVE_KEYS)
+            write_env(ENV_PATH, changes, SENSITIVE_KEYS)
             st.success(f"✅ {group_name} 配置已保存到 .env。需重启 FastAPI 和 Celery worker 生效。")
 
 # ── 状态 Tab ──────────────────────────────────────────────────

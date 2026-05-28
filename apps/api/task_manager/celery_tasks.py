@@ -236,7 +236,9 @@ def watchlist_scheduler_check() -> dict:
             scan_single_watchlist_item.delay(str(item["id"]), trigger_type="scheduled",
                                              batch_id=batch_id)
 
-    # 2. 条件触发器检查
+    # 2. 条件触发器检查 — use centralized evaluator
+    from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+
     condition_triggered: dict[str, list[dict]] = {}  # owner -> items
     all_enabled = store.get_all_enabled_items()
     for item in all_enabled:
@@ -246,7 +248,7 @@ def watchlist_scheduler_check() -> dict:
 
         sc = item.get("schedule_config") or {}
         ct = sc.get("condition_triggers") or {}
-        if not ct or all(v is None for v in ct.values()):
+        if not ct or all(v is None or v == [] for v in ct.values()):
             continue
 
         # 防重复：距上次扫描至少 30 分钟
@@ -259,8 +261,12 @@ def watchlist_scheduler_check() -> dict:
             except (ValueError, TypeError):
                 pass
 
+        # Fetch quote if needed
         quote = None
-        need_quote = ct.get("price_change_pct") is not None or ct.get("volume_spike_ratio") is not None
+        need_quote = any(
+            ct.get(k) is not None
+            for k in ("price_change_pct", "volume_spike_ratio")
+        )
         if need_quote:
             try:
                 from services.data.qmt_realtime_quote import get_latest_price_data
@@ -268,20 +274,12 @@ def watchlist_scheduler_check() -> dict:
             except Exception:
                 pass
 
-        triggered = False
-        # 价格变动触发
-        if ct.get("price_change_pct") and quote:
-            if abs(quote.get("change_pct", 0)) >= ct["price_change_pct"]:
-                triggered = True
-        # 成交量异动触发
-        if ct.get("volume_spike_ratio") and quote:
-            if quote.get("volume_ratio", 1.0) >= ct["volume_spike_ratio"]:
-                triggered = True
-        # 评分阈值触发（基于上次扫描的评分）
-        if ct.get("score_threshold") and item.get("last_score", 101) >= ct["score_threshold"]:
-            triggered = True
+        # Use centralized evaluator
+        eval_result = evaluate_condition_triggers(
+            item, quote=quote, latest_result=item.get("last_trigger_snapshot")
+        )
 
-        if triggered:
+        if eval_result.triggered:
             owner = item.get("owner_username", "default")
             condition_triggered.setdefault(owner, []).append(item)
             triggered_ids.add(item_id)
@@ -447,6 +445,15 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
             rating=result.get("rating"),
             action=result.get("action"),
         )
+
+        # Build trigger snapshot for future condition evaluation
+        trigger_snapshot = {
+            "valuation_data": result.get("valuation_data"),
+            "risk_review": result.get("risk_review"),
+            "event_data": result.get("event_data"),
+            "score": result.get("score"),
+        }
+        wl_store.update_item_trigger_snapshot(item_id, trigger_snapshot)
 
         # 计算下次扫描时间
         mode = schedule_config.get("mode", "cron")

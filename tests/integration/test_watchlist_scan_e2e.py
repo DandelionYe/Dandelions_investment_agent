@@ -235,6 +235,97 @@ class TestConditionTriggerEvaluation:
         ct = item["schedule_config"]["condition_triggers"]
         assert all(v is None for v in ct.values())
 
+    def test_pe_trigger_fires(self, stores):
+        """PE-TTM <= 阈值时触发。"""
+        _, wl_store = stores
+        folder = wl_store.create_folder("f")
+        item = wl_store.add_item(
+            "600519.SH", "stock", folder["id"],
+            schedule_config={"condition_triggers": {"pe_ttm_max": 20.0}},
+        )
+        wl_store.update_item_trigger_snapshot(item["id"], {
+            "valuation_data": {"pe_ttm": 15.0},
+        })
+        updated = wl_store.get_item(item["id"])
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        result = evaluate_condition_triggers(
+            updated, latest_result=updated.get("last_trigger_snapshot")
+        )
+        assert result.triggered is True
+
+    def test_risk_trigger_fires(self, stores):
+        """风险等级 >= 阈值时触发。"""
+        _, wl_store = stores
+        folder = wl_store.create_folder("f")
+        item = wl_store.add_item(
+            "600519.SH", "stock", folder["id"],
+            schedule_config={"condition_triggers": {"risk_level_min": "medium"}},
+        )
+        wl_store.update_item_trigger_snapshot(item["id"], {
+            "risk_review": {"risk_level": "high"},
+        })
+        updated = wl_store.get_item(item["id"])
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        result = evaluate_condition_triggers(
+            updated, latest_result=updated.get("last_trigger_snapshot")
+        )
+        assert result.triggered is True
+
+    def test_event_keyword_trigger_fires(self, stores):
+        """事件关键词匹配时触发。"""
+        _, wl_store = stores
+        folder = wl_store.create_folder("f")
+        item = wl_store.add_item(
+            "600519.SH", "stock", folder["id"],
+            schedule_config={"condition_triggers": {"event_keywords": ["问询函"]}},
+        )
+        wl_store.update_item_trigger_snapshot(item["id"], {
+            "event_data": {"announcements": [{"title": "关于收到问询函的公告"}]},
+        })
+        updated = wl_store.get_item(item["id"])
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        result = evaluate_condition_triggers(
+            updated, latest_result=updated.get("last_trigger_snapshot")
+        )
+        assert result.triggered is True
+
+    def test_no_snapshot_no_trigger(self, stores):
+        """无 last_trigger_snapshot 时估值/风险/事件不触发。"""
+        _, wl_store = stores
+        folder = wl_store.create_folder("f")
+        item = wl_store.add_item(
+            "600519.SH", "stock", folder["id"],
+            schedule_config={
+                "condition_triggers": {"pe_ttm_max": 20.0, "event_keywords": ["问询函"]},
+            },
+        )
+        from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
+        result = evaluate_condition_triggers(item, latest_result=None)
+        assert result.triggered is False
+        assert len(result.missing_reasons) >= 2
+
+    def test_owner_isolation_preserved(self, stores):
+        """新增字段不影响 owner 隔离。"""
+        _, wl_store = stores
+        fa = wl_store.create_folder("fa", owner_username="alice")
+        fb = wl_store.create_folder("fb", owner_username="bob")
+        wl_store.add_item(
+            "600519.SH", "stock", fa["id"],
+            schedule_config={"condition_triggers": {"pe_ttm_max": 20.0}},
+            owner_username="alice",
+        )
+        wl_store.add_item(
+            "000001.SZ", "stock", fb["id"],
+            schedule_config={"condition_triggers": {"pe_ttm_max": 20.0}},
+            owner_username="bob",
+        )
+        alice_items = [i for i in wl_store.get_all_enabled_items()
+                       if i.get("owner_username") == "alice"]
+        bob_items = [i for i in wl_store.get_all_enabled_items()
+                     if i.get("owner_username") == "bob"]
+        assert len(alice_items) == 1
+        assert len(bob_items) == 1
+
 
 @pytest.mark.integration
 class TestAntiRepeat:

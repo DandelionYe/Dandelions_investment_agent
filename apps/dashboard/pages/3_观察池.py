@@ -387,7 +387,8 @@ if items:
 
             # 条件触发器
             ct = sc.get("condition_triggers") or {}
-            active_triggers = {k: v for k, v in ct.items() if v is not None}
+            active_triggers = {k: v for k, v in ct.items()
+                               if v is not None and v != []}
             if active_triggers:
                 trigger_parts = []
                 if "price_change_pct" in active_triggers:
@@ -396,6 +397,18 @@ if items:
                     trigger_parts.append(f"评分 >= {active_triggers['score_threshold']}")
                 if "volume_spike_ratio" in active_triggers:
                     trigger_parts.append(f"量比 >= {active_triggers['volume_spike_ratio']}")
+                if "pe_ttm_max" in active_triggers:
+                    trigger_parts.append(f"PE <= {active_triggers['pe_ttm_max']}")
+                if "pb_mrq_max" in active_triggers:
+                    trigger_parts.append(f"PB <= {active_triggers['pb_mrq_max']}")
+                if "valuation_percentile_max" in active_triggers:
+                    trigger_parts.append(f"估值分位 <= {active_triggers['valuation_percentile_max']}%")
+                if "risk_level_min" in active_triggers:
+                    trigger_parts.append(f"风险 >= {active_triggers['risk_level_min']}")
+                if "event_severity_min" in active_triggers:
+                    trigger_parts.append(f"事件 >= {active_triggers['event_severity_min']}")
+                if "event_keywords" in active_triggers:
+                    trigger_parts.append(f"事件关键词: {','.join(active_triggers['event_keywords'])}")
                 st.caption("🔔 条件触发: " + " | ".join(trigger_parts))
 
             # 标签
@@ -457,25 +470,81 @@ if items:
             with st.expander("🔔 编辑条件触发器", expanded=False):
                 sc = item.get("schedule_config", {})
                 ct = sc.get("condition_triggers") or {}
+
+                st.caption("基础条件")
                 edit_ct1, edit_ct2, edit_ct3 = st.columns(3)
                 with edit_ct1:
                     new_price = st.number_input(
                         "涨跌幅（%）", min_value=0.0, max_value=20.0,
                         value=float(ct.get("price_change_pct") or 0), step=0.5,
                         key=f"edit_ct_price_{item['id']}",
+                        help="0 表示不启用",
                     )
                 with edit_ct2:
                     new_score = st.number_input(
                         "评分阈值", min_value=0.0, max_value=100.0,
                         value=float(ct.get("score_threshold") or 0), step=5.0,
                         key=f"edit_ct_score_{item['id']}",
+                        help="0 表示不启用",
                     )
                 with edit_ct3:
                     new_volume = st.number_input(
                         "量比倍数", min_value=0.0, max_value=100.0,
                         value=float(ct.get("volume_spike_ratio") or 0), step=0.5,
                         key=f"edit_ct_volume_{item['id']}",
+                        help="0 表示不启用",
                     )
+
+                st.caption("估值条件")
+                edit_val1, edit_val2, edit_val3 = st.columns(3)
+                with edit_val1:
+                    new_pe = st.number_input(
+                        "PE-TTM 上限", min_value=0.0, max_value=1000.0,
+                        value=float(ct.get("pe_ttm_max") or 0), step=1.0,
+                        key=f"edit_ct_pe_{item['id']}",
+                        help="0 表示不启用",
+                    )
+                with edit_val2:
+                    new_pb = st.number_input(
+                        "PB-MRQ 上限", min_value=0.0, max_value=100.0,
+                        value=float(ct.get("pb_mrq_max") or 0), step=0.1,
+                        key=f"edit_ct_pb_{item['id']}",
+                        help="0 表示不启用",
+                    )
+                with edit_val3:
+                    new_pct = st.number_input(
+                        "估值分位上限（%）", min_value=0.0, max_value=100.0,
+                        value=float(ct.get("valuation_percentile_max") or 0), step=5.0,
+                        key=f"edit_ct_pct_{item['id']}",
+                        help="0 表示不启用",
+                    )
+
+                st.caption("风险/事件条件")
+                edit_risk1, edit_risk2, edit_risk3 = st.columns(3)
+                with edit_risk1:
+                    risk_options = ["不启用", "low", "medium", "high"]
+                    current_risk = ct.get("risk_level_min") or "不启用"
+                    new_risk = st.selectbox(
+                        "最低风险等级", options=risk_options,
+                        index=risk_options.index(current_risk) if current_risk in risk_options else 0,
+                        key=f"edit_ct_risk_{item['id']}",
+                    )
+                with edit_risk2:
+                    sev_options = ["不启用", "low", "medium", "high"]
+                    current_sev = ct.get("event_severity_min") or "不启用"
+                    new_sev = st.selectbox(
+                        "最低事件严重性", options=sev_options,
+                        index=sev_options.index(current_sev) if current_sev in sev_options else 0,
+                        key=f"edit_ct_sev_{item['id']}",
+                    )
+                with edit_risk3:
+                    current_kw = ",".join(ct.get("event_keywords") or [])
+                    new_kw = st.text_input(
+                        "事件关键词", value=current_kw,
+                        key=f"edit_ct_kw_{item['id']}",
+                        help="逗号分隔，如：问询函,处罚,退市",
+                    )
+
                 if st.button("保存触发器", key=f"save_ct_{item['id']}"):
                     new_ct = {}
                     if new_price > 0:
@@ -484,6 +553,19 @@ if items:
                         new_ct["score_threshold"] = new_score
                     if new_volume > 0:
                         new_ct["volume_spike_ratio"] = new_volume
+                    if new_pe > 0:
+                        new_ct["pe_ttm_max"] = new_pe
+                    if new_pb > 0:
+                        new_ct["pb_mrq_max"] = new_pb
+                    if new_pct > 0:
+                        new_ct["valuation_percentile_max"] = new_pct
+                    if new_risk != "不启用":
+                        new_ct["risk_level_min"] = new_risk
+                    if new_sev != "不启用":
+                        new_ct["event_severity_min"] = new_sev
+                    kw_list = [k.strip() for k in new_kw.split(",") if k.strip()]
+                    if kw_list:
+                        new_ct["event_keywords"] = kw_list
                     new_sc = {**sc, "condition_triggers": new_ct}
                     if st.session_state["wl_api_ok"]:
                         _api_call("PUT", f"/api/v1/watchlist/items/{item['id']}",
@@ -543,19 +625,35 @@ if st.session_state.get("wl_show_add_item"):
                                               key="add_cron",
                                               help="工作日 9:00 = 0 9 * * 1-5")
 
-                st.caption("条件触发器（满足任一条件自动触发扫描）")
-                ct_price = st.number_input(
-                    "涨跌幅阈值（%）", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
-                    key="add_ct_price", help="如 5.0 表示涨跌幅超 5% 时触发，0 表示不启用",
-                )
-                ct_score = st.number_input(
-                    "评分阈值", min_value=0.0, max_value=100.0, value=0.0, step=5.0,
-                    key="add_ct_score", help="如 80 表示上次评分 ≥80 时触发，0 表示不启用",
-                )
-                ct_volume = st.number_input(
-                    "成交量异动倍数", min_value=0.0, max_value=100.0, value=0.0, step=0.5,
-                    key="add_ct_volume", help="如 3.0 表示成交量超 3 倍均量时触发，0 表示不启用",
-                )
+                st.caption("条件触发器（满足任一条件自动触发扫描，0 表示不启用）")
+                ct_col1, ct_col2, ct_col3 = st.columns(3)
+                with ct_col1:
+                    ct_price = st.number_input(
+                        "涨跌幅阈值（%）", min_value=0.0, max_value=20.0, value=0.0, step=0.5,
+                        key="add_ct_price",
+                    )
+                    ct_score = st.number_input(
+                        "评分阈值", min_value=0.0, max_value=100.0, value=0.0, step=5.0,
+                        key="add_ct_score",
+                    )
+                with ct_col2:
+                    ct_volume = st.number_input(
+                        "成交量异动倍数", min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+                        key="add_ct_volume",
+                    )
+                    ct_pe = st.number_input(
+                        "PE-TTM 上限", min_value=0.0, max_value=1000.0, value=0.0, step=1.0,
+                        key="add_ct_pe",
+                    )
+                with ct_col3:
+                    ct_pb = st.number_input(
+                        "PB-MRQ 上限", min_value=0.0, max_value=100.0, value=0.0, step=0.1,
+                        key="add_ct_pb",
+                    )
+                    ct_pct = st.number_input(
+                        "估值分位上限（%）", min_value=0.0, max_value=100.0, value=0.0, step=5.0,
+                        key="add_ct_pct",
+                    )
 
                 tag_options = {t["id"]: t["name"] for t in tags}
                 tag_ids = []
@@ -576,6 +674,12 @@ if st.session_state.get("wl_show_add_item"):
                                 condition_triggers["score_threshold"] = ct_score
                             if ct_volume > 0:
                                 condition_triggers["volume_spike_ratio"] = ct_volume
+                            if ct_pe > 0:
+                                condition_triggers["pe_ttm_max"] = ct_pe
+                            if ct_pb > 0:
+                                condition_triggers["pb_mrq_max"] = ct_pb
+                            if ct_pct > 0:
+                                condition_triggers["valuation_percentile_max"] = ct_pct
                             body = {
                                 "symbol": symbol,
                                 "asset_type": asset_type,

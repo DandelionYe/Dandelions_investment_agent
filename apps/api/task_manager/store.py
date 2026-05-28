@@ -316,6 +316,7 @@ CREATE TABLE IF NOT EXISTS watchlist_items (
     last_action TEXT,
     last_scan_at TEXT,
     next_scan_at TEXT,
+    last_trigger_snapshot TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(owner_username, symbol)
@@ -372,6 +373,7 @@ _MIGRATION_COLUMNS = [
     ("watchlist_items", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
     ("watchlist_tags", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
     ("watchlist_batches", "owner_username", "TEXT NOT NULL DEFAULT 'default'"),
+    ("watchlist_items", "last_trigger_snapshot", "TEXT"),
 ]
 
 _CREATE_WATCHLIST_ITEMS_SQL = """
@@ -392,6 +394,7 @@ CREATE TABLE watchlist_items (
     last_action TEXT,
     last_scan_at TEXT,
     next_scan_at TEXT,
+    last_trigger_snapshot TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE(owner_username, symbol)
@@ -847,6 +850,23 @@ class WatchlistStore:
             finally:
                 conn.close()
 
+    def update_item_trigger_snapshot(
+        self, item_id: str, snapshot: dict | None
+    ) -> None:
+        """Store a narrow JSON snapshot of trigger-relevant data."""
+        snapshot_json = json.dumps(snapshot, ensure_ascii=False) if snapshot else None
+        now = utc_now_iso()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    "UPDATE watchlist_items SET last_trigger_snapshot = ?, updated_at = ? WHERE id = ?",
+                    (snapshot_json, now, item_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
     # ── 标签 CRUD ──────────────────────────────────────────────
 
     def create_tag(self, name: str, color: str = "#6366f1",
@@ -1103,6 +1123,11 @@ class WatchlistStore:
                 d["schedule_config"] = json.loads(d["schedule_config"])
             except (json.JSONDecodeError, TypeError):
                 d["schedule_config"] = {}
+        if isinstance(d.get("last_trigger_snapshot"), str):
+            try:
+                d["last_trigger_snapshot"] = json.loads(d["last_trigger_snapshot"])
+            except (json.JSONDecodeError, TypeError):
+                d["last_trigger_snapshot"] = None
         if "enabled" in d:
             d["enabled"] = bool(d["enabled"])
         return d

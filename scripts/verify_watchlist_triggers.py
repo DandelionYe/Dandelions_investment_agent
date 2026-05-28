@@ -7,6 +7,8 @@ Usage:
     python scripts/verify_watchlist_triggers.py
     python scripts/verify_watchlist_triggers.py --data-source qmt
     python scripts/verify_watchlist_triggers.py --data-source akshare
+    python scripts/verify_watchlist_triggers.py --ensure-sample
+    python scripts/verify_watchlist_triggers.py --require-triggered-and-untriggered
     python scripts/verify_watchlist_triggers.py --output-dir storage/artifacts/verification
 """
 
@@ -31,9 +33,12 @@ class TriggerCheckResult:
     folder_name: str
     condition_triggers: dict[str, Any]
     quote: dict[str, Any] | None
+    latest_result: dict[str, Any] | None
     triggered: bool
     trigger_reasons: list[str]
-    status: str  # pass | fail | skipped | error
+    missing_reasons: list[str]
+    categories_evaluated: list[str]
+    status: str  # pass | fail | skipped | error | warning
     message: str
 
 
@@ -44,7 +49,13 @@ class VerificationReport:
     data_source: str
     overall_status: str
     total_items: int
+    configured_items: int
     triggered_count: int
+    non_triggered_count: int
+    skipped_count: int
+    quote_error_count: int
+    categories_seen: list[str]
+    acceptance_status: str
     checks: list[dict[str, Any]]
 
 
@@ -52,9 +63,8 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _new_id() -> str:
-    import uuid
-    return uuid.uuid4().hex[:8]
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def get_quote_qmt(symbol: str) -> dict[str, Any] | None:
@@ -70,7 +80,6 @@ def get_quote_akshare(symbol: str) -> dict[str, Any] | None:
     """通过 AKShare 获取行情（使用最近日线数据）。"""
     try:
         import akshare as ak
-        # 将 600519.SH 转为 akshare 格式
         code = symbol.split(".")[0]
         df = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="qfq")
         if df is None or len(df) < 2:
@@ -92,148 +101,248 @@ def get_quote_akshare(symbol: str) -> dict[str, Any] | None:
         return {"error": str(exc)}
 
 
-def evaluate_triggers(
-    condition_triggers: dict[str, Any],
-    quote: dict[str, Any] | None,
-    last_score: float | None,
-) -> tuple[bool, list[str]]:
-    """评估条件触发器是否满足。
-
-    Returns:
-        (triggered, reasons)
-    """
-    triggered = False
-    reasons = []
-
-    ct = condition_triggers
-    if not ct or all(v is None for v in ct.values()):
-        return False, ["无条件触发器配置"]
-
-    # 价格变动触发
-    if ct.get("price_change_pct") is not None:
-        if quote and "change_pct" in quote:
-            if abs(quote["change_pct"]) >= ct["price_change_pct"]:
-                triggered = True
-                reasons.append(
-                    f"涨跌幅 {quote['change_pct']:.2f}% >= 阈值 {ct['price_change_pct']}%"
-                )
-            else:
-                reasons.append(
-                    f"涨跌幅 {quote['change_pct']:.2f}% < 阈值 {ct['price_change_pct']}%"
-                )
-        elif quote and "error" in quote:
-            reasons.append(f"行情获取失败: {quote['error']}")
-        else:
-            reasons.append("行情数据不可用")
-
-    # 成交量异动触发
-    if ct.get("volume_spike_ratio") is not None:
-        if quote and "volume_ratio" in quote:
-            if quote["volume_ratio"] >= ct["volume_spike_ratio"]:
-                triggered = True
-                reasons.append(
-                    f"量比 {quote['volume_ratio']:.2f} >= 阈值 {ct['volume_spike_ratio']}"
-                )
-            else:
-                reasons.append(
-                    f"量比 {quote['volume_ratio']:.2f} < 阈值 {ct['volume_spike_ratio']}"
-                )
-        elif quote and "error" in quote:
-            reasons.append(f"行情获取失败: {quote['error']}")
-        else:
-            reasons.append("行情数据不可用")
-
-    # 评分阈值触发
-    if ct.get("score_threshold") is not None:
-        if last_score is not None:
-            if last_score >= ct["score_threshold"]:
-                triggered = True
-                reasons.append(
-                    f"评分 {last_score:.1f} >= 阈值 {ct['score_threshold']}"
-                )
-            else:
-                reasons.append(
-                    f"评分 {last_score:.1f} < 阈值 {ct['score_threshold']}"
-                )
-        else:
-            reasons.append("无历史评分（首次扫描前无法触发）")
-
-    return triggered, reasons
-
-
-def verify_watchlist(data_source: str = "qmt") -> VerificationReport:
+def verify_watchlist(
+    data_source: str = "qmt",
+    ensure_sample: bool = False,
+    require_triggered_and_untriggered: bool = False,
+) -> VerificationReport:
     """执行观察池条件触发器验收。"""
     from apps.api.task_manager.store import get_watchlist_store
+    from apps.api.task_manager.watchlist_triggers import evaluate_condition_triggers
 
     store = get_watchlist_store()
+
+    if ensure_sample:
+        _ensure_sample_items(store)
+
     items = store.get_all_enabled_items()
 
     checks: list[TriggerCheckResult] = []
     triggered_count = 0
+    non_triggered_count = 0
+    skipped_count = 0
+    quote_error_count = 0
+    categories_seen: set[str] = set()
+    configured_items = 0
 
     for item in items:
         symbol = item["symbol"]
         sc = item.get("schedule_config") or {}
         ct = sc.get("condition_triggers") or {}
-        last_score = item.get("last_score")
 
-        # 获取行情
-        if data_source == "qmt":
-            quote = get_quote_qmt(symbol)
-        elif data_source == "akshare":
-            quote = get_quote_akshare(symbol)
-        else:
-            quote = None
-
-        # 评估触发器
-        if not ct or all(v is None for v in ct.values()):
+        has_any = any(v is not None and v != [] for v in ct.values())
+        if not has_any:
             checks.append(TriggerCheckResult(
                 symbol=symbol,
                 asset_type=item.get("asset_type", "stock"),
                 folder_name=item.get("folder_name", ""),
                 condition_triggers=ct,
-                quote=quote,
+                quote=None,
+                latest_result=None,
                 triggered=False,
-                trigger_reasons=["无条件触发器配置"],
+                trigger_reasons=[],
+                missing_reasons=[],
+                categories_evaluated=[],
                 status="skipped",
                 message="未配置条件触发器",
             ))
+            skipped_count += 1
             continue
 
-        triggered, reasons = evaluate_triggers(ct, quote, last_score)
-        if triggered:
+        configured_items += 1
+
+        quote = None
+        need_quote = any(
+            ct.get(k) is not None
+            for k in ("price_change_pct", "volume_spike_ratio")
+        )
+        if need_quote:
+            if data_source == "qmt":
+                quote = get_quote_qmt(symbol)
+            elif data_source == "akshare":
+                quote = get_quote_akshare(symbol)
+            if quote and "error" in quote:
+                quote_error_count += 1
+
+        eval_result = evaluate_condition_triggers(
+            item, quote=quote,
+            latest_result=item.get("last_trigger_snapshot"),
+        )
+
+        if eval_result.triggered:
             triggered_count += 1
+        else:
+            non_triggered_count += 1
+
+        categories_seen.update(eval_result.categories_evaluated)
 
         has_quote_error = quote and "error" in quote
-        status = "pass" if not has_quote_error else "warning"
+        has_missing = len(eval_result.missing_reasons) > 0
+        status = "pass"
+        if has_quote_error:
+            status = "warning"
+        if has_missing and not eval_result.triggered:
+            status = "warning"
 
+        all_reasons = eval_result.reasons + eval_result.missing_reasons
         checks.append(TriggerCheckResult(
             symbol=symbol,
             asset_type=item.get("asset_type", "stock"),
             folder_name=item.get("folder_name", ""),
             condition_triggers=ct,
             quote=quote,
-            triggered=triggered,
-            trigger_reasons=reasons,
+            latest_result=item.get("last_trigger_snapshot"),
+            triggered=eval_result.triggered,
+            trigger_reasons=eval_result.reasons,
+            missing_reasons=eval_result.missing_reasons,
+            categories_evaluated=eval_result.categories_evaluated,
             status=status,
-            message="; ".join(reasons),
+            message="; ".join(all_reasons),
         ))
 
-    overall = "pass"
+    acceptance_status = "pass"
+    if require_triggered_and_untriggered and configured_items > 0:
+        if triggered_count == 0:
+            acceptance_status = "fail"
+        if non_triggered_count == 0:
+            acceptance_status = "fail"
+
     if any(c.status == "fail" for c in checks):
-        overall = "fail"
-    elif any(c.status == "warning" for c in checks):
-        overall = "warning"
+        acceptance_status = "fail"
+    elif any(c.status == "warning" for c in checks) and acceptance_status != "fail":
+        acceptance_status = "warning"
+
+    overall = "pass" if acceptance_status == "pass" else acceptance_status
 
     return VerificationReport(
-        run_id=_new_id(),
+        run_id=_timestamp(),
         generated_at=_now_iso(),
         data_source=data_source,
         overall_status=overall,
         total_items=len(items),
+        configured_items=configured_items,
         triggered_count=triggered_count,
+        non_triggered_count=non_triggered_count,
+        skipped_count=skipped_count,
+        quote_error_count=quote_error_count,
+        categories_seen=sorted(categories_seen),
+        acceptance_status=acceptance_status,
         checks=[asdict(c) for c in checks],
     )
+
+
+def _ensure_sample_items(store) -> None:
+    """Create or update sample watchlist items for verification."""
+    folders = store.list_folders()
+    sample_folder = next((f for f in folders if f["name"] == "验收样本"), None)
+    if sample_folder:
+        folder_id = sample_folder["id"]
+    elif folders:
+        folder_id = folders[0]["id"]
+    else:
+        folder = store.create_folder("验收样本", description="自动创建的验收观察池样本")
+        folder_id = folder["id"]
+
+    samples = [
+        {
+            "symbol": "600519.SH",
+            "asset_type": "stock",
+            "asset_name": "贵州茅台",
+            "schedule_config": {
+                "mode": "manual_only",
+                "condition_triggers": {
+                    "price_change_pct": 5.0,
+                    "pe_ttm_max": 30.0,
+                },
+            },
+        },
+        {
+            "symbol": "000001.SZ",
+            "asset_type": "stock",
+            "asset_name": "平安银行",
+            "schedule_config": {
+                "mode": "manual_only",
+                "condition_triggers": {
+                    "score_threshold": 90.0,
+                    "volume_spike_ratio": 5.0,
+                },
+            },
+        },
+    ]
+
+    existing_items = store.get_all_enabled_items()
+    existing_symbols = {i["symbol"] for i in existing_items}
+
+    for sample in samples:
+        if sample["symbol"] not in existing_symbols:
+            try:
+                store.add_item(
+                    symbol=sample["symbol"],
+                    asset_type=sample["asset_type"],
+                    folder_id=folder_id,
+                    schedule_config=sample["schedule_config"],
+                    asset_name=sample.get("asset_name", ""),
+                )
+            except Exception:
+                pass
+
+
+def write_artifacts(
+    report: VerificationReport,
+    output_dir: Path,
+) -> tuple[Path, Path]:
+    """Write report artifacts to output directory."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = report.run_id
+    report_dict = asdict(report)
+
+    json_path = output_dir / f"watchlist_triggers_{timestamp}.json"
+    json_path.write_text(
+        json.dumps(report_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    latest_json = output_dir / "watchlist_triggers_latest.json"
+    latest_json.write_text(
+        json.dumps(report_dict, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    md_lines = [
+        "# Watchlist Triggers Verification Report",
+        f"- Generated: {report.generated_at}",
+        f"- Data Source: {report.data_source}",
+        f"- Overall: **{report.overall_status.upper()}**",
+        f"- Acceptance: **{report.acceptance_status.upper()}**",
+        "",
+        "## Summary",
+        f"- Total items: {report.total_items}",
+        f"- Configured items: {report.configured_items}",
+        f"- Triggered: {report.triggered_count}",
+        f"- Non-triggered: {report.non_triggered_count}",
+        f"- Skipped: {report.skipped_count}",
+        f"- Quote errors: {report.quote_error_count}",
+        f"- Categories seen: {', '.join(report.categories_seen) or 'none'}",
+        "",
+        "## Checks",
+        "",
+    ]
+    for c in report.checks:
+        icon = {"pass": "PASS", "fail": "FAIL", "warning": "WARN", "skipped": "SKIP",
+                "error": "ERR"}.get(c["status"], "?")
+        trig = "TRIGGERED" if c["triggered"] else ""
+        md_lines.append(f"- [{icon}] {c['symbol']} ({c['folder_name']}) {trig}")
+        md_lines.append(f"  - Config: {c['condition_triggers']}")
+        if c["trigger_reasons"]:
+            md_lines.append(f"  - Reasons: {'; '.join(c['trigger_reasons'])}")
+        if c["missing_reasons"]:
+            md_lines.append(f"  - Missing: {'; '.join(c['missing_reasons'])}")
+
+    md_path = output_dir / f"watchlist_triggers_{timestamp}.md"
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    latest_md = output_dir / "watchlist_triggers_latest.md"
+    latest_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    return json_path, md_path
 
 
 def main():
@@ -242,46 +351,53 @@ def main():
                         help="数据源（默认 qmt）")
     parser.add_argument("--output-dir", default="storage/artifacts/verification",
                         help="输出目录")
+    parser.add_argument("--ensure-sample", action="store_true",
+                        help="创建/更新验收观察池样本")
+    parser.add_argument("--require-triggered-and-untriggered", action="store_true",
+                        help="要求至少 1 个触发和 1 个未触发的已配置观察项")
     args = parser.parse_args()
 
-    report = verify_watchlist(data_source=args.data_source)
+    report = verify_watchlist(
+        data_source=args.data_source,
+        ensure_sample=args.ensure_sample,
+        require_triggered_and_untriggered=args.require_triggered_and_untriggered,
+    )
 
-    # 输出到终端
     print(f"\n{'='*60}")
-    print(f"观察池条件触发器验收报告")
+    print("观察池条件触发器验收报告")
     print(f"{'='*60}")
     print(f"数据源: {report.data_source}")
     print(f"观察项总数: {report.total_items}")
-    print(f"触发数量: {report.triggered_count}")
+    print(f"已配置: {report.configured_items}")
+    print(f"触发: {report.triggered_count}")
+    print(f"未触发: {report.non_triggered_count}")
+    print(f"跳过: {report.skipped_count}")
+    print(f"行情错误: {report.quote_error_count}")
+    print(f"评估类别: {', '.join(report.categories_seen) or 'none'}")
     print(f"总体状态: {report.overall_status}")
+    print(f"验收状态: {report.acceptance_status}")
     print()
 
     for check in report.checks:
-        icon = {"pass": "✅", "warning": "⚠️", "fail": "❌", "skipped": "⏭"}.get(check["status"], "?")
-        trigger_icon = "🔔" if check["triggered"] else "  "
-        print(f"{icon} {trigger_icon} {check['symbol']} ({check['folder_name']})")
-        print(f"   配置: {check['condition_triggers']}")
-        if check["quote"] and "error" not in check["quote"]:
-            q = check["quote"]
-            print(f"   行情: 收盘={q.get('close', '-')}, 涨跌={q.get('change_pct', '-'):.2f}%, 量比={q.get('volume_ratio', '-')}")
-        elif check["quote"] and "error" in check["quote"]:
-            print(f"   行情: 获取失败 — {check['quote']['error']}")
-        print(f"   判断: {check['message']}")
+        icon = {"pass": "PASS", "warning": "WARN", "fail": "FAIL",
+                "skipped": "SKIP"}.get(check["status"], "?")
+        trig = "TRIGGERED" if check["triggered"] else ""
+        print(f"[{icon}] {check['symbol']} ({check['folder_name']}) {trig}")
+        print(f"   Config: {check['condition_triggers']}")
+        if check["trigger_reasons"]:
+            print(f"   Reasons: {'; '.join(check['trigger_reasons'])}")
+        if check["missing_reasons"]:
+            print(f"   Missing: {'; '.join(check['missing_reasons'])}")
         print()
 
-    # 保存到文件
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = output_dir / f"watchlist_triggers_{timestamp}.json"
-    json_path.write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
-
-    # latest.json 符号链接
-    latest_path = output_dir / "watchlist_triggers_latest.json"
-    latest_path.write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path, md_path = write_artifacts(report, output_dir)
 
     print(f"报告已保存: {json_path}")
-    print(f"最新报告: {latest_path}")
+    print(f"最新报告: {output_dir / 'watchlist_triggers_latest.json'}")
+
+    if report.acceptance_status == "fail":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

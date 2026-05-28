@@ -20,6 +20,33 @@ class ConditionTriggers(BaseModel):
         default=None, ge=0, le=100,
         description="成交量异动倍数（如 3.0 表示成交量超 3 倍均量触发扫描）"
     )
+    # ── Valuation triggers ────────────────────────────────────
+    pe_ttm_max: Optional[float] = Field(
+        default=None, ge=0,
+        description="PE-TTM 上限阈值（如 20 表示 PE ≤ 20 时触发）"
+    )
+    pb_mrq_max: Optional[float] = Field(
+        default=None, ge=0,
+        description="PB-MRQ 上限阈值（如 2.0 表示 PB ≤ 2.0 时触发）"
+    )
+    valuation_percentile_max: Optional[float] = Field(
+        default=None, ge=0, le=100,
+        description="估值分位上限（如 30 表示估值分位 ≤ 30% 时触发，即低估区间）"
+    )
+    # ── Risk triggers ─────────────────────────────────────────
+    risk_level_min: Optional[Literal["low", "medium", "high"]] = Field(
+        default=None,
+        description="最低风险等级阈值（low/medium/high，触发当实际风险 ≥ 此级别）"
+    )
+    # ── Event triggers ────────────────────────────────────────
+    event_severity_min: Optional[Literal["low", "medium", "high"]] = Field(
+        default=None,
+        description="最低事件严重性阈值（low/medium/high，触发当事件严重性 ≥ 此级别）"
+    )
+    event_keywords: list[str] = Field(
+        default_factory=list,
+        description="事件关键词列表（任一关键词出现在公告标题中即触发）"
+    )
 
 
 class ScheduleConfig(BaseModel):
@@ -42,7 +69,7 @@ class ScheduleConfig(BaseModel):
 
     condition_triggers: ConditionTriggers = Field(
         default_factory=ConditionTriggers,
-        description="条件触发器：价格变动/成交量异动/评分阈值，满足任一触发自动扫描",
+        description="条件触发器：价格/评分/量比/估值/风险/事件条件，满足任一触发自动扫描",
     )
     pause_until: Optional[str] = Field(
         default=None, description="暂停到指定时间（ISO 8601），null 表示未暂停"
