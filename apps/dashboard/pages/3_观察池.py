@@ -28,6 +28,10 @@ st.set_page_config(page_title="观察池", page_icon="📋", layout="wide")
 
 require_login()
 
+if not is_admin():
+    st.error("仅管理员可访问观察池。")
+    st.stop()
+
 # ── API / 独立模式检测 ────────────────────────────────────────
 
 API_BASE = "http://localhost:8000"

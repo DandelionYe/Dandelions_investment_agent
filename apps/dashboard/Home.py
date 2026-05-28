@@ -8,7 +8,7 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from apps.dashboard.components.login import require_login
+from apps.dashboard.components.login import require_login, is_admin
 
 st.set_page_config(page_title="Dandelions 投研智能体", page_icon="📈", layout="wide")
 require_login()
@@ -18,7 +18,10 @@ st.caption("量化研究 + LLM 辩论 + 决策保护器 + 报告生成")
 
 st.divider()
 
-col1, col2, col3 = st.columns(3)
+if is_admin():
+    col1, col2, col3 = st.columns(3)
+else:
+    col1, col2 = st.columns(2)
 
 with col1:
     with st.container(border=True):
@@ -28,19 +31,20 @@ with col1:
 
 with col2:
     with st.container(border=True):
-        st.subheader("📋 观察池")
-        st.caption("管理关注标的：文件夹 + 标签两级分组、逐票自定义 cron 定时扫描、条件触发器、批量扫描和评分历史追踪。")
-        st.page_link("pages/3_观察池.py", label="进入观察池 →", icon="📋")
-
-with col3:
-    with st.container(border=True):
         st.subheader("📊 报告库")
         st.caption("浏览历史生成的研究报告，按评级/操作建议筛选，查看详细评分和辩论结果。")
         st.page_link("pages/2_Report_Library.py", label="进入报告库 →", icon="📊")
 
-col4, col5, col6 = st.columns(3)
-with col4:
-    with st.container(border=True):
-        st.subheader("⚙️ 系统设置")
-        st.caption("可视化编辑 .env 配置：LLM、数据源、QMT、行业分类、CSMAR、新闻、认证等。仅管理员可访问。")
-        st.page_link("pages/4_系统设置.py", label="进入系统设置 →", icon="⚙️")
+if is_admin():
+    with col3:
+        with st.container(border=True):
+            st.subheader("📋 观察池")
+            st.caption("管理关注标的：文件夹 + 标签两级分组、逐票自定义 cron 定时扫描、条件触发器、批量扫描和评分历史追踪。")
+            st.page_link("pages/3_观察池.py", label="进入观察池 →", icon="📋")
+
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        with st.container(border=True):
+            st.subheader("⚙️ 系统设置")
+            st.caption("可视化编辑 .env 配置：LLM、数据源、QMT、行业分类、CSMAR、新闻、认证等。仅管理员可访问。")
+            st.page_link("pages/4_系统设置.py", label="进入系统设置 →", icon="⚙️")

@@ -52,6 +52,17 @@ def _seed_admin_user() -> None:
         )
 
 
+def _seed_guest_user() -> None:
+    """首次启动时自动创建普通用户 Guest1。"""
+    store = get_user_store()
+    if not store.get_user_by_username("Guest1"):
+        store.create_user(
+            username="Guest1",
+            password_hash=hash_password("753951456852"),
+            role="user",
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化 DB/Redis/Admin，关闭时清理资源。"""
@@ -59,6 +70,7 @@ async def lifespan(app: FastAPI):
     get_watchlist_store()
     get_user_store()
     _seed_admin_user()
+    _seed_guest_user()
     await get_async_redis()
     yield
     await close_async_redis()
