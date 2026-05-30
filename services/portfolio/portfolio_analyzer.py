@@ -165,6 +165,9 @@ def _analyze_holding(
     h.rating = result.get("rating")
     h.action = result.get("action")
 
+    if h.score is None:
+        h.data_warnings.append("缺少 score，无法参与目标权重分配")
+
     # Risk level from decision_guard or risk_review
     guard = result.get("decision_guard") or {}
     h.risk_level = guard.get("risk_level")

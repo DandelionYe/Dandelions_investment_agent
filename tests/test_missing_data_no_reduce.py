@@ -149,3 +149,76 @@ class TestMissingDataNoReduce:
         # With target < current (0.30), should be reduce
         assert h.rebalance_action == "reduce"
         assert h.delta_weight < 0
+
+
+class TestScoreMissingWarning:
+    """Verify data_warnings when result exists but score is None."""
+
+    @pytest.mark.parametrize("score_value", [_SENTINEL, None], ids=["omitted", "explicit_none"])
+    def test_result_without_score_gets_warning(self, score_value):
+        """Result exists but score is missing → holding gets a data_warning."""
+        positions = [{"symbol": "A.SH", "asset_type": "stock", "current_weight": 0.30}]
+        result = {
+            "rating": "B+",
+            "action": "观察",
+            "valuation_data": {"industry_name": "银行"},
+        }
+        if score_value is not _SENTINEL:
+            result["score"] = score_value
+        research_results = {"A.SH": result}
+
+        analysis = analyze_portfolio(positions, research_results)
+        h = analysis.holdings[0]
+
+        assert any("缺少 score" in w for w in h.data_warnings), \
+            f"Expected '缺少 score' warning, got {h.data_warnings}"
+
+    def test_result_with_valid_score_no_warning(self):
+        """Result with valid score → no '缺少 score' warning."""
+        positions = [{"symbol": "A.SH", "asset_type": "stock"}]
+        research_results = {
+            "A.SH": {
+                "score": 70,
+                "rating": "B",
+                "action": "观察",
+                "valuation_data": {"industry_name": "银行"},
+            }
+        }
+
+        analysis = analyze_portfolio(positions, research_results)
+        h = analysis.holdings[0]
+
+        assert not any("缺少 score" in w for w in h.data_warnings)
+
+    def test_completely_missing_result_no_score_warning(self):
+        """Result is None → uses missing_reasons, not data_warnings for score."""
+        positions = [{"symbol": "A.SH", "asset_type": "stock"}]
+        analysis = analyze_portfolio(positions, {})
+        h = analysis.holdings[0]
+
+        assert "无研究结果" in h.missing_reasons
+        assert not any("缺少 score" in w for w in h.data_warnings)
+
+    def test_portfolio_level_aggregates_score_warning(self):
+        """Portfolio-level data_warnings should include the holding-level score warning."""
+        positions = [
+            {"symbol": "A.SH", "asset_type": "stock"},
+            {"symbol": "B.SH", "asset_type": "stock"},
+        ]
+        research_results = {
+            "A.SH": {
+                "score": 70, "rating": "B", "action": "观察",
+                "valuation_data": {"industry_name": "银行"},
+            },
+            "B.SH": {
+                "rating": "B+", "action": "观察",
+                "valuation_data": {"industry_name": "科技"},
+            },
+        }
+
+        analysis = analyze_portfolio(positions, research_results)
+
+        # Portfolio-level warnings should include B.SH's score warning
+        assert any("B.SH" in w and "缺少 score" in w for w in analysis.data_warnings)
+        # A.SH has valid score, no warning
+        assert not any("A.SH" in w and "缺少 score" in w for w in analysis.data_warnings)
