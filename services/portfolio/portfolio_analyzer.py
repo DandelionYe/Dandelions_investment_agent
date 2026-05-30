@@ -319,6 +319,14 @@ def _allocate_weights(
     _REBALANCE_THRESHOLD = 0.02  # 2% delta triggers rebalance suggestion
     for h in holdings:
         h.delta_weight = round(h.target_weight - h.current_weight, 4)
+
+        # Skip rebalance logic when research data is missing.
+        # "No data" does NOT mean "should reduce position".
+        if h.score is None:
+            h.rebalance_action = None
+            h.rebalance_reason = "缺少研究结果，无法给出目标仓位和再平衡建议"
+            continue
+
         if h.current_weight <= 0:
             # No current position — this is a new holding suggestion
             h.rebalance_action = "add" if h.target_weight > 0 else None
