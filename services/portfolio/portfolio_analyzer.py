@@ -323,6 +323,7 @@ def _allocate_weights(
         # Skip rebalance logic when research data is missing.
         # "No data" does NOT mean "should reduce position".
         if h.score is None:
+            h.delta_weight = 0.0  # no data → no meaningful delta
             h.rebalance_action = None
             h.rebalance_reason = "缺少研究结果，无法给出目标仓位和再平衡建议"
             continue
