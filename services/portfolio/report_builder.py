@@ -66,13 +66,20 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
     lines.append("| 标的 | 名称 | 评分 | 评级 | 建议 | 风险 | 当前权重 | 目标权重 | 变动 | 再平衡 |")
     lines.append("|------|------|------|------|------|------|----------|----------|------|--------|")
     for h in a.holdings:
-        score_str = f"{h.score:.0f}" if h.score is not None else "N/A"
-        delta_str = f"{h.delta_weight:+.1%}" if h.current_weight > 0 else "-"
+        has_score = h.score is not None
+        score_str = f"{h.score:.0f}" if has_score else "N/A"
+        target_str = f"{h.target_weight:.1%}" if has_score else "N/A"
+        if not has_score:
+            delta_str = "N/A"
+        elif h.current_weight > 0:
+            delta_str = f"{h.delta_weight:+.1%}"
+        else:
+            delta_str = "-"
         rebal_str = h.rebalance_action or "-"
         lines.append(
             f"| {h.symbol} | {h.asset_name} | {score_str} | {h.rating or '-'} "
             f"| {h.action or '-'} | {h.risk_level or '-'} "
-            f"| {h.current_weight:.1%} | {h.target_weight:.1%} "
+            f"| {h.current_weight:.1%} | {target_str} "
             f"| {delta_str} | {rebal_str} |"
         )
     lines.append("")

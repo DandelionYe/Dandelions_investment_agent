@@ -149,6 +149,8 @@ class TestMissingDataNoReduce:
         # With target < current (0.30), should be reduce
         assert h.rebalance_action == "reduce"
         assert h.delta_weight < 0
+        # score=0 should NOT trigger "缺少 score" warning (guards against `is None` → `not score` refactor)
+        assert not any("缺少 score" in w for w in h.data_warnings)
 
 
 class TestScoreMissingWarning:
