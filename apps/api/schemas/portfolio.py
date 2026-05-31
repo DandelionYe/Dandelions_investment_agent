@@ -1,8 +1,8 @@
 """Pydantic models for portfolio analysis API."""
 
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 
 class PortfolioPosition(BaseModel):
@@ -22,8 +22,10 @@ class PortfolioAnalyzeRequest(BaseModel):
         description="显式持仓列表（与 watchlist_folder_id 二选一）"
     )
     # Source B: from watchlist
-    watchlist_folder_id: Optional[str] = Field(
-        default=None, min_length=1,
+    watchlist_folder_id: Optional[
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    ] = Field(
+        default=None,
         description="从观察池文件夹读取持仓（与 positions 二选一）"
     )
     use_watchlist_all: bool = Field(
@@ -49,8 +51,8 @@ class PortfolioAnalyzeRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_source_exclusivity(self):
-        """Ensure exactly one position source is specified."""
+    def validate_request(self):
+        """Validate source exclusivity and weight constraints."""
         has_positions = len(self.positions) > 0
         has_folder = self.watchlist_folder_id is not None
         has_all = self.use_watchlist_all
@@ -64,6 +66,13 @@ class PortfolioAnalyzeRequest(BaseModel):
             raise ValueError(
                 "positions、watchlist_folder_id、use_watchlist_all 互斥，请只指定一种来源"
             )
+        # Validate total current_weight does not exceed 100%
+        if has_positions:
+            total = sum(p.current_weight for p in self.positions if p.current_weight is not None)
+            if total > 1.0001:
+                raise ValueError(
+                    f"当前权重合计为 {total:.1%}，不能超过 100%"
+                )
         return self
 
 

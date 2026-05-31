@@ -158,6 +158,11 @@ else:
         if not positions:
             st.warning("请至少输入一个标的")
         else:
+            total_weight = sum(p["current_weight"] for p in positions)
+            if total_weight > 1.0001:
+                st.error(f"当前权重合计为 {total_weight:.1%}，不能超过 100%")
+                st.stop()
+
             body = {
                 "positions": positions,
                 "risk_profile": risk_profile,

@@ -6,6 +6,9 @@ Verifies RBAC, endpoint registration, and schema constraints without booting Fas
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
+
+from apps.api.schemas.portfolio import PortfolioAnalyzeRequest
 
 ROUTER_PATH = Path(__file__).resolve().parents[1] / "apps" / "api" / "routers" / "portfolio.py"
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "apps" / "api" / "schemas" / "portfolio.py"
@@ -78,6 +81,78 @@ class TestPortfolioSchemaContract:
         """Response model must have artifact_paths."""
         src = SCHEMA_PATH.read_text(encoding="utf-8")
         assert "artifact_paths" in src
+
+
+class TestPortfolioSchemaValidation:
+
+    def test_watchlist_folder_id_rejects_blank_string(self):
+        """Blank whitespace string must be rejected — strip_whitespace + min_length."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(watchlist_folder_id="   ")
+
+    def test_watchlist_folder_id_strips_whitespace(self):
+        """Leading/trailing whitespace must be stripped."""
+        r = PortfolioAnalyzeRequest(watchlist_folder_id="  abc  ")
+        assert r.watchlist_folder_id == "abc"
+
+    def test_watchlist_folder_id_accepts_valid(self):
+        """Valid folder ID must be accepted."""
+        r = PortfolioAnalyzeRequest(watchlist_folder_id="folder_123")
+        assert r.watchlist_folder_id == "folder_123"
+
+    def test_watchlist_folder_id_accepts_none(self):
+        """None must be accepted (field is optional)."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "A.SH"}])
+        assert r.watchlist_folder_id is None
+
+    def test_current_weight_total_over_100_rejected(self):
+        """Total current_weight exceeding 100% must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[
+                {"symbol": "A.SH", "current_weight": 0.8},
+                {"symbol": "B.SH", "current_weight": 0.7},
+            ])
+
+    def test_current_weight_total_exactly_100_accepted(self):
+        """Total current_weight exactly 100% must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[
+            {"symbol": "A.SH", "current_weight": 0.6},
+            {"symbol": "B.SH", "current_weight": 0.4},
+        ])
+        assert len(r.positions) == 2
+
+    def test_current_weight_total_under_100_accepted(self):
+        """Total current_weight under 100% must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[
+            {"symbol": "A.SH", "current_weight": 0.5},
+            {"symbol": "B.SH", "current_weight": 0.3},
+        ])
+        assert len(r.positions) == 2
+
+    def test_current_weight_none_positions_accepted(self):
+        """Positions without current_weight must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[
+            {"symbol": "A.SH"},
+            {"symbol": "B.SH"},
+        ])
+        assert len(r.positions) == 2
+
+    def test_current_weight_mixed_none_and_specified(self):
+        """Mix of specified and unspecified weights — only specified ones are summed."""
+        r = PortfolioAnalyzeRequest(positions=[
+            {"symbol": "A.SH", "current_weight": 0.5},
+            {"symbol": "B.SH"},  # None → excluded from sum
+        ])
+        assert len(r.positions) == 2
+
+    def test_current_weight_mixed_over_100_rejected(self):
+        """Mixed weights where specified ones exceed 100% must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[
+                {"symbol": "A.SH", "current_weight": 0.6},
+                {"symbol": "B.SH", "current_weight": 0.5},
+                {"symbol": "C.SH"},  # None → excluded
+            ])
 
 
 class TestAnalyzerNoTradeLanguage:
