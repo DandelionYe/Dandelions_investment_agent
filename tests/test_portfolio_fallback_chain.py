@@ -85,6 +85,48 @@ class TestFallbackChain:
         results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
         assert results["A.SH"]["score"] == 85  # From JSON file, not task
 
+    def test_priority1_invalid_json_falls_back_to_priority2(self, tmp_path):
+        """When a JSON file is malformed, fall through to Priority 2 silently."""
+        json_file = tmp_path / "corrupt.json"
+        json_file.write_text("not valid json {{{", encoding="utf-8")
+
+        positions = [{"symbol": "A.SH"}]
+        task = _make_task("A.SH", score=75, rating="B", json_path=json_file)
+        tasks_by_symbol = {"A.SH": [task]}
+        wl_snapshot_map = {
+            "A.SH": _make_snapshot_entry(
+                valuation_data={"pe_percentile": 0.3},
+                risk_review="低风险",
+            )
+        }
+
+        results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
+        r = results["A.SH"]
+
+        # Should fall back to Priority 2: task summary enriched by snapshot
+        assert r["score"] == 75  # From task, not corrupt file
+        assert r["rating"] == "B"
+        assert r["valuation_data"] == {"pe_percentile": 0.3}  # From snapshot
+        assert r["risk_review"] == "低风险"
+
+    def test_priority1_unreadable_json_falls_back_to_priority2(self, tmp_path):
+        """When a JSON file path doesn't exist, fall through to Priority 2."""
+        # Point to a file that doesn't exist
+        json_file = tmp_path / "nonexistent.json"
+
+        positions = [{"symbol": "A.SH"}]
+        task = _make_task("A.SH", score=75, json_path=json_file)
+        tasks_by_symbol = {"A.SH": [task]}
+        wl_snapshot_map = {
+            "A.SH": _make_snapshot_entry(score=60)
+        }
+
+        results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
+        r = results["A.SH"]
+
+        # Should fall back to Priority 2: task summary
+        assert r["score"] == 75  # From task
+
     def test_priority2_task_summary_enriched_by_snapshot(self):
         """When no JSON file, task summary is enriched with snapshot data (Priority 2)."""
         positions = [{"symbol": "A.SH"}]
