@@ -183,8 +183,8 @@ def _asset_data(symbol: str = "600519.SH") -> dict:
 # Test: existing data not overwritten
 # ---------------------------------------------------------------------------
 
-def test_csmar_does_not_overwrite_existing_qmt_fields():
-    """When QMT provides valid pe_ttm/pb_mrq, CSMAR must not overwrite them."""
+def test_csmar_overwrites_pe_ttm_but_preserves_pb():
+    """CSMAR overrides pe_ttm (QMT cross-table mismatch risk), preserves pb_mrq."""
     td = _make_tmp_dir()
     try:
         db = os.path.join(td, "csmar.sqlite")
@@ -207,8 +207,10 @@ def test_csmar_does_not_overwrite_existing_qmt_fields():
         result = service.build(_asset_data("600519.SH"))
         v = result["data"]["valuation_data"]
 
-        # QMT values must be preserved
-        assert v["pe_ttm"] == 15.0
+        # pe_ttm: CSMAR overrides QMT (cross-table report_period mismatch risk)
+        assert v["pe_ttm"] == pytest.approx(25.0)
+        assert v.get("pe_ttm_source") == "local_csmar_daily_derived"
+        # pb_mrq: CSMAR does not overwrite (no cross-table risk)
         assert v["pb_mrq"] == 3.0
         # CSMAR should fill ps_ttm (was None)
         assert v["ps_ttm"] == pytest.approx(12.0)

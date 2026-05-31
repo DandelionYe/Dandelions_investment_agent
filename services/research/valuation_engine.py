@@ -406,9 +406,24 @@ class ValuationService:
             valuation_data["dividend_yield_date"] = data.get("dividend_yield_date")
             csmar_fields_applied.append("dividend_yield")
 
-        # PE / PB / PS / PCF: only fill if currently None.
-        # Store as pe_ttm / pb_mrq / ps_ttm but mark source clearly.
-        for csmar_key, val_key in [("pe", "pe_ttm"), ("pb", "pb_mrq"), ("ps", "ps_ttm")]:
+        # PE / PB / PS / PCF: fill if currently None.
+        # pe_ttm: CSMAR 优先覆盖（QMT 跨表 report_period 错配可能导致计算值偏差）
+        csmar_pe = _to_float(data.get("pe"))
+        if csmar_pe is not None:
+            if valuation_data.get("pe_ttm") is None:
+                valuation_data["pe_ttm"] = csmar_pe
+                valuation_data["pe_ttm_source"] = self.csmar_provider.provider
+                valuation_data["pe_ttm_date"] = data.get("pe_date")
+                csmar_fields_applied.append("pe")
+            else:
+                # 覆盖 QMT 计算值（CSMAR 日度数据更可靠）
+                valuation_data["pe_ttm"] = csmar_pe
+                valuation_data["pe_ttm_source"] = self.csmar_provider.provider
+                valuation_data["pe_ttm_date"] = data.get("pe_date")
+                if "pe" not in csmar_fields_applied:
+                    csmar_fields_applied.append("pe")
+        # pb / ps: 仅在缺失时填充（无跨表错配风险）
+        for csmar_key, val_key in [("pb", "pb_mrq"), ("ps", "ps_ttm")]:
             csmar_val = _to_float(data.get(csmar_key))
             if csmar_val is not None and valuation_data.get(val_key) is None:
                 valuation_data[val_key] = csmar_val

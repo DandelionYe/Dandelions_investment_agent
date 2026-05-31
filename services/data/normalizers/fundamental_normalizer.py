@@ -82,6 +82,10 @@ class FundamentalNormalizer:
             ANN_DATE_FIELDS,
         )
 
+        # 各表独立取 report_period，避免跨表错配导致年化因子错误
+        income_period = _first_present(income, REPORT_PERIOD_FIELDS) or report_period
+        cashflow_period = _first_present(cashflow, REPORT_PERIOD_FIELDS) or report_period
+
         revenue = _to_float(_first_present(income, REVENUE_FIELDS))
         net_profit = _to_float(_first_present(income, NET_PROFIT_FIELDS))
         operating_cashflow = _to_float(_first_present(cashflow, OPERATING_CASHFLOW_FIELDS))
@@ -136,9 +140,9 @@ class FundamentalNormalizer:
             "current_ratio": _to_float(_first_present(pershare, ["流动比率", "current_ratio"])),
             "eps": _to_float(_first_present(pershare, ["基本每股收益", "s_fa_eps_basic", "eps"])),
             "bps": _to_float(_first_present(pershare, ["每股净资产", "s_fa_bps", "bps"])),
-            "revenue_ttm": _annualize_statement_amount(revenue, report_period),
-            "net_profit_ttm": _annualize_statement_amount(net_profit, report_period),
-            "operating_cashflow_ttm": _annualize_statement_amount(operating_cashflow, report_period),
+            "revenue_ttm": _annualize_statement_amount(revenue, income_period),
+            "net_profit_ttm": _annualize_statement_amount(net_profit, income_period),
+            "operating_cashflow_ttm": _annualize_statement_amount(operating_cashflow, cashflow_period),
             "history": [],
         }
 
