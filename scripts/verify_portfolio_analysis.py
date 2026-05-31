@@ -121,20 +121,51 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
                 "detail": path,
             })
 
-    # Check 8: risk profile differences. Total score can stay equal when
-    # holdings are capped, so compare target weights directly.
-    conservative_weights = {
-        h["symbol"]: h["target_weight"]
-        for h in results["conservative"]["analysis"]["holdings"]
-    }
-    aggressive_weights = {
-        h["symbol"]: h["target_weight"]
-        for h in results["aggressive"]["analysis"]["holdings"]
-    }
+    # Check 8: risk profile differences — business-level assertions.
+    # Conservative should be more cautious than aggressive:
+    #   - high-risk holdings get lower weight in conservative
+    #   - cash weight is higher in conservative
+    #   - differences must exceed rounding noise (> 0.5%)
+    _RISK_DIFF_THRESHOLD = 0.005  # 0.5% minimum meaningful difference
+
+    conservative = results["conservative"]["analysis"]
+    aggressive = results["aggressive"]["analysis"]
+
+    cons_weights = {h["symbol"]: h["target_weight"] for h in conservative["holdings"]}
+    aggr_weights = {h["symbol"]: h["target_weight"] for h in aggressive["holdings"]}
+    cons_risk_map = {h["symbol"]: h.get("risk_level") for h in conservative["holdings"]}
+
+    # 8a: High-risk holdings should have lower (or equal) weight in conservative
+    high_risk_violations = []
+    for symbol, risk in cons_risk_map.items():
+        if risk == "high":
+            cw = cons_weights.get(symbol, 0.0)
+            aw = aggr_weights.get(symbol, 0.0)
+            if cw > aw + _RISK_DIFF_THRESHOLD:
+                high_risk_violations.append(
+                    f"{symbol}: conservative={cw:.1%} > aggressive={aw:.1%}"
+                )
+    checks.append({
+        "check": "high_risk_lower_in_conservative",
+        "status": "pass" if not high_risk_violations else "fail",
+        "detail": "; ".join(high_risk_violations) if high_risk_violations else "ok",
+    })
+
+    # 8b: Conservative cash weight should be >= aggressive cash weight
+    cons_cash = conservative["target_cash_weight"]
+    aggr_cash = aggressive["target_cash_weight"]
+    cash_ok = cons_cash >= aggr_cash - _RISK_DIFF_THRESHOLD
+    checks.append({
+        "check": "conservative_cash_geq_aggressive",
+        "status": "pass" if cash_ok else "fail",
+        "detail": f"conservative={cons_cash:.1%} vs aggressive={aggr_cash:.1%}",
+    })
+
+    # 8c: At least one symbol should have a meaningful weight difference
     changed_symbols = [
         symbol
-        for symbol, conservative_weight in conservative_weights.items()
-        if abs(conservative_weight - aggressive_weights.get(symbol, 0.0)) > 0.001
+        for symbol, cw in cons_weights.items()
+        if abs(cw - aggr_weights.get(symbol, 0.0)) > _RISK_DIFF_THRESHOLD
     ]
     checks.append({
         "check": "risk_profiles_differ",
