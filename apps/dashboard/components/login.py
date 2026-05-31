@@ -222,31 +222,6 @@ def api_post(path: str, json_data: dict | None = None) -> dict | None:
         return None
 
 
-def _try_refresh_and_retry(method: str, path: str, **kwargs) -> dict | None:
-    """尝试刷新 token 并重试请求。"""
-    if not _refresh_auth_token():
-        return None
-    try:
-        if method == "GET":
-            r = requests.get(
-                f"{API_BASE}{path}",
-                headers=auth_headers(),
-                timeout=10,
-            )
-        else:
-            r = requests.post(
-                f"{API_BASE}{path}",
-                json=kwargs.get("json_data"),
-                headers=auth_headers(),
-                timeout=10,
-            )
-        if r.status_code < 400:
-            return r.json()
-    except Exception:
-        _logout()
-    return None
-
-
 def _refresh_auth_token() -> bool:
     """刷新 access token，成功时更新 session_state 并同步 URL。"""
     refresh_token = st.session_state.get("refresh_token")

@@ -29,8 +29,8 @@ st.set_page_config(
 
 require_login()
 
-# 每 10 秒自动刷新，确保新完成的报告及时显示
-st_autorefresh(interval=10_000, key="report_library_refresh")
+# 每 30 秒自动刷新，确保新完成的报告及时显示
+st_autorefresh(interval=30_000, key="report_library_refresh")
 
 API_BASE = "http://localhost:8000"
 

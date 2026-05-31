@@ -21,6 +21,60 @@ from apps.api.websocket.progress_publisher import publish_batch_progress, publis
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+def _generate_and_store_reports(
+    result: dict,
+    task_id: str,
+    *,
+    report_template: str | None = None,
+    report_theme: str | None = None,
+) -> dict[str, str]:
+    """生成 JSON/MD/HTML/PDF 报告并复制到 storage/reports/<task_id>/。
+
+    返回 report_paths dict（pdf key 在失败时为空字符串）。
+    JSON/MD/HTML 失败会抛异常；PDF 失败静默降级。
+    """
+    from services.report.html_builder import save_html_report
+    from services.report.json_builder import save_json_result
+    from services.report.markdown_builder import save_markdown_report
+    from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
+    from services.report.template_config import resolve_report_config
+
+    cfg, theme = resolve_report_config(report_template, report_theme)
+    json_path = Path(save_json_result(result))
+    md_path = Path(save_markdown_report(result, template_config=cfg))
+    html_path = Path(save_html_report(str(md_path), theme=theme))
+
+    reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    for src, dst_name in [
+        (json_path, "result.json"),
+        (md_path, "report.md"),
+        (html_path, "report.html"),
+    ]:
+        dst = reports_dir / dst_name
+        if src.exists() and not dst.exists():
+            shutil.copy2(str(src), str(dst))
+
+    pdf_path = ""
+    try:
+        pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
+        pdf_dst = reports_dir / "report.pdf"
+        if pdf_src.exists() and not pdf_dst.exists():
+            shutil.copy2(str(pdf_src), str(pdf_dst))
+        if pdf_dst.exists():
+            pdf_path = str(pdf_dst)
+    except Exception:
+        pass
+
+    return {
+        "json": str(reports_dir / "result.json"),
+        "markdown": str(reports_dir / "report.md"),
+        "html": str(reports_dir / "report.html"),
+        "pdf": pdf_path,
+    }
+
+
 @celery_app.task(
     bind=True,
     name="research.run_single",
@@ -39,12 +93,6 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
     Returns:
         包含 score/rating/action/final_opinion 的摘要 dict。
     """
-    from services.report.html_builder import save_html_report
-    from services.report.json_builder import save_json_result
-    from services.report.markdown_builder import save_markdown_report
-    from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
-    from services.report.template_config import resolve_report_config
-
     store = get_task_store()
 
     store.update_status(
@@ -100,41 +148,11 @@ def run_research_task(self, task_id: str, params: dict) -> dict:
         )
         publish_task_progress(task_id, TaskStatus.RUNNING, 0.7, "生成报告文件...", symbol)
 
-        reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        # Resolve report template/theme from task params
-        cfg, theme = resolve_report_config(report_template, report_theme)
-
-        json_path_actual = Path(save_json_result(result))
-        markdown_path_actual = Path(save_markdown_report(result, template_config=cfg))
-        html_path_actual = Path(save_html_report(str(markdown_path_actual), theme=theme))
-
-        for src, dst_name in [
-            (json_path_actual, "result.json"),
-            (markdown_path_actual, "report.md"),
-            (html_path_actual, "report.html"),
-        ]:
-            dst = reports_dir / dst_name
-            if src.exists() and not dst.exists():
-                shutil.copy2(str(src), str(dst))
-
-        pdf_path = None
-        try:
-            pdf_path_actual = Path(save_pdf_report_with_playwright(str(html_path_actual)))
-            pdf_dst = reports_dir / "report.pdf"
-            if pdf_path_actual.exists() and not pdf_dst.exists():
-                shutil.copy2(str(pdf_path_actual), str(pdf_dst))
-            pdf_path = str(pdf_dst)
-        except Exception:
-            pdf_path = None
-
-        report_paths = {
-            "json": str(reports_dir / "result.json"),
-            "markdown": str(reports_dir / "report.md"),
-            "html": str(reports_dir / "report.html"),
-            "pdf": pdf_path or "",
-        }
+        report_paths = _generate_and_store_reports(
+            result, task_id,
+            report_template=report_template,
+            report_theme=report_theme,
+        )
 
         completed_at = utc_now_iso()
         store.update_result(
@@ -440,45 +458,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
         # 报告生成单独 try/except，失败不丢弃研究结果
         report_paths = {}
         try:
-            from services.report.html_builder import save_html_report
-            from services.report.json_builder import save_json_result
-            from services.report.markdown_builder import save_markdown_report
-            from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
-            from services.report.template_config import resolve_report_config
-
-            cfg, theme = resolve_report_config(None, None)
-            json_path = Path(save_json_result(result))
-            md_path = Path(save_markdown_report(result, template_config=cfg))
-            html_path = Path(save_html_report(str(md_path), theme=theme))
-
-            reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
-            reports_dir.mkdir(parents=True, exist_ok=True)
-
-            pdf_path = None
-            for src, dst_name in [
-                (json_path, "result.json"),
-                (md_path, "report.md"),
-                (html_path, "report.html"),
-            ]:
-                dst = reports_dir / dst_name
-                if src.exists() and not dst.exists():
-                    shutil.copy2(str(src), str(dst))
-            try:
-                pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
-                pdf_dst = reports_dir / "report.pdf"
-                if pdf_src.exists() and not pdf_dst.exists():
-                    shutil.copy2(str(pdf_src), str(pdf_dst))
-                if pdf_dst.exists():
-                    pdf_path = str(pdf_dst)
-            except Exception:
-                pdf_path = None
-
-            report_paths = {
-                "json": str(reports_dir / "result.json"),
-                "markdown": str(reports_dir / "report.md"),
-                "html": str(reports_dir / "report.html"),
-                "pdf": pdf_path or "",
-            }
+            report_paths = _generate_and_store_reports(result, task_id)
         except Exception:
             pass  # 报告生成失败不阻断研究结果保存
 
