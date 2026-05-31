@@ -49,6 +49,7 @@ class TaskSummary(BaseModel):
     rating: Optional[str] = None
     action: Optional[str] = None
     final_opinion: Optional[str] = None
+    created_by: Optional[str] = None
     created_at: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None

@@ -178,6 +178,7 @@ class TaskManager:
                     "rating": t.get("rating"),
                     "action": t.get("action"),
                     "final_opinion": t.get("final_opinion"),
+                    "created_by": t.get("created_by", ""),
                     "created_at": t["created_at"],
                     "started_at": t.get("started_at"),
                     "completed_at": t.get("completed_at"),

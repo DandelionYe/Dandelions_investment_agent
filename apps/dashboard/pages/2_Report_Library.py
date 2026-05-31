@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.append(str(PROJECT_ROOT))
@@ -27,6 +28,9 @@ st.set_page_config(
 )
 
 require_login()
+
+# 每 10 秒自动刷新，确保新完成的报告及时显示
+st_autorefresh(interval=10_000, key="report_library_refresh")
 
 API_BASE = "http://localhost:8000"
 
@@ -178,6 +182,7 @@ for t in tasks:
         "rating": t.get("rating"),
         "action": t.get("action"),
         "status": t.get("status"),
+        "created_by": t.get("created_by", ""),
         "created_at": t.get("created_at"),
         "completed_at": t.get("completed_at"),
         "available_formats": available_formats,
@@ -229,6 +234,10 @@ display_columns = [
     "action",
     "completed_at",
 ]
+
+# admin 用户额外显示"生成者"列
+if is_admin():
+    display_columns.insert(2, "created_by")
 
 st.dataframe(
     filtered_df[display_columns],

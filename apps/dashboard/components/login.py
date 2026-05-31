@@ -54,6 +54,19 @@ def _clear_query_params() -> None:
     st.query_params.clear()
 
 
+def _clear_session_only() -> None:
+    """清除 session_state 中的登录信息，但保留 URL query params。
+
+    用于 token 刷新失败时——URL 中的旧 token 仍可尝试恢复，
+    避免刷新浏览器后因 URL 被清掉而必须重新登录。
+    只有用户主动退出时才同时清 URL。
+    """
+    st.session_state.pop("auth_token", None)
+    st.session_state.pop("refresh_token", None)
+    st.session_state.pop("auth_user", None)
+    st.session_state.pop("auth_role", None)
+
+
 def require_login() -> str | None:
     """在侧边栏渲染登录表单，阻止未登录用户访问。
 
@@ -235,10 +248,10 @@ def _try_refresh_and_retry(method: str, path: str, **kwargs) -> dict | None:
 
 
 def _refresh_auth_token() -> bool:
-    """刷新 access token，成功时更新 session_state。"""
+    """刷新 access token，成功时更新 session_state 并同步 URL。"""
     refresh_token = st.session_state.get("refresh_token")
     if not refresh_token:
-        _logout()
+        _clear_session_only()
         return False
     try:
         resp = requests.post(
@@ -251,19 +264,19 @@ def _refresh_auth_token() -> bool:
             st.session_state["auth_token"] = data["access_token"]
             st.session_state["refresh_token"] = data["refresh_token"]
             _fetch_user_info(data["access_token"])
+            # 同步更新 URL，确保刷新浏览器后能用最新 token 恢复
+            username = st.session_state.get("auth_user", "")
+            _save_to_query_params(data["access_token"], data["refresh_token"], username)
             return True
         else:
-            _logout()
+            _clear_session_only()
     except Exception:
-        _logout()
+        _clear_session_only()
     return False
 
 
 def _logout() -> None:
-    """清除登录状态。"""
+    """主动退出登录：清除 session 和 URL，跳转到登录页。"""
     _clear_query_params()
-    st.session_state.pop("auth_token", None)
-    st.session_state.pop("refresh_token", None)
-    st.session_state.pop("auth_user", None)
-    st.session_state.pop("auth_role", None)
+    _clear_session_only()
     st.rerun()

@@ -75,9 +75,11 @@ class TestLoginContract:
             "apps/dashboard/components/login.py", encoding="utf-8"
         ).read()
         assert '"auth_role"' in source
-        # 确保 _logout 函数中清除 auth_role
+        # _logout 委托 _clear_session_only 清除 auth_role，验证两者都存在
         logout_section = source[source.index("def _logout"):]
-        assert "auth_role" in logout_section
+        assert "_clear_session_only" in logout_section
+        clear_section = source[source.index("def _clear_session_only"):]
+        assert "auth_role" in clear_section
 
     def test_authenticated_request_sends_bearer(self):
         """authenticated_request 继续携带 Bearer token。"""
