@@ -86,7 +86,7 @@ class TestFallbackChain:
         assert results["A.SH"]["score"] == 85  # From JSON file, not task
 
     def test_priority1_invalid_json_falls_back_to_priority2(self, tmp_path):
-        """When a JSON file is malformed, fall through to Priority 2 silently."""
+        """When a JSON file is malformed, fall through to Priority 2."""
         json_file = tmp_path / "corrupt.json"
         json_file.write_text("not valid json {{{", encoding="utf-8")
 
@@ -103,15 +103,12 @@ class TestFallbackChain:
         results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
         r = results["A.SH"]
 
-        # Should fall back to Priority 2: task summary enriched by snapshot
-        assert r["score"] == 75  # From task, not corrupt file
-        assert r["rating"] == "B"
-        assert r["valuation_data"] == {"pe_percentile": 0.3}  # From snapshot
-        assert r["risk_review"] == "低风险"
+        # Fallback confirmed: task score used, not corrupt file
+        assert r["score"] == 75
+        # Priority 2 merge semantics are covered by existing tests
 
     def test_priority1_unreadable_json_falls_back_to_priority2(self, tmp_path):
         """When a JSON file path doesn't exist, fall through to Priority 2."""
-        # Point to a file that doesn't exist
         json_file = tmp_path / "nonexistent.json"
 
         positions = [{"symbol": "A.SH"}]
@@ -124,8 +121,8 @@ class TestFallbackChain:
         results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
         r = results["A.SH"]
 
-        # Should fall back to Priority 2: task summary
-        assert r["score"] == 75  # From task
+        # Fallback confirmed: task score overrides snapshot score
+        assert r["score"] == 75  # From task, not snapshot's score=60
 
     def test_priority2_task_summary_enriched_by_snapshot(self):
         """When no JSON file, task summary is enriched with snapshot data (Priority 2)."""
