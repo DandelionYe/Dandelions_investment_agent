@@ -188,7 +188,7 @@ if result:
     st.info("📋 以下所有内容为研究建议，不构成交易指令。系统不会自动下单。")
 
     # 概览指标
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         st.metric("组合评分",
                   f"{result['portfolio_score']:.0f}" if result.get('portfolio_score') else "N/A")
@@ -199,8 +199,11 @@ if result:
             result.get("risk_level", ""), "⚪")
         st.metric("风险等级", f"{risk_emoji} {result.get('risk_level', 'N/A')}")
     with c4:
-        st.metric("建议现金", f"{result.get('cash_weight', 0):.1%}")
+        st.metric("目标现金", f"{result.get('target_cash_weight', 0):.1%}")
     with c5:
+        current_cw = result.get("current_cash_weight")
+        st.metric("当前现金", f"{current_cw:.1%}" if current_cw is not None else "N/A")
+    with c6:
         st.metric("持仓数量", result.get("total_holdings", 0))
 
     # 持仓表

@@ -47,7 +47,7 @@ def analyze(
                 "symbol": p.symbol,
                 "asset_type": p.asset_type,
                 "asset_name": p.asset_name,
-                "current_weight": p.current_weight or 0.0,
+                "current_weight": p.current_weight if p.current_weight is not None else 0.0,
             }
             for p in req.positions
         ]
@@ -90,6 +90,8 @@ def analyze(
         portfolio_rating=analysis.portfolio_rating,
         risk_level=analysis.risk_level,
         cash_weight=analysis.cash_weight,
+        target_cash_weight=analysis.target_cash_weight,
+        current_cash_weight=analysis.current_cash_weight,
         holdings=[
             HoldingResponse(
                 symbol=h.symbol,

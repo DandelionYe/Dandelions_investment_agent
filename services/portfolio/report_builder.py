@@ -56,7 +56,8 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
         f"- **组合评分:** {a.portfolio_score if a.portfolio_score is not None else 'N/A'}",
         f"- **组合评级:** {a.portfolio_rating or 'N/A'}",
         f"- **风险等级:** {a.risk_level or 'N/A'}",
-        f"- **建议现金比例:** {a.cash_weight:.1%}",
+        f"- **目标现金比例:** {a.target_cash_weight:.1%}",
+        f"- **当前现金比例:** {a.current_cash_weight:.1%}" if a.current_cash_weight is not None else "- **当前现金比例:** N/A（未提供当前权重）",
         "",
     ]
 

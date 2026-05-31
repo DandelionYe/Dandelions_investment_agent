@@ -106,7 +106,9 @@ class PortfolioAnalyzeResponse(BaseModel):
     portfolio_score: Optional[float] = None
     portfolio_rating: Optional[str] = None
     risk_level: Optional[str] = None
-    cash_weight: float = 0.0
+    cash_weight: float = Field(default=0.0, description="现金权重（兼容别名，等同 target_cash_weight）")
+    target_cash_weight: float = Field(default=0.0, description="目标现金权重")
+    current_cash_weight: Optional[float] = Field(default=None, description="当前现金权重（仅在提供当前权重时有值）")
     holdings: list[HoldingResponse] = Field(default_factory=list)
     industry_exposure: dict[str, float] = Field(default_factory=dict)
     asset_type_exposure: dict[str, float] = Field(default_factory=dict)

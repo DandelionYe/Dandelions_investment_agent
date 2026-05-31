@@ -61,7 +61,7 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
 
     # Check 1: weights sum to ~100%
     total_weight = sum(h["target_weight"] for h in balanced["holdings"])
-    cash = balanced["cash_weight"]
+    cash = balanced["target_cash_weight"]
     weight_ok = abs(total_weight + cash - 1.0) < 0.02
     checks.append({
         "check": "weights_sum_to_100pct",
@@ -158,7 +158,9 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
                 "portfolio_score": r["analysis"]["portfolio_score"],
                 "portfolio_rating": r["analysis"]["portfolio_rating"],
                 "risk_level": r["analysis"]["risk_level"],
-                "cash_weight": r["analysis"]["cash_weight"],
+                "cash_weight": r["analysis"]["cash_weight"],  # backward compat alias
+                "target_cash_weight": r["analysis"]["target_cash_weight"],
+                "current_cash_weight": r["analysis"]["current_cash_weight"],
                 "holdings_count": r["analysis"]["total_holdings"],
                 "artifact_paths": r["artifacts"],
             }
@@ -197,7 +199,9 @@ def write_artifacts(report: dict, output_dir: Path) -> tuple[Path, Path]:
         md_lines.append(f"- Score: {r['portfolio_score']}")
         md_lines.append(f"- Rating: {r['portfolio_rating']}")
         md_lines.append(f"- Risk: {r['risk_level']}")
-        md_lines.append(f"- Cash: {r['cash_weight']:.1%}")
+        md_lines.append(f"- Target Cash: {r['target_cash_weight']:.1%}")
+        current_cw = r.get('current_cash_weight')
+        md_lines.append(f"- Current Cash: {current_cw:.1%}" if current_cw is not None else "- Current Cash: N/A")
         md_lines.append(f"- Holdings: {r['holdings_count']}")
         md_lines.append("")
 

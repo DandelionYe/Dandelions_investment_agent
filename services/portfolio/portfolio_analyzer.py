@@ -61,7 +61,9 @@ class PortfolioAnalysis:
     portfolio_score: float | None = None
     portfolio_rating: str | None = None
     risk_level: str | None = None
-    cash_weight: float = 0.0
+    cash_weight: float = 0.0  # backward compat alias for target_cash_weight
+    target_cash_weight: float = 0.0  # recommended cash allocation
+    current_cash_weight: float | None = None  # 1 - sum(current_weights), None if no current weights
     industry_exposure: dict[str, float] = field(default_factory=dict)
     asset_type_exposure: dict[str, float] = field(default_factory=dict)
     rebalance_suggestions: list[str] = field(default_factory=list)
@@ -115,9 +117,16 @@ def analyze_portfolio(
     risk_level = _aggregate_risk(holdings)
     industry_exposure = _compute_industry_exposure(holdings)
     asset_type_exposure = _compute_asset_type_exposure(holdings)
-    # Cash is at least min_cash_weight, but can be more if caps reduce holdings
+    # Target cash: at least min_cash_weight, but can be more if caps reduce holdings
     holding_total = sum(h.target_weight for h in holdings)
-    cash_weight = max(constraints.min_cash_weight, round(1.0 - holding_total, 4))
+    target_cash_weight = max(constraints.min_cash_weight, round(1.0 - holding_total, 4))
+
+    # Current cash: only meaningful when user provided current weights
+    current_holdings_total = sum(h.current_weight for h in holdings)
+    if current_holdings_total > 0:
+        current_cash_weight = round(max(0.0, 1.0 - current_holdings_total), 4)
+    else:
+        current_cash_weight = None
 
     # ── Rebalance suggestions ─────────────────────────────────
     rebalance_suggestions = _generate_rebalance_suggestions(
@@ -134,7 +143,9 @@ def analyze_portfolio(
         portfolio_score=portfolio_score,
         portfolio_rating=portfolio_rating,
         risk_level=risk_level,
-        cash_weight=cash_weight,
+        cash_weight=target_cash_weight,  # backward compat alias
+        target_cash_weight=target_cash_weight,
+        current_cash_weight=current_cash_weight,
         industry_exposure=industry_exposure,
         asset_type_exposure=asset_type_exposure,
         rebalance_suggestions=rebalance_suggestions,
@@ -154,7 +165,7 @@ def _analyze_holding(
         symbol=symbol,
         asset_type=pos.get("asset_type", "stock"),
         asset_name=pos.get("asset_name", ""),
-        current_weight=pos.get("current_weight") or 0.0,
+        current_weight=pos.get("current_weight") if pos.get("current_weight") is not None else 0.0,
     )
 
     if not result:
