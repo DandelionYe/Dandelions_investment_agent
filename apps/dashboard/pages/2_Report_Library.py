@@ -4,6 +4,7 @@ RBAC：不再直接扫描 storage/reports 目录，改用 API 获取任务列表
 下载按钮走 /api/v1/reports/{task_id}/{fmt}，受 task owner 权限控制。
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -29,8 +30,8 @@ st.set_page_config(
 
 require_login()
 
-# 每 30 秒自动刷新，确保新完成的报告及时显示
-st_autorefresh(interval=30_000, key="report_library_refresh")
+# 每 120 秒自动刷新，确保新完成的报告及时显示
+st_autorefresh(interval=120_000, key="report_library_refresh")
 
 API_BASE = "http://localhost:8000"
 
@@ -55,11 +56,6 @@ def fetch_task_history(page: int = 1, page_size: int = 50) -> list[dict]:
     return result.get("tasks", [])
 
 
-def fetch_report_info(task_id: str) -> dict | None:
-    """通过 API 获取报告信息。"""
-    return _api_get(f"/api/v1/reports/{task_id}/info")
-
-
 def download_report_via_api(task_id: str, fmt: str) -> bytes | None:
     """通过 API 下载报告文件。"""
     try:
@@ -71,40 +67,56 @@ def download_report_via_api(task_id: str, fmt: str) -> bytes | None:
         return None
 
 
+def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
+    """从 session_state 缓存获取报告，未命中则从 API 下载并缓存。"""
+    cache_key = f"_dl_{task_id}_{fmt}"
+    data = st.session_state.get(cache_key)
+    if data is None:
+        data = download_report_via_api(task_id, fmt)
+        if data:
+            st.session_state[cache_key] = data
+    return data
+
+
+_MIME_TYPES = {
+    "pdf": "application/pdf",
+    "markdown": "text/markdown",
+    "json": "application/json",
+    "html": "text/html",
+}
+
+_FMT_MAP = {
+    "pdf": ("PDF", "pdf"),
+    "markdown": ("Markdown", "md"),
+    "json": ("JSON", "json"),
+    "html": ("HTML", "html"),
+}
+
+
 def render_download_buttons(task_id: str, available_formats: list[str], key_prefix: str):
-    col1, col2, col3, col4 = st.columns(4)
-
-    fmt_map = {
-        "pdf": ("PDF", "pdf"),
-        "markdown": ("Markdown", "md"),
-        "json": ("JSON", "json"),
-        "html": ("HTML", "html"),
-    }
-
-    for col, (fmt_key, (label, api_fmt)) in zip(
-        [col1, col2, col3, col4], fmt_map.items()
-    ):
+    cols = st.columns(len(_FMT_MAP))
+    for col, (fmt_key, (label, api_fmt)) in zip(cols, _FMT_MAP.items()):
         with col:
-            if fmt_key in available_formats:
-                data = download_report_via_api(task_id, api_fmt)
-                if data:
-                    ext = api_fmt if api_fmt != "md" else "md"
-                    st.download_button(
-                        f"下载 {label}",
-                        data=data,
-                        file_name=f"report_{task_id}.{ext}",
-                        mime={
-                            "pdf": "application/pdf",
-                            "md": "text/markdown",
-                            "json": "application/json",
-                            "html": "text/html",
-                        }.get(fmt_key, "application/octet-stream"),
-                        key=f"{key_prefix}_{fmt_key}",
-                    )
-                else:
-                    st.button(f"{label} 下载失败", disabled=True, key=f"{key_prefix}_{fmt_key}_fail")
-            else:
+            if fmt_key not in available_formats:
                 st.button(f"{label} 不存在", disabled=True, key=f"{key_prefix}_{fmt_key}_missing")
+                continue
+            data = st.session_state.get(f"_dl_{task_id}_{api_fmt}")
+            if data is None:
+                if st.button(f"准备下载 {label}", key=f"{key_prefix}_{fmt_key}_prep"):
+                    data = download_report_via_api(task_id, api_fmt)
+                    if data:
+                        st.session_state[f"_dl_{task_id}_{api_fmt}"] = data
+                        st.rerun()
+                    else:
+                        st.error(f"{label} 下载失败")
+            else:
+                st.download_button(
+                    f"下载 {label}",
+                    data=data,
+                    file_name=f"report_{task_id}.{api_fmt}",
+                    mime=_MIME_TYPES.get(fmt_key, "application/octet-stream"),
+                    key=f"{key_prefix}_{fmt_key}",
+                )
 
 
 st.title("📚 研究报告库")
@@ -170,8 +182,6 @@ for t in tasks:
     if t.get("status") != "completed":
         continue
     task_id = t["task_id"]
-    report_info = fetch_report_info(task_id)
-    available_formats = report_info.get("formats", []) if report_info else []
     symbol = t.get("symbol", "")
 
     rows.append({
@@ -185,7 +195,7 @@ for t in tasks:
         "created_by": t.get("created_by", ""),
         "created_at": t.get("created_at"),
         "completed_at": t.get("completed_at"),
-        "available_formats": available_formats,
+        "available_formats": t.get("report_formats", []),
     })
 
 if not rows:
@@ -277,9 +287,8 @@ render_download_buttons(task_id, available_formats, key_prefix=f"detail_{task_id
 
 # JSON 预览
 if "json" in available_formats:
-    json_data = download_report_via_api(task_id, "json")
+    json_data = _get_cached_report(task_id, "json")
     if json_data:
-        import json
         try:
             data = json.loads(json_data)
             if data.get("final_opinion"):
@@ -292,7 +301,7 @@ if "json" in available_formats:
 
 # Markdown 预览
 if "markdown" in available_formats:
-    md_data = download_report_via_api(task_id, "md")
+    md_data = _get_cached_report(task_id, "md")
     if md_data:
         with st.expander("预览 Markdown 报告"):
             st.markdown(md_data.decode("utf-8", errors="replace"))

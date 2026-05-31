@@ -11,10 +11,13 @@ RBAC 支持：
 
 import base64
 import json
+import logging
 
 import requests
 import streamlit as st
 from requests import Response
+
+logger = logging.getLogger(__name__)
 
 API_BASE = "http://localhost:8000"
 
@@ -135,7 +138,8 @@ def _fetch_user_info(token: str) -> None:
         if resp.status_code == 200:
             data = resp.json()
             st.session_state["auth_role"] = data.get("role", "user")
-    except Exception:
+    except Exception as exc:
+        logger.warning("获取用户信息失败，默认角色为 user: %s", exc, exc_info=True)
         st.session_state["auth_role"] = "user"
 
 
@@ -207,7 +211,8 @@ def api_get(path: str, **kwargs) -> dict | list | None:
         if resp.status_code >= 400:
             return None
         return resp.json()
-    except Exception:
+    except Exception as exc:
+        logger.warning("api_get(%s) 失败: %s", path, exc)
         return None
 
 
@@ -218,7 +223,8 @@ def api_post(path: str, json_data: dict | None = None) -> dict | None:
         if resp.status_code >= 400:
             return None
         return resp.json()
-    except Exception:
+    except Exception as exc:
+        logger.warning("api_post(%s) 失败: %s", path, exc)
         return None
 
 

@@ -22,6 +22,9 @@ from apps.api.task_manager.store import (
     get_watchlist_store,
 )
 
+# 报告文件格式列表（list_history 和 get_report_info 共用）
+REPORT_FORMATS = ("json", "markdown", "html", "pdf")
+
 
 class TaskQueueUnavailableError(RuntimeError):
     """Raised when the async task queue cannot accept a task."""
@@ -183,6 +186,10 @@ class TaskManager:
                     "started_at": t.get("started_at"),
                     "completed_at": t.get("completed_at"),
                     "error_message": t.get("error_message"),
+                    "report_formats": [
+                        fmt for fmt in REPORT_FORMATS
+                        if (t.get("report_paths") or {}).get(fmt)
+                    ],
                 }
                 for t in tasks
             ],
@@ -199,7 +206,7 @@ class TaskManager:
             "task_id": task_id,
             "formats": [
                 fmt
-                for fmt in ["json", "markdown", "html", "pdf"]
+                for fmt in REPORT_FORMATS
                 if report_paths.get(fmt) and Path(report_paths[fmt]).exists()
             ],
             "json_path": report_paths.get("json"),

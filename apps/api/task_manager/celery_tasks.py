@@ -7,6 +7,7 @@
 - scan_watchlist: 收盘后批量扫描
 """
 
+import logging
 import shutil
 import sys
 from pathlib import Path
@@ -16,6 +17,8 @@ from apps.api.schemas.research import new_task_id, utc_now_iso
 from apps.api.schemas.task import TaskStatus
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
 from apps.api.websocket.progress_publisher import publish_batch_progress, publish_task_progress
+
+logger = logging.getLogger(__name__)
 
 # 将项目根目录添加到 Python 路径
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -289,8 +292,8 @@ def watchlist_scheduler_check() -> dict:
             try:
                 from services.data.qmt_realtime_quote import get_latest_price_data
                 quote = get_latest_price_data(item["symbol"])
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("获取实时行情失败（%s）: 条件触发器将无法评估价格/成交量条件: %s", item["symbol"], exc)
 
         # Use centralized evaluator
         eval_result = evaluate_condition_triggers(
@@ -460,7 +463,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
         try:
             report_paths = _generate_and_store_reports(result, task_id)
         except Exception:
-            pass  # 报告生成失败不阻断研究结果保存
+            logger.warning("报告生成失败（watchlist item %s, task %s）", item_id, task_id, exc_info=True)
 
         completed_at = utc_now_iso()
         task_store.update_result(
