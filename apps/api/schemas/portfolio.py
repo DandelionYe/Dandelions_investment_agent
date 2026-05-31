@@ -2,17 +2,31 @@
 
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 
 class PortfolioPosition(BaseModel):
-    symbol: str = Field(..., min_length=1, max_length=20, description="股票/ETF 代码")
+    symbol: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+        pattern=r"^[0-9A-Za-z._-]+$",
+        description="股票/ETF 代码（如 600519.SH，自动去除首尾空格并转大写）"
+    )
     asset_type: Literal["stock", "etf"] = Field(default="stock", description="资产类型")
     asset_name: str = Field(default="", description="资产名称（可选）")
     current_weight: Optional[float] = Field(
         default=None, ge=0, le=1,
         description="当前权重（可选，0-1 之间）"
     )
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def normalize_symbol(cls, v: str) -> str:
+        """Strip whitespace and uppercase symbol."""
+        if isinstance(v, str):
+            return v.strip().upper()
+        return v
 
 
 class PortfolioAnalyzeRequest(BaseModel):

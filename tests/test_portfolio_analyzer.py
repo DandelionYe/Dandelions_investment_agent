@@ -401,3 +401,72 @@ class TestArtifactContainsDisclaimer:
         forbidden = ["自动下单", "自动交易", "交易指令"]
         for word in forbidden:
             assert word not in json_content
+
+
+class TestSymbolNormalization:
+    """Test symbol normalization in analyze_portfolio."""
+
+    def test_symbol_stripped_and_uppercased(self):
+        """Symbol with whitespace and lowercase must be normalized."""
+        positions = [{"symbol": "  600519.sh  ", "asset_type": "stock"}]
+        results = {"600519.SH": {"score": 80, "rating": "B+", "action": "观察",
+                                  "decision_guard": {"risk_level": "medium"},
+                                  "valuation_data": {"industry_name": "银行"}}}
+        analysis = analyze_portfolio(positions, results)
+        assert analysis.holdings[0].symbol == "600519.SH"
+        assert analysis.holdings[0].score == 80
+
+    def test_symbol_lowercase_suffix_matched(self):
+        """Lowercase suffix must match uppercase research result key."""
+        positions = [{"symbol": "600519.sh", "asset_type": "stock"}]
+        results = {"600519.SH": {"score": 80, "rating": "B+", "action": "观察",
+                                  "decision_guard": {"risk_level": "medium"},
+                                  "valuation_data": {"industry_name": "银行"}}}
+        analysis = analyze_portfolio(positions, results)
+        assert analysis.holdings[0].score == 80
+        assert len(analysis.missing_reasons) == 0
+
+    def test_symbol_mixed_case_matched(self):
+        """Mixed case suffix must match uppercase research result key."""
+        positions = [{"symbol": "600519.Sh", "asset_type": "stock"}]
+        results = {"600519.SH": {"score": 80, "rating": "B+", "action": "观察",
+                                  "decision_guard": {"risk_level": "medium"},
+                                  "valuation_data": {"industry_name": "银行"}}}
+        analysis = analyze_portfolio(positions, results)
+        assert analysis.holdings[0].score == 80
+        assert len(analysis.missing_reasons) == 0
+
+    def test_symbol_whitespace_only_not_normalized(self):
+        """Symbol with only whitespace should not match (will be caught by schema validation)."""
+        # This test verifies that analyze_portfolio handles edge cases gracefully
+        # In practice, schema validation would reject this before reaching analyzer
+        positions = [{"symbol": "   ", "asset_type": "stock"}]
+        results = {}
+        # normalize to empty string after strip, which won't match anything
+        analysis = analyze_portfolio(positions, results)
+        assert len(analysis.missing_reasons) > 0
+
+    def test_multiple_symbols_normalized(self):
+        """Multiple symbols with different cases must all be normalized."""
+        positions = [
+            {"symbol": "600519.sh", "asset_type": "stock"},
+            {"symbol": "  000001.SZ  ", "asset_type": "stock"},
+            {"symbol": "510300.SH", "asset_type": "etf"},
+        ]
+        results = {
+            "600519.SH": {"score": 80, "rating": "B+", "action": "观察",
+                           "decision_guard": {"risk_level": "medium"},
+                           "valuation_data": {"industry_name": "银行"}},
+            "000001.SZ": {"score": 75, "rating": "B", "action": "观察",
+                           "decision_guard": {"risk_level": "medium"},
+                           "valuation_data": {"industry_name": "银行"}},
+            "510300.SH": {"score": 70, "rating": "B", "action": "观察",
+                           "decision_guard": {"risk_level": "medium"},
+                           "valuation_data": {"industry_name": "ETF"}},
+        }
+        analysis = analyze_portfolio(positions, results)
+        symbols = [h.symbol for h in analysis.holdings]
+        assert "600519.SH" in symbols
+        assert "000001.SZ" in symbols
+        assert "510300.SH" in symbols
+        assert len(analysis.missing_reasons) == 0

@@ -100,7 +100,7 @@ def analyze_portfolio(
     global_warnings: list[str] = []
 
     for pos in positions:
-        symbol = pos["symbol"]
+        symbol = str(pos["symbol"]).strip().upper()
         result = research_results.get(symbol)
         h = _analyze_holding(symbol, pos, result)
         holdings.append(h)

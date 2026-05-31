@@ -155,6 +155,65 @@ class TestPortfolioSchemaValidation:
             ])
 
 
+class TestSymbolNormalization:
+    """Test symbol format validation and normalization."""
+
+    def test_symbol_strips_whitespace(self):
+        """Leading/trailing whitespace must be stripped."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "  600519.SH  "}])
+        assert r.positions[0].symbol == "600519.SH"
+
+    def test_symbol_uppercases(self):
+        """Lowercase suffix must be uppercased."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "600519.sh"}])
+        assert r.positions[0].symbol == "600519.SH"
+
+    def test_symbol_uppercases_mixed_case(self):
+        """Mixed case suffix must be uppercased."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "600519.Sh"}])
+        assert r.positions[0].symbol == "600519.SH"
+
+    def test_symbol_accepts_valid_format(self):
+        """Valid symbol format must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "600519.SH"}])
+        assert r.positions[0].symbol == "600519.SH"
+
+    def test_symbol_accepts_etf_format(self):
+        """ETF symbol format must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "510300.SH"}])
+        assert r.positions[0].symbol == "510300.SH"
+
+    def test_symbol_accepts_sz_format(self):
+        """Shenzhen symbol format must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "000001.SZ"}])
+        assert r.positions[0].symbol == "000001.SZ"
+
+    def test_symbol_accepts_bj_format(self):
+        """Beijing symbol format must be accepted."""
+        r = PortfolioAnalyzeRequest(positions=[{"symbol": "830799.BJ"}])
+        assert r.positions[0].symbol == "830799.BJ"
+
+    def test_symbol_rejects_empty_string(self):
+        """Empty string must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[{"symbol": ""}])
+
+    def test_symbol_rejects_blank_string(self):
+        """Blank whitespace string must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[{"symbol": "   "}])
+
+    def test_symbol_rejects_invalid_characters(self):
+        """Symbol with invalid characters must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[{"symbol": "600519@SH"}])
+
+    def test_symbol_rejects_chinese_characters(self):
+        """Symbol with Chinese characters must be rejected."""
+        with pytest.raises(ValidationError):
+            PortfolioAnalyzeRequest(positions=[{"symbol": "贵州茅台"}])
+
+
 class TestAnalyzerNoTradeLanguage:
 
     def test_analyzer_no_auto_trade(self):
