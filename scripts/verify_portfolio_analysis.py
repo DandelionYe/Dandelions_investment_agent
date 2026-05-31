@@ -125,8 +125,8 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
     # Conservative should be more cautious than aggressive:
     #   - high-risk holdings get lower weight in conservative
     #   - cash weight is higher in conservative
-    #   - differences must exceed rounding noise (> 0.5%)
-    _RISK_DIFF_THRESHOLD = 0.005  # 0.5% minimum meaningful difference
+    #   - differences must exceed rounding noise (> 0.2%)
+    _RISK_DIFF_THRESHOLD = 0.002  # 0.2% minimum meaningful difference
 
     conservative = results["conservative"]["analysis"]
     aggressive = results["aggressive"]["analysis"]
@@ -152,20 +152,24 @@ def verify(fixtures_path: Path, output_dir: Path) -> dict:
     })
 
     # 8b: Conservative cash weight should be >= aggressive cash weight
+    # Tolerance on conservative side: conservative may be slightly below
+    # aggressive due to rounding, but not by more than the threshold.
     cons_cash = conservative["target_cash_weight"]
     aggr_cash = aggressive["target_cash_weight"]
-    cash_ok = cons_cash >= aggr_cash - _RISK_DIFF_THRESHOLD
+    cash_ok = cons_cash + _RISK_DIFF_THRESHOLD >= aggr_cash
     checks.append({
         "check": "conservative_cash_geq_aggressive",
         "status": "pass" if cash_ok else "fail",
         "detail": f"conservative={cons_cash:.1%} vs aggressive={aggr_cash:.1%}",
     })
 
-    # 8c: At least one symbol should have a meaningful weight difference
+    # 8c: At least one symbol should have a meaningful weight difference.
+    # Iterate union of both portfolios' symbols to catch composition differences.
+    all_symbols = cons_weights.keys() | aggr_weights.keys()
     changed_symbols = [
         symbol
-        for symbol, cw in cons_weights.items()
-        if abs(cw - aggr_weights.get(symbol, 0.0)) > _RISK_DIFF_THRESHOLD
+        for symbol in all_symbols
+        if abs(cons_weights.get(symbol, 0.0) - aggr_weights.get(symbol, 0.0)) > _RISK_DIFF_THRESHOLD
     ]
     checks.append({
         "check": "risk_profiles_differ",

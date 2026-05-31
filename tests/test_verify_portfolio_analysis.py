@@ -78,12 +78,8 @@ class TestHighRiskLowerInConservative:
         check = next(c for c in report["checks"] if c["check"] == "high_risk_lower_in_conservative")
         assert check["status"] == "pass"
 
-    def test_fail_when_high_risk_higher_in_conservative(self):
-        """When conservative gives high-risk MORE weight, check fails."""
-        # This shouldn't happen with correct analyzer logic, but the verify
-        # script should catch it if it does.
-        # We can't easily force this with the real analyzer, so we test the
-        # check logic indirectly by verifying it passes with normal data.
+    def test_no_high_risk_holdings_passes_cleanly(self):
+        """When no high-risk holdings exist, check passes with detail='ok'."""
         positions = [
             _make_position("A.SH"),
             _make_position("B.SH"),
