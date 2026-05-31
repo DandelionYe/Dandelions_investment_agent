@@ -203,6 +203,9 @@ def _analyze_holding(
         h.data_warnings.append("含占位数据")
     if dq.get("blocking_issues"):
         h.data_warnings.append(f"阻断问题: {', '.join(dq['blocking_issues'])}")
+    for w in dq.get("warnings") or []:
+        if w:
+            h.data_warnings.append(w)
 
     return h
 

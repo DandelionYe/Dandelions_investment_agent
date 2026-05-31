@@ -178,6 +178,7 @@ def _build_watchlist_snapshot_map(owner: str | None) -> dict[str, dict]:
                 if key in snap and snap[key] is not None:
                     entry[key] = snap[key]
         if entry:
+            entry["_snapshot_updated_at"] = it.get("updated_at", "")
             snapshot[sym] = entry
     return snapshot
 
@@ -216,20 +217,32 @@ def _load_research_results(
 
             # Priority 2: task summary fields, enriched with watchlist snapshot for
             # fields that task rows do not carry (valuation/risk/event snapshots).
-            summary: dict = dict(wl_snapshot_map.get(symbol, {}))
+            snapshot_entry = wl_snapshot_map.get(symbol, {})
+            summary: dict = {k: v for k, v in snapshot_entry.items() if k != "_snapshot_updated_at"}
             if task.get("score") is not None:
                 summary["score"] = task["score"]
             if task.get("rating"):
                 summary["rating"] = task["rating"]
             if task.get("action"):
                 summary["action"] = task["action"]
+            # Warn when merging data from different sources/times
+            snapshot_has_enrichment = any(
+                snapshot_entry.get(k) is not None for k in ("valuation_data", "risk_review", "event_data")
+            )
+            if snapshot_has_enrichment:
+                snapshot_ts = snapshot_entry.get("_snapshot_updated_at") or "未知"
+                task_ts = task.get("completed_at") or "未知"
+                summary.setdefault("data_quality", {}).setdefault("warnings", []).append(
+                    f"研究结果来自混合来源：评分来自任务({task_ts})，"
+                    f"估值/风险/事件来自观察池快照({snapshot_ts})，可能存在时间不一致"
+                )
             if summary:
                 results[symbol] = summary
                 continue
 
         # Priority 3: watchlist last fields
         if symbol in wl_snapshot_map:
-            results[symbol] = wl_snapshot_map[symbol]
+            results[symbol] = {k: v for k, v in wl_snapshot_map[symbol].items() if k != "_snapshot_updated_at"}
             continue
 
         # Priority 4: no data → analyzer will record missing_reasons
