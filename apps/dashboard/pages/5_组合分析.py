@@ -223,7 +223,7 @@ if result:
                 "当前权重": f"{h.get('current_weight', 0):.1%}",
                 "目标权重": "N/A" if h.get("score") is None else f"{h.get('target_weight', 0):.1%}",
                 "变动": "N/A" if h.get("score") is None else f"{h.get('delta_weight', 0):+.1%}",
-                "再平衡": h.get("rebalance_action") or "-",
+                "再平衡": {"add": "加仓", "reduce": "减仓", "hold": "维持"}.get(h.get("rebalance_action")) or "-",
                 "警告": "; ".join(h.get("data_warnings", [])) or "-",
             })
         df = pd.DataFrame(df_data)

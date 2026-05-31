@@ -76,7 +76,8 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
             delta_str = f"{h.delta_weight:+.1%}"
         else:
             delta_str = "-"
-        rebal_str = h.rebalance_action or "-"
+        _REBALANCE_LABELS = {"add": "加仓", "reduce": "减仓", "hold": "维持"}
+        rebal_str = _REBALANCE_LABELS.get(h.rebalance_action) or "-"
         lines.append(
             f"| {h.symbol} | {h.asset_name} | {score_str} | {h.rating or '-'} "
             f"| {h.action or '-'} | {h.risk_level or '-'} "
