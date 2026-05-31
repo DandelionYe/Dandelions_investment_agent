@@ -139,7 +139,7 @@ def _fetch_user_info(token: str) -> None:
             data = resp.json()
             st.session_state["auth_role"] = data.get("role", "user")
     except Exception as exc:
-        logger.warning("获取用户信息失败，默认角色为 user: %s", exc, exc_info=True)
+        logger.warning("获取用户信息失败，默认角色为 user: %s", exc)
         st.session_state["auth_role"] = "user"
 
 

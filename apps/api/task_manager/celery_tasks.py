@@ -463,7 +463,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
         try:
             report_paths = _generate_and_store_reports(result, task_id)
         except Exception:
-            logger.warning("报告生成失败（watchlist item %s, task %s）", item_id, task_id, exc_info=True)
+            logger.warning("报告生成失败（watchlist item %s, task %s）", item_id, task_id)
 
         completed_at = utc_now_iso()
         task_store.update_result(
