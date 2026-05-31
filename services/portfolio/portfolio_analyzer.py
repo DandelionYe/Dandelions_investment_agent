@@ -19,6 +19,11 @@ from typing import Any, Literal
 RiskProfile = Literal["conservative", "balanced", "aggressive"]
 
 
+def normalize_symbol(symbol: str) -> str:
+    """Canonical form for symbol lookup: strip whitespace, uppercase."""
+    return str(symbol).strip().upper()
+
+
 @dataclass
 class Constraints:
     max_single_weight: float = 0.25  # max % for any single holding
@@ -100,7 +105,7 @@ def analyze_portfolio(
     global_warnings: list[str] = []
 
     for pos in positions:
-        symbol = str(pos["symbol"]).strip().upper()
+        symbol = normalize_symbol(pos["symbol"])
         result = research_results.get(symbol)
         h = _analyze_holding(symbol, pos, result)
         holdings.append(h)

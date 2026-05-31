@@ -24,9 +24,7 @@ class PortfolioPosition(BaseModel):
     @classmethod
     def normalize_symbol(cls, v: str) -> str:
         """Strip whitespace and uppercase symbol."""
-        if isinstance(v, str):
-            return v.strip().upper()
-        return v
+        return str(v).strip().upper()
 
 
 class PortfolioAnalyzeRequest(BaseModel):

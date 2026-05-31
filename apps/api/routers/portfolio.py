@@ -19,7 +19,7 @@ from apps.api.schemas.portfolio import (
     HoldingResponse,
 )
 from apps.api.task_manager.store import get_task_store, get_watchlist_store
-from services.portfolio.portfolio_analyzer import Constraints, analyze_portfolio
+from services.portfolio.portfolio_analyzer import Constraints, analyze_portfolio, normalize_symbol
 from services.portfolio.report_builder import save_portfolio_report
 
 router = APIRouter(tags=["portfolio"])
@@ -143,7 +143,7 @@ def _load_positions_from_watchlist(
 
     return [
         {
-            "symbol": it["symbol"],
+            "symbol": normalize_symbol(it["symbol"]),
             "asset_type": it.get("asset_type", "stock"),
             "asset_name": it.get("asset_name", ""),
             "current_weight": 0.0,  # watchlist doesn't track current_weight
@@ -165,7 +165,7 @@ def _build_watchlist_snapshot_map(owner: str | None) -> dict[str, dict]:
 
     snapshot: dict[str, dict] = {}
     for it in items:
-        sym = it["symbol"]
+        sym = normalize_symbol(it["symbol"])
         entry: dict = {}
         if it.get("last_score") is not None:
             entry["score"] = it["last_score"]
@@ -196,7 +196,7 @@ def _load_research_results(
     results: dict[str, dict] = {}
 
     for pos in positions:
-        symbol = pos["symbol"]
+        symbol = normalize_symbol(pos["symbol"])
 
         # Find latest completed task for this symbol
         tasks, _ = task_store.list_tasks(

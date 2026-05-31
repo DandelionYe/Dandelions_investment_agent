@@ -11,6 +11,14 @@ from pathlib import Path
 
 from services.portfolio.portfolio_analyzer import PortfolioAnalysis
 
+# Chinese labels for rebalance_action values (shared with dashboard)
+REBALANCE_LABELS: dict[str | None, str] = {
+    "add": "加仓",
+    "reduce": "减仓",
+    "hold": "维持",
+    None: "-",
+}
+
 _ARTIFACTS_ROOT = Path(__file__).resolve().parents[2] / "storage" / "artifacts" / "portfolio"
 
 
@@ -62,7 +70,6 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
     ]
 
     # Holdings table
-    _REBALANCE_LABELS = {"add": "加仓", "reduce": "减仓", "hold": "维持"}
     lines.append("## 持仓明细")
     lines.append("")
     lines.append("| 标的 | 名称 | 评分 | 评级 | 建议 | 风险 | 当前权重 | 目标权重 | 变动 | 再平衡 |")
@@ -77,7 +84,7 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
             delta_str = f"{h.delta_weight:+.1%}"
         else:
             delta_str = "-"
-        rebal_str = _REBALANCE_LABELS.get(h.rebalance_action) or "-"
+        rebal_str = REBALANCE_LABELS.get(h.rebalance_action, "-")
         lines.append(
             f"| {h.symbol} | {h.asset_name} | {score_str} | {h.rating or '-'} "
             f"| {h.action or '-'} | {h.risk_level or '-'} "

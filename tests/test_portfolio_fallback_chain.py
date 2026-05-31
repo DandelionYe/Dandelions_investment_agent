@@ -227,3 +227,40 @@ class TestFallbackChain:
 
         results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
         assert "A.SH" not in results
+
+    def test_lowercase_position_symbol_normalized_before_lookup(self):
+        """Position symbols with lowercase/whitespace must be normalized before task lookup."""
+        # Position comes in with lowercase suffix (e.g., from watchlist DB)
+        positions = [{"symbol": "600519.sh"}]
+        # Task store has the task under the normalized key
+        task = _make_task("600519.SH", score=80, rating="B+")
+        tasks_by_symbol = {"600519.SH": [task]}
+        wl_snapshot_map = {}
+
+        results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
+        # The result should be stored under the normalized key
+        assert "600519.SH" in results
+        assert results["600519.SH"]["score"] == 80
+
+    def test_whitespace_position_symbol_normalized_before_lookup(self):
+        """Position symbols with leading/trailing whitespace must be normalized."""
+        positions = [{"symbol": "  000001.SZ  "}]
+        task = _make_task("000001.SZ", score=70)
+        tasks_by_symbol = {"000001.SZ": [task]}
+        wl_snapshot_map = {}
+
+        results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
+        assert "000001.SZ" in results
+        assert results["000001.SZ"]["score"] == 70
+
+    def test_snapshot_map_with_lowercase_symbol_matches_normalized_position(self):
+        """Snapshot map keyed by normalized symbol should match normalized position."""
+        positions = [{"symbol": "600519.sh"}]  # lowercase exchange suffix
+        tasks_by_symbol = {"600519.SH": []}  # No tasks
+        wl_snapshot_map = {
+            "600519.SH": _make_snapshot_entry(score=65)  # Normalized key
+        }
+
+        results = self._call_under_test(positions, None, wl_snapshot_map, tasks_by_symbol)
+        assert "600519.SH" in results
+        assert results["600519.SH"]["score"] == 65

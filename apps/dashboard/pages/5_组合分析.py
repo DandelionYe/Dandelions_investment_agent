@@ -17,6 +17,7 @@ from apps.dashboard.components.login import (
     authenticated_request,
     require_login,
 )
+from services.portfolio.report_builder import REBALANCE_LABELS
 
 st.set_page_config(page_title="组合分析", page_icon="📊", layout="wide")
 require_login()
@@ -208,7 +209,6 @@ if result:
 
     # 持仓表
     st.subheader("持仓明细")
-    _REBALANCE_LABELS = {"add": "加仓", "reduce": "减仓", "hold": "维持"}
     holdings = result.get("holdings", [])
     if holdings:
         df_data = []
@@ -224,7 +224,7 @@ if result:
                 "当前权重": f"{h.get('current_weight', 0):.1%}",
                 "目标权重": "N/A" if h.get("score") is None else f"{h.get('target_weight', 0):.1%}",
                 "变动": "N/A" if h.get("score") is None else f"{h.get('delta_weight', 0):+.1%}",
-                "再平衡": _REBALANCE_LABELS.get(h.get("rebalance_action")) or "-",
+                "再平衡": REBALANCE_LABELS.get(h.get("rebalance_action"), "-"),
                 "警告": "; ".join(h.get("data_warnings", [])) or "-",
             })
         df = pd.DataFrame(df_data)
