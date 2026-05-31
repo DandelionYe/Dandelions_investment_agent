@@ -269,8 +269,10 @@ def _refresh_auth_token() -> bool:
             _save_to_query_params(data["access_token"], data["refresh_token"], username)
             return True
         else:
-            _clear_session_only()
+            # 401/403：服务端明确拒绝 token，清除 URL 防止僵尸循环
+            _logout()
     except Exception:
+        # 网络异常：保留 URL，下次刷新可重试恢复
         _clear_session_only()
     return False
 

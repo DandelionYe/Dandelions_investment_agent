@@ -437,45 +437,50 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
             use_graph=True,
         )
 
-        # 生成报告文件（与 run_research_task 保持一致）
-        from services.report.html_builder import save_html_report
-        from services.report.json_builder import save_json_result
-        from services.report.markdown_builder import save_markdown_report
-        from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
-        from services.report.template_config import resolve_report_config
-
-        cfg, theme = resolve_report_config(None, None)
-        json_path = Path(save_json_result(result))
-        md_path = Path(save_markdown_report(result, template_config=cfg))
-        html_path = Path(save_html_report(str(md_path), theme=theme))
-
-        reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
-        reports_dir.mkdir(parents=True, exist_ok=True)
-
-        pdf_path = None
-        for src, dst_name in [
-            (json_path, "result.json"),
-            (md_path, "report.md"),
-            (html_path, "report.html"),
-        ]:
-            dst = reports_dir / dst_name
-            if src.exists() and not dst.exists():
-                shutil.copy2(str(src), str(dst))
+        # 报告生成单独 try/except，失败不丢弃研究结果
+        report_paths = {}
         try:
-            pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
-            pdf_dst = reports_dir / "report.pdf"
-            if pdf_src.exists() and not pdf_dst.exists():
-                shutil.copy2(str(pdf_src), str(pdf_dst))
-            pdf_path = str(pdf_dst)
-        except Exception:
-            pdf_path = None
+            from services.report.html_builder import save_html_report
+            from services.report.json_builder import save_json_result
+            from services.report.markdown_builder import save_markdown_report
+            from services.report.pdf_builder_playwright import save_pdf_report_with_playwright
+            from services.report.template_config import resolve_report_config
 
-        report_paths = {
-            "json": str(reports_dir / "result.json"),
-            "markdown": str(reports_dir / "report.md"),
-            "html": str(reports_dir / "report.html"),
-            "pdf": pdf_path or "",
-        }
+            cfg, theme = resolve_report_config(None, None)
+            json_path = Path(save_json_result(result))
+            md_path = Path(save_markdown_report(result, template_config=cfg))
+            html_path = Path(save_html_report(str(md_path), theme=theme))
+
+            reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
+            reports_dir.mkdir(parents=True, exist_ok=True)
+
+            pdf_path = None
+            for src, dst_name in [
+                (json_path, "result.json"),
+                (md_path, "report.md"),
+                (html_path, "report.html"),
+            ]:
+                dst = reports_dir / dst_name
+                if src.exists() and not dst.exists():
+                    shutil.copy2(str(src), str(dst))
+            try:
+                pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
+                pdf_dst = reports_dir / "report.pdf"
+                if pdf_src.exists() and not pdf_dst.exists():
+                    shutil.copy2(str(pdf_src), str(pdf_dst))
+                if pdf_dst.exists():
+                    pdf_path = str(pdf_dst)
+            except Exception:
+                pdf_path = None
+
+            report_paths = {
+                "json": str(reports_dir / "result.json"),
+                "markdown": str(reports_dir / "report.md"),
+                "html": str(reports_dir / "report.html"),
+                "pdf": pdf_path or "",
+            }
+        except Exception:
+            pass  # 报告生成失败不阻断研究结果保存
 
         completed_at = utc_now_iso()
         task_store.update_result(
@@ -484,7 +489,7 @@ def scan_single_watchlist_item(item_id: str, trigger_type: str = "scheduled",
             rating=result.get("rating"),
             action=result.get("action"),
             final_opinion=result.get("final_opinion"),
-            report_paths=report_paths,
+            report_paths=report_paths or None,
             completed_at=completed_at,
         )
         task_store.update_status(task_id, TaskStatus.COMPLETED, progress=1.0,
