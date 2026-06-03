@@ -414,13 +414,11 @@ with st.sidebar:
         help="生产研究优先使用 qmt；akshare 仅作为 fallback/调试；mock 用于离线测试。",
     )
     use_llm = st.checkbox("启用 DeepSeek 辩论", value=True)
-    hitl_mode = st.checkbox(
-        "启用人工审核模式", value=False, disabled=not use_llm,
-        help="辩论完成后暂停，允许人工审核和修改结论后再生成报告。仅在启用 DeepSeek 辩论时可用。",
-    )
+    # HITL 模式已屏蔽 UI，仍可通过 API 参数调用
+    hitl_mode = False
     async_mode = st.checkbox(
-        "异步模式（显示实时进度）", value=True, disabled=hitl_mode and use_llm,
-        help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。HITL 模式暂不支持异步。",
+        "异步模式（显示实时进度）", value=True,
+        help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。",
     )
 
     st.divider()
