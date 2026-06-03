@@ -70,6 +70,14 @@ class ReportTheme:
     accent_color: str = "#333333"
     heading_background: str = "#f5f5f5"
     table_border_color: str = "#cccccc"
+    text_color: str = "#222222"
+    heading_color: str = "#333333"
+    body_background: str = "#ffffff"
+    blockquote_bg: str = "#f7f7f7"
+    blockquote_color: str = "#333333"
+    code_bg: str = "#f2f2f2"
+    th_background: str = "#f0f0f0"
+    th_color: str = "#222222"
 
 
 # ── 内置主题 ─────────────────────────────────────────────────
@@ -81,6 +89,14 @@ _THEMES: dict[str, ReportTheme] = {
         accent_color="#4a90d9",
         heading_background="#2a2a2a",
         table_border_color="#555555",
+        text_color="#e0e0e0",
+        heading_color="#e8e8e8",
+        body_background="#1e1e1e",
+        blockquote_bg="#2d2d2d",
+        blockquote_color="#d0d0d0",
+        code_bg="#2d2d2d",
+        th_background="#333333",
+        th_color="#e0e0e0",
     ),
     "compact_blue": ReportTheme(
         theme_id="compact_blue",
@@ -251,11 +267,11 @@ def build_theme_css(theme: ReportTheme) -> str:
         body {{
             font-family: {theme.font_family};
             line-height: 1.75;
-            color: #222;
+            color: {theme.text_color};
             max-width: 960px;
             margin: 0 auto;
             padding: 0;
-            background: #ffffff;
+            background: {theme.body_background};
             font-size: 14px;
         }}
 
@@ -266,6 +282,7 @@ def build_theme_css(theme: ReportTheme) -> str:
             margin: 0 0 28px 0;
             font-size: 26px;
             line-height: 1.35;
+            color: {theme.heading_color};
         }}
 
         h2 {{
@@ -276,6 +293,7 @@ def build_theme_css(theme: ReportTheme) -> str:
             background: {theme.heading_background};
             font-size: 20px;
             line-height: 1.35;
+            color: {theme.heading_color};
             break-after: avoid;
         }}
 
@@ -284,7 +302,7 @@ def build_theme_css(theme: ReportTheme) -> str:
             margin-bottom: 10px;
             font-size: 16px;
             line-height: 1.35;
-            color: #333;
+            color: {theme.heading_color};
             break-after: avoid;
         }}
 
@@ -315,23 +333,25 @@ def build_theme_css(theme: ReportTheme) -> str:
             padding: 7px 10px;
             text-align: left;
             vertical-align: top;
+            color: {theme.text_color};
         }}
 
         th {{
-            background: #f0f0f0;
+            background: {theme.th_background};
             font-weight: 600;
+            color: {theme.th_color};
         }}
 
         blockquote {{
             border-left: 4px solid {theme.accent_color};
             margin: 14px 0 18px 0;
             padding: 8px 14px;
-            background: #f7f7f7;
-            color: #333;
+            background: {theme.blockquote_bg};
+            color: {theme.blockquote_color};
         }}
 
         code {{
-            background: #f2f2f2;
+            background: {theme.code_bg};
             padding: 2px 4px;
             border-radius: 4px;
             font-family: Consolas, "Courier New", monospace;
@@ -343,12 +363,12 @@ def build_theme_css(theme: ReportTheme) -> str:
 
         hr {{
             border: none;
-            border-top: 1px solid #ddd;
+            border-top: 1px solid {theme.table_border_color};
             margin: 24px 0;
         }}
 
         a {{
-            color: #222;
+            color: {theme.accent_color};
             text-decoration: none;
         }}
     """
