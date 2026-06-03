@@ -82,6 +82,8 @@ if "wl_show_add_folder" not in st.session_state:
     st.session_state["wl_show_add_folder"] = False
 if "wl_show_add_tag" not in st.session_state:
     st.session_state["wl_show_add_tag"] = False
+if "wl_confirm_delete_folder" not in st.session_state:
+    st.session_state["wl_confirm_delete_folder"] = None
 
 # API 不可用时的处理
 if not st.session_state["wl_api_ok"]:
@@ -207,11 +209,52 @@ with st.sidebar:
     for f in folders:
         label = f"{f.get('icon', '📁')} {f['name']} ({f.get('item_count', 0)})"
         is_active = st.session_state["wl_selected_folder"] == f["id"]
-        if st.button(label, key=f"folder_{f['id']}", use_container_width=True,
-                     type="primary" if is_active else "secondary"):
-            st.session_state["wl_selected_folder"] = f["id"]
-            st.session_state["wl_selected_tag"] = None
-            st.rerun()
+        fc1, fc2 = st.columns([5, 1])
+        with fc1:
+            if st.button(label, key=f"folder_{f['id']}", use_container_width=True,
+                         type="primary" if is_active else "secondary"):
+                st.session_state["wl_selected_folder"] = f["id"]
+                st.session_state["wl_selected_tag"] = None
+                st.session_state["wl_confirm_delete_folder"] = None
+                st.rerun()
+        with fc2:
+            if st.button("🗑", key=f"del_folder_{f['id']}"):
+                st.session_state["wl_confirm_delete_folder"] = f["id"]
+                st.rerun()
+
+    # 删除文件夹确认
+    confirm_id = st.session_state.get("wl_confirm_delete_folder")
+    if confirm_id:
+        folder_to_delete = next((f for f in folders if f["id"] == confirm_id), None)
+        if folder_to_delete:
+            st.warning(f"确认删除「{folder_to_delete['name']}」？")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("确认删除", key="confirm_del_folder", type="primary",
+                             use_container_width=True):
+                    if st.session_state["wl_api_ok"]:
+                        resp = _api_call("DELETE", f"/api/v1/watchlist/folders/{confirm_id}")
+                        if resp is not None:
+                            st.success("已删除")
+                            st.session_state["wl_confirm_delete_folder"] = None
+                            if st.session_state["wl_selected_folder"] == confirm_id:
+                                st.session_state["wl_selected_folder"] = None
+                            st.rerun()
+                    else:
+                        try:
+                            _get_store().delete_folder(confirm_id)
+                            st.success("已删除")
+                            st.session_state["wl_confirm_delete_folder"] = None
+                            if st.session_state["wl_selected_folder"] == confirm_id:
+                                st.session_state["wl_selected_folder"] = None
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
+                            st.session_state["wl_confirm_delete_folder"] = None
+            with cc2:
+                if st.button("取消", key="cancel_del_folder", use_container_width=True):
+                    st.session_state["wl_confirm_delete_folder"] = None
+                    st.rerun()
 
     if st.button("➕ 新建文件夹", use_container_width=True):
         st.session_state["wl_show_add_folder"] = True
