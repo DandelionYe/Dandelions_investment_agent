@@ -8,6 +8,10 @@ from services.data.providers.qmt_peer_cache_preflight import QMTPeerCachePreflig
 from services.data.providers.qmt_peer_valuation_loader import QMTPeerValuationLoader
 from services.data.qmt_provider import _env_bool
 
+# 共享警告关键字 — valuation_engine._compute_industry_missing_reasons 也用这些做子串匹配
+WARN_INSUFFICIENT_SAMPLES = "不足最低要求"
+WARN_TARGET_NOT_IN_PEERS = "不在有效同行样本中"
+
 
 @dataclass(frozen=True)
 class PeerValuationInput:
@@ -390,13 +394,13 @@ def filter_peer_multiples(
         item = calculate_peer_multiples(peer)
         if item["pe_ttm"] is not None and item["pe_ttm"] > max_pe:
             item["pe_ttm"] = None
-            warnings.append(f"{peer.symbol} PE exceeds max_pe and was excluded.")
+            warnings.append(f"{peer.symbol} PE 超过阈值（>{max_pe}），已剔除。")
         if item["pb_mrq"] is not None and item["pb_mrq"] > max_pb:
             item["pb_mrq"] = None
-            warnings.append(f"{peer.symbol} PB exceeds max_pb and was excluded.")
+            warnings.append(f"{peer.symbol} PB 超过阈值（>{max_pb}），已剔除。")
         if item["ps_ttm"] is not None and item["ps_ttm"] > max_ps:
             item["ps_ttm"] = None
-            warnings.append(f"{peer.symbol} PS exceeds max_ps and was excluded.")
+            warnings.append(f"{peer.symbol} PS 超过阈值（>{max_ps}），已剔除。")
 
         multiples.append(item)
 
@@ -436,10 +440,10 @@ def calculate_industry_valuation_percentiles(
     target_ps = target.get("ps_ttm") if target else None
 
     if target is None:
-        warnings.append(f"Target symbol {target_symbol} is not in valid peer inputs.")
+        warnings.append(f"目标标的 {target_symbol} {WARN_TARGET_NOT_IN_PEERS}。")
     if valid_pe_count < min_valid_peers:
         warnings.append(
-            f"Industry PE valid peer count {valid_pe_count} is below {min_valid_peers}."
+            f"行业 PE 有效样本数（{valid_pe_count}）{WARN_INSUFFICIENT_SAMPLES}（{min_valid_peers}）。"
         )
 
     pe_percentile = (

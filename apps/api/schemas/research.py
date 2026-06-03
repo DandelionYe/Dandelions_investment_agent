@@ -54,7 +54,7 @@ class TaskSummary(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
-    report_formats: list[str] = []
+    report_formats: list[str] = Field(default_factory=list)
 
 
 class ResearchAcceptResponse(BaseModel):

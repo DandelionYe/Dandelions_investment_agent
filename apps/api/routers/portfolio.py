@@ -220,12 +220,13 @@ def _load_research_results(
             # Priority 2: task summary fields, enriched with watchlist snapshot for
             # fields that task rows do not carry (valuation/risk/event snapshots).
             snapshot_entry = wl_snapshot_map.get(symbol, {})
-            summary: dict = {k: v for k, v in snapshot_entry.items() if k != "_snapshot_updated_at"}
+            summary: dict = snapshot_entry.copy()
+            summary.pop("_snapshot_updated_at", None)
             if task.get("score") is not None:
                 summary["score"] = task["score"]
-            if task.get("rating"):
+            if task.get("rating") is not None:
                 summary["rating"] = task["rating"]
-            if task.get("action"):
+            if task.get("action") is not None:
                 summary["action"] = task["action"]
             # Warn when merging data from different sources/times
             snapshot_has_enrichment = any(
@@ -244,7 +245,9 @@ def _load_research_results(
 
         # Priority 3: watchlist last fields
         if symbol in wl_snapshot_map:
-            results[symbol] = {k: v for k, v in wl_snapshot_map[symbol].items() if k != "_snapshot_updated_at"}
+            entry = wl_snapshot_map[symbol].copy()
+            entry.pop("_snapshot_updated_at", None)
+            results[symbol] = entry
             continue
 
         # Priority 4: no data → analyzer will record missing_reasons

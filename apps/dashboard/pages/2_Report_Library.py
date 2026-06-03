@@ -100,7 +100,7 @@ def render_download_buttons(task_id: str, available_formats: list[str], key_pref
             if fmt_key not in available_formats:
                 st.button(f"{label} 不存在", disabled=True, key=f"{key_prefix}_{fmt_key}_missing")
                 continue
-            data = st.session_state.get(f"_dl_{task_id}_{api_fmt}")
+            data = _get_cached_report(task_id, api_fmt)
             if data is None:
                 if st.button(f"准备下载 {label}", key=f"{key_prefix}_{fmt_key}_prep"):
                     data = download_report_via_api(task_id, api_fmt)

@@ -47,7 +47,7 @@ def _generate_and_store_reports(
     md_path = Path(save_markdown_report(result, template_config=cfg))
     html_path = Path(save_html_report(str(md_path), theme=theme))
 
-    reports_dir = Path(__file__).resolve().parents[3] / "storage" / "reports" / task_id
+    reports_dir = PROJECT_ROOT / "storage" / "reports" / task_id
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     for src, dst_name in [
@@ -59,7 +59,7 @@ def _generate_and_store_reports(
         if src.exists() and not dst.exists():
             shutil.copy2(str(src), str(dst))
 
-    pdf_path = ""
+    pdf_path = None
     try:
         pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
         pdf_dst = reports_dir / "report.pdf"
@@ -67,8 +67,8 @@ def _generate_and_store_reports(
             shutil.copy2(str(pdf_src), str(pdf_dst))
         if pdf_dst.exists():
             pdf_path = str(pdf_dst)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("PDF 生成失败（task %s）: %s", task_id, exc)
 
     return {
         "json": str(reports_dir / "result.json"),
@@ -553,7 +553,6 @@ def web_news_quality_monitor_beat() -> dict:
     if os.getenv("WEB_NEWS_QUALITY_BEAT_ENABLED", "").lower() not in ("1", "true", "yes"):
         return {"skipped": True, "reason": "WEB_NEWS_QUALITY_BEAT_ENABLED not set"}
 
-    project_root = Path(__file__).resolve().parents[3]
     python_exe = sys.executable
 
     results = {"monitor": None, "trend": None}
@@ -561,9 +560,9 @@ def web_news_quality_monitor_beat() -> dict:
     # Run monitor
     try:
         monitor_result = subprocess.run(
-            [python_exe, str(project_root / "scripts" / "run_web_news_quality_monitor.py"),
-             "--output-dir", str(project_root / "storage" / "artifacts" / "web_news_quality" / "live")],
-            capture_output=True, text=True, cwd=str(project_root), timeout=300,
+            [python_exe, str(PROJECT_ROOT / "scripts" / "run_web_news_quality_monitor.py"),
+             "--output-dir", str(PROJECT_ROOT / "storage" / "artifacts" / "web_news_quality" / "live")],
+            capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=300,
         )
         results["monitor"] = {
             "exit_code": monitor_result.returncode,
@@ -576,9 +575,9 @@ def web_news_quality_monitor_beat() -> dict:
     # Run trend analyzer
     try:
         trend_result = subprocess.run(
-            [python_exe, str(project_root / "scripts" / "analyze_web_news_quality_trends.py"),
-             "--output-dir", str(project_root / "storage" / "artifacts" / "web_news_quality" / "live")],
-            capture_output=True, text=True, cwd=str(project_root), timeout=60,
+            [python_exe, str(PROJECT_ROOT / "scripts" / "analyze_web_news_quality_trends.py"),
+             "--output-dir", str(PROJECT_ROOT / "storage" / "artifacts" / "web_news_quality" / "live")],
+            capture_output=True, text=True, cwd=str(PROJECT_ROOT), timeout=60,
         )
         results["trend"] = {
             "exit_code": trend_result.returncode,

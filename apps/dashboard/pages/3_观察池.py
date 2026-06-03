@@ -232,25 +232,24 @@ with st.sidebar:
             with cc1:
                 if st.button("确认删除", key="confirm_del_folder", type="primary",
                              use_container_width=True):
+                    error_msg = None
                     if st.session_state["wl_api_ok"]:
                         resp = _api_call("DELETE", f"/api/v1/watchlist/folders/{confirm_id}")
-                        if resp is not None:
-                            st.success("已删除")
-                            st.session_state["wl_confirm_delete_folder"] = None
-                            if st.session_state["wl_selected_folder"] == confirm_id:
-                                st.session_state["wl_selected_folder"] = None
-                            st.rerun()
+                        if resp is None:
+                            error_msg = "删除失败"
                     else:
                         try:
                             _get_store().delete_folder(confirm_id)
-                            st.success("已删除")
-                            st.session_state["wl_confirm_delete_folder"] = None
-                            if st.session_state["wl_selected_folder"] == confirm_id:
-                                st.session_state["wl_selected_folder"] = None
-                            st.rerun()
-                        except ValueError as exc:
-                            st.error(str(exc))
-                            st.session_state["wl_confirm_delete_folder"] = None
+                        except (ValueError, KeyError) as exc:
+                            error_msg = str(exc)
+                    if error_msg:
+                        st.error(error_msg)
+                    else:
+                        st.success("已删除")
+                        st.session_state["wl_confirm_delete_folder"] = None
+                        if st.session_state["wl_selected_folder"] == confirm_id:
+                            st.session_state["wl_selected_folder"] = None
+                        st.rerun()
             with cc2:
                 if st.button("取消", key="cancel_del_folder", use_container_width=True):
                     st.session_state["wl_confirm_delete_folder"] = None

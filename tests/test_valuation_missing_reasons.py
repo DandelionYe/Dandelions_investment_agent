@@ -468,7 +468,7 @@ class TestIndustryPercentileMissingReason:
     def test_insufficient_peer_samples(self):
         vd = {
             "industry_pe_percentile": None,
-            "industry_valuation_warnings": ["Industry PE valid peer count 5 is below 20."],
+            "industry_valuation_warnings": ["行业 PE 有效样本数（5）不足最低要求（20）。"],
         }
         _compute_missing_reasons(vd)
         assert vd["industry_pe_percentile_missing_reason"] == "insufficient_peer_samples"
@@ -476,7 +476,7 @@ class TestIndustryPercentileMissingReason:
     def test_target_not_in_peer_inputs(self):
         vd = {
             "industry_pe_percentile": None,
-            "industry_valuation_warnings": ["Target symbol 600001.SH is not in valid peer inputs."],
+            "industry_valuation_warnings": ["目标标的 600001.SH 不在有效同行样本中。"],
         }
         _compute_missing_reasons(vd)
         assert vd["industry_pe_percentile_missing_reason"] == "target_not_in_peer_inputs"

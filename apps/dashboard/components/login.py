@@ -252,8 +252,9 @@ def _refresh_auth_token() -> bool:
         else:
             # 401/403：服务端明确拒绝 token，清除 URL 防止僵尸循环
             _logout()
-    except Exception:
+    except Exception as exc:
         # 网络异常：保留 URL，下次刷新可重试恢复
+        logger.warning("token 刷新失败: %s", exc)
         _clear_session_only()
     return False
 

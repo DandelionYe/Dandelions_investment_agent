@@ -2,6 +2,10 @@ from datetime import date
 
 from services.data.normalizers.common import _to_float
 from services.data.normalizers.valuation_normalizer import ValuationNormalizer
+from services.research.industry_valuation_engine import (
+    WARN_INSUFFICIENT_SAMPLES,
+    WARN_TARGET_NOT_IN_PEERS,
+)
 from services.data.provider_contracts import (
     ProviderDataQualityError,
     ProviderError,
@@ -766,9 +770,9 @@ def _compute_industry_missing_reasons(vd: dict) -> None:
             vd[reason_field] = "missing_peer_finance"
         elif _has_warning(warnings, "qmt_peer_share_capital_insufficient"):
             vd[reason_field] = "missing_peer_share_capital"
-        elif _has_warning(warnings, "is below"):
+        elif _has_warning(warnings, WARN_INSUFFICIENT_SAMPLES):
             vd[reason_field] = "insufficient_peer_samples"
-        elif _has_warning(warnings, "is not in valid peer inputs"):
+        elif _has_warning(warnings, WARN_TARGET_NOT_IN_PEERS):
             vd[reason_field] = "target_not_in_peer_inputs"
         elif _has_warning(warnings, "insufficient"):
             vd[reason_field] = "insufficient_peer_samples"

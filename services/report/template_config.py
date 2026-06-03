@@ -104,6 +104,9 @@ _THEMES: dict[str, ReportTheme] = {
         accent_color="#1a5276",
         heading_background="#eaf2f8",
         table_border_color="#aed6f1",
+        heading_color="#1a5276",
+        blockquote_bg="#eaf2f8",
+        th_background="#d6eaf8",
     ),
 }
 

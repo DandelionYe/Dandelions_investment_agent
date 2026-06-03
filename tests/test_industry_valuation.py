@@ -95,7 +95,7 @@ def test_insufficient_peers_returns_none_and_warning():
 
     assert result.industry_pe_percentile is None
     assert result.industry_valuation_label == "industry_insufficient_peers"
-    assert any("below 20" in warning for warning in result.warnings)
+    assert any("不足最低要求" in warning for warning in result.warnings)
 
 
 def test_loss_making_target_does_not_look_cheap_from_low_pb():
