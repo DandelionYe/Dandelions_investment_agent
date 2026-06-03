@@ -121,7 +121,9 @@ class ValuationService:
 
         # CSMAR daily-derived fallback: fill remaining missing fields
         # (dividend_yield, pe, pb, ps, pcf) from local SQLite snapshot.
-        # Uses setdefault — never overwrites fields already populated by QMT/AKShare.
+        # pe_ttm: CSMAR unconditionally overrides QMT when csmar_pe > 0
+        #   (QMT cross-table report_period mismatch risk); sets pe_ttm_override_by_csmar flag.
+        # pb/ps/pcf/dividend_yield: only fill if currently None.
         self._try_csmar_daily_derived_fallback(
             symbol=symbol,
             valuation_data=valuation_data,

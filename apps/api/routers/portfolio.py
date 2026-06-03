@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -220,13 +221,13 @@ def _load_research_results(
             # Priority 2: task summary fields, enriched with watchlist snapshot for
             # fields that task rows do not carry (valuation/risk/event snapshots).
             snapshot_entry = wl_snapshot_map.get(symbol, {})
-            summary: dict = snapshot_entry.copy()
+            summary: dict = copy.deepcopy(snapshot_entry)
             summary.pop("_snapshot_updated_at", None)
             if task.get("score") is not None:
                 summary["score"] = task["score"]
-            if task.get("rating") is not None:
+            if task.get("rating"):
                 summary["rating"] = task["rating"]
-            if task.get("action") is not None:
+            if task.get("action"):
                 summary["action"] = task["action"]
             # Warn when merging data from different sources/times
             snapshot_has_enrichment = any(
@@ -245,7 +246,7 @@ def _load_research_results(
 
         # Priority 3: watchlist last fields
         if symbol in wl_snapshot_map:
-            entry = wl_snapshot_map[symbol].copy()
+            entry = copy.deepcopy(wl_snapshot_map[symbol])
             entry.pop("_snapshot_updated_at", None)
             results[symbol] = entry
             continue
