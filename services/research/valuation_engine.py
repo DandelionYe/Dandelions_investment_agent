@@ -415,9 +415,12 @@ class ValuationService:
         # 仅当 CSMAR pe > 0 时覆盖，避免 pe=0（数据缺失哨兵值）覆盖有效 QMT 值
         csmar_pe = _to_float(data.get("pe"))
         if csmar_pe is not None and csmar_pe > 0:
+            had_qmt_pe = valuation_data.get("pe_ttm") is not None
             valuation_data["pe_ttm"] = csmar_pe
             valuation_data["pe_ttm_source"] = self.csmar_provider.provider
             valuation_data["pe_ttm_date"] = data.get("pe_date")
+            if had_qmt_pe:
+                valuation_data["pe_ttm_override_by_csmar"] = True
             csmar_fields_applied.append("pe")
         # pb / ps: 仅在缺失时填充（无跨表错配风险）
         for csmar_key, val_key in [("pb", "pb_mrq"), ("ps", "ps_ttm")]:

@@ -500,6 +500,73 @@ def test_csmar_percentile_fallback_is_recorded_in_run_log(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Test: pe_ttm_override_by_csmar transparency flag
+# ---------------------------------------------------------------------------
+
+def test_pe_ttm_override_flag_set_when_csmar_overwrites_qmt():
+    """When QMT provides pe_ttm and CSMAR overrides it, the flag should be set."""
+    td = _make_tmp_dir()
+    try:
+        db = os.path.join(td, "csmar.sqlite")
+        _create_csmar_db(db)
+        csmar_provider = _CSMARSpy(LocalCSMARDailyDerivedProvider(db_path=db))
+
+        service = ValuationService(
+            normalizer=_StubNormalizer({
+                "pe_ttm": 15.0,   # QMT provides this
+                "pb_mrq": 3.0,
+                "ps_ttm": 3.0,
+                "market_cap": 1000.0,
+            }),
+            akshare_provider=_StubAkshareProvider(),
+            industry_service=_StubIndustryService(),
+            csmar_provider=csmar_provider,
+        )
+
+        result = service.build(_asset_data("600519.SH"))
+        v = result["data"]["valuation_data"]
+
+        # CSMAR overwrote QMT's pe_ttm (15.0 → 25.0)
+        assert v["pe_ttm"] == pytest.approx(25.0)
+        # Override flag should be set
+        assert v.get("pe_ttm_override_by_csmar") is True
+        assert v.get("pe_ttm_date") is not None
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def test_pe_ttm_override_flag_not_set_when_csmar_fills_gap():
+    """When QMT has no pe_ttm and CSMAR fills it, the flag should NOT be set."""
+    td = _make_tmp_dir()
+    try:
+        db = os.path.join(td, "csmar.sqlite")
+        _create_csmar_db(db)
+        csmar_provider = _CSMARSpy(LocalCSMARDailyDerivedProvider(db_path=db))
+
+        service = ValuationService(
+            normalizer=_StubNormalizer({
+                "pe_ttm": None,    # QMT missing
+                "pb_mrq": None,
+                "ps_ttm": None,
+                "market_cap": 1000.0,
+            }),
+            akshare_provider=_StubAkshareProvider(),
+            industry_service=_StubIndustryService(),
+            csmar_provider=csmar_provider,
+        )
+
+        result = service.build(_asset_data("600519.SH"))
+        v = result["data"]["valuation_data"]
+
+        # CSMAR filled the gap (None → 25.0), no existing value was overwritten
+        assert v["pe_ttm"] == pytest.approx(25.0)
+        # Override flag should NOT be set (was a fill, not an override)
+        assert v.get("pe_ttm_override_by_csmar") is None
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Test: percentile_midrank with CSMAR values
 # ---------------------------------------------------------------------------
 
