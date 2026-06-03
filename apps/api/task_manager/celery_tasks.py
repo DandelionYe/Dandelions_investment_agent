@@ -56,17 +56,16 @@ def _generate_and_store_reports(
         (html_path, "report.html"),
     ]:
         dst = reports_dir / dst_name
-        if src.exists() and not dst.exists():
+        if not dst.exists():
             shutil.copy2(str(src), str(dst))
 
     pdf_path = None
     try:
         pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
         pdf_dst = reports_dir / "report.pdf"
-        if pdf_src.exists() and not pdf_dst.exists():
+        if not pdf_dst.exists():
             shutil.copy2(str(pdf_src), str(pdf_dst))
-        if pdf_dst.exists():
-            pdf_path = str(pdf_dst)
+        pdf_path = str(pdf_dst)
     except Exception as exc:
         logger.warning("PDF 生成失败（task %s）: %s", task_id, exc)
 

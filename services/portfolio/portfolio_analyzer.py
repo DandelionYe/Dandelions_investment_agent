@@ -170,7 +170,7 @@ def _analyze_holding(
         symbol=symbol,
         asset_type=pos.get("asset_type", "stock"),
         asset_name=pos.get("asset_name", ""),
-        current_weight=pos.get("current_weight") if pos.get("current_weight") is not None else 0.0,
+        current_weight=pos.get("current_weight") or 0.0,
     )
 
     if not result:
