@@ -88,26 +88,25 @@ def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
     data = st.session_state.get(cache_key)
     if data is not None:
         # LRU：移到末尾
-        order = st.session_state.get(order_key, [])
-        if cache_key in order:
-            order.remove(cache_key)
+        order = [k for k in st.session_state.get(order_key, []) if k != cache_key]
         order.append(cache_key)
         st.session_state[order_key] = order
         return data
 
     # 检查负缓存（未过期则跳过请求）
-    misses = st.session_state.get(miss_key, {})
+    misses = dict(st.session_state.get(miss_key, {}))
     if cache_key in misses:
         if time.time() < misses[cache_key]:
             return None
-        del misses[cache_key]
+        misses.pop(cache_key, None)
+        st.session_state[miss_key] = misses
 
     # 下载
     data = download_report_via_api(task_id, fmt)
     if data:
         # 正缓存 + LRU 驱逐
         st.session_state[cache_key] = data
-        order = st.session_state.get(order_key, [])
+        order = list(st.session_state.get(order_key, []))
         order.append(cache_key)
         # 驱逐最旧条目
         while len(order) > _CACHE_MAX_ENTRIES:
@@ -116,7 +115,9 @@ def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
         st.session_state[order_key] = order
     else:
         # 负缓存
-        st.session_state.setdefault(miss_key, {})[cache_key] = time.time() + _CACHE_MISS_TTL
+        misses = dict(st.session_state.get(miss_key, {}))
+        misses[cache_key] = time.time() + _CACHE_MISS_TTL
+        st.session_state[miss_key] = misses
 
     return data
 
