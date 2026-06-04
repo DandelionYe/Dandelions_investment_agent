@@ -4,6 +4,9 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
+# 权重合计上限容忍度：允许浮点舍入误差（如 0.1+0.2+0.3+0.4 = 1.0000000000000002）
+MAX_WEIGHT_TOTAL = 1.0001
+
 
 class PortfolioPosition(BaseModel):
     symbol: str = Field(
@@ -81,7 +84,7 @@ class PortfolioAnalyzeRequest(BaseModel):
         # Validate total current_weight does not exceed 100%
         if has_positions:
             total = sum(p.current_weight for p in self.positions if p.current_weight is not None)
-            if total > 1.0001:
+            if total > MAX_WEIGHT_TOTAL:
                 raise ValueError(
                     f"当前权重合计为 {total:.1%}，不能超过 100%"
                 )

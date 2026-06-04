@@ -67,14 +67,57 @@ def download_report_via_api(task_id: str, fmt: str) -> bytes | None:
         return None
 
 
+_CACHE_MAX_ENTRIES = 20  # LRU 驱逐阈值
+_CACHE_MISS_TTL = 300    # 负结果缓存 TTL（秒）
+
+
 def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
-    """从 session_state 缓存获取报告，未命中则从 API 下载并缓存。"""
+    """从 session_state 缓存获取报告，未命中则从 API 下载并缓存。
+
+    缓存策略：
+    - LRU 驱逐：缓存超过 _CACHE_MAX_ENTRIES 条目时删除最早访问的条目
+    - 负结果缓存：下载失败缓存 _CACHE_MISS_TTL 秒，避免 autorefresh 重复请求
+    """
+    import time
+
     cache_key = f"_dl_{task_id}_{fmt}"
+    order_key = "_dl_cache_order"
+    miss_key = "_dl_cache_misses"
+
+    # 检查正缓存
     data = st.session_state.get(cache_key)
-    if data is None:
-        data = download_report_via_api(task_id, fmt)
-        if data:
-            st.session_state[cache_key] = data
+    if data is not None:
+        # LRU：移到末尾
+        order = st.session_state.get(order_key, [])
+        if cache_key in order:
+            order.remove(cache_key)
+        order.append(cache_key)
+        st.session_state[order_key] = order
+        return data
+
+    # 检查负缓存（未过期则跳过请求）
+    misses = st.session_state.get(miss_key, {})
+    if cache_key in misses:
+        if time.time() < misses[cache_key]:
+            return None
+        del misses[cache_key]
+
+    # 下载
+    data = download_report_via_api(task_id, fmt)
+    if data:
+        # 正缓存 + LRU 驱逐
+        st.session_state[cache_key] = data
+        order = st.session_state.get(order_key, [])
+        order.append(cache_key)
+        # 驱逐最旧条目
+        while len(order) > _CACHE_MAX_ENTRIES:
+            evict_key = order.pop(0)
+            st.session_state.pop(evict_key, None)
+        st.session_state[order_key] = order
+    else:
+        # 负缓存
+        st.session_state.setdefault(miss_key, {})[cache_key] = time.time() + _CACHE_MISS_TTL
+
     return data
 
 

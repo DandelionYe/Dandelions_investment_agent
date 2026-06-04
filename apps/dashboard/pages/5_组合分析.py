@@ -17,6 +17,7 @@ from apps.dashboard.components.login import (
     authenticated_request,
     require_login,
 )
+from apps.api.schemas.portfolio import MAX_WEIGHT_TOTAL
 from services.portfolio.report_builder import REBALANCE_LABELS
 
 st.set_page_config(page_title="组合分析", page_icon="📊", layout="wide")
@@ -160,7 +161,7 @@ else:
             st.warning("请至少输入一个标的")
         else:
             total_weight = sum(p["current_weight"] for p in positions)
-            if total_weight > 1.0001:
+            if total_weight > MAX_WEIGHT_TOTAL:
                 st.error(f"当前权重合计为 {total_weight:.1%}，不能超过 100%")
                 st.stop()
 
