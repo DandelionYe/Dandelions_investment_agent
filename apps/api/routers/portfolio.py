@@ -42,6 +42,7 @@ def analyze(
     owner = scope_username(user) if not is_admin(user) else username
 
     # ── Resolve positions (schema validator ensures exactly one source) ──
+    wl_items = None
     if req.positions:
         positions = [
             {
@@ -53,7 +54,7 @@ def analyze(
             for p in req.positions
         ]
     else:
-        positions = _load_positions_from_watchlist(
+        positions, wl_items = _load_positions_from_watchlist(
             req.watchlist_folder_id, owner
         )
         if not positions:
@@ -63,7 +64,7 @@ def analyze(
             )
 
     # ── Load research results with watchlist fallback ──────────
-    wl_snapshot_map = _build_watchlist_snapshot_map(owner)
+    wl_snapshot_map = _build_watchlist_snapshot_map(owner, items=wl_items)
     research_results = _load_research_results(positions, owner, wl_snapshot_map)
 
     # ── Analyze ───────────────────────────────────────────────
@@ -128,8 +129,13 @@ def analyze(
 
 def _load_positions_from_watchlist(
     folder_id: str | None, owner: str | None
-) -> list[dict]:
-    """Load positions from watchlist store."""
+) -> tuple[list[dict], list[dict]]:
+    """Load positions from watchlist store.
+
+    Returns:
+        (positions, raw_items) — positions for analyze_portfolio,
+        raw_items for _build_watchlist_snapshot_map to avoid re-querying.
+    """
     wl = get_watchlist_store()
     if folder_id:
         items, _ = wl.list_items(folder_id=folder_id, enabled=True, owner_username=owner)
@@ -142,7 +148,7 @@ def _load_positions_from_watchlist(
         else:
             items = wl.get_all_enabled_items()
 
-    return [
+    positions = [
         {
             "symbol": normalize_symbol(it["symbol"]),
             "asset_type": it.get("asset_type", "stock"),
@@ -151,18 +157,28 @@ def _load_positions_from_watchlist(
         }
         for it in items
     ]
+    return positions, items
 
 
-def _build_watchlist_snapshot_map(owner: str | None) -> dict[str, dict]:
-    """Build a map of symbol → watchlist item data for fallback."""
-    wl = get_watchlist_store()
-    if owner:
-        items = [
-            it for it in wl.get_all_enabled_items()
-            if it.get("owner_username", "default") == owner
-        ]
-    else:
-        items = wl.get_all_enabled_items()
+def _build_watchlist_snapshot_map(
+    owner: str | None, items: list[dict] | None = None
+) -> dict[str, dict]:
+    """Build a map of symbol → watchlist item data for fallback.
+
+    Args:
+        owner: Filter by owner username (None = all).
+        items: Pre-loaded watchlist items to avoid re-querying the store.
+               If None, fetches from the store.
+    """
+    if items is None:
+        wl = get_watchlist_store()
+        if owner:
+            items = [
+                it for it in wl.get_all_enabled_items()
+                if it.get("owner_username", "default") == owner
+            ]
+        else:
+            items = wl.get_all_enabled_items()
 
     snapshot: dict[str, dict] = {}
     for it in items:

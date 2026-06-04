@@ -20,8 +20,6 @@ sys.path.append(str(PROJECT_ROOT))
 
 from services.orchestrator.single_asset_research import (
     run_single_asset_research,
-    start_hitl_research,
-    resume_hitl_research,
 )
 from services.report.json_builder import save_json_result
 from services.report.markdown_builder import save_markdown_report
@@ -71,155 +69,6 @@ def read_file_bytes(path: str) -> bytes:
 
 def read_file_text(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
-
-
-def render_hitl_review():
-    hitl_state = st.session_state.get("hitl_state", {})
-    interrupt_info = hitl_state.get("__interrupt__", [])
-    review_package = interrupt_info[0].value if interrupt_info else {}
-
-    st.divider()
-    st.header("人工审核")
-    st.info(
-        "多轮辩论已完成并暂停。请审核下方各方观点和辩论历程，"
-        "可按需调整最终操作建议，然后点击「确认审核并生成报告」。"
-    )
-
-    bull_case = review_package.get("bull_case", {}) or hitl_state.get("bull_case", {})
-    bear_case = review_package.get("bear_case", {}) or hitl_state.get("bear_case", {})
-    risk_review = review_package.get("risk_review", {}) or hitl_state.get("risk_review", {})
-    debate_history = review_package.get("debate_history", []) or hitl_state.get("debate_history", [])
-    research_summary = review_package.get("research_summary", {})
-
-    if research_summary:
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.metric("标的", f"{research_summary.get('symbol', '-')}")
-        with col_b:
-            st.metric("综合评分", f"{research_summary.get('score', '-')} / 100")
-        with col_c:
-            st.metric("评级", research_summary.get("rating", "-"))
-
-    with st.expander("多头最终观点", expanded=True):
-        if bull_case:
-            st.markdown(f"**核心论点：** {bull_case.get('thesis', '暂无')}")
-            st.markdown("**主要理由：**")
-            for item in bull_case.get("key_arguments", []):
-                st.write(f"- {item}")
-            st.markdown("**潜在催化：**")
-            for item in bull_case.get("catalysts", []):
-                st.write(f"- {item}")
-            st.markdown("**失效条件：**")
-            for item in bull_case.get("invalidation_conditions", []):
-                st.write(f"- {item}")
-        else:
-            st.write("暂无多头观点。")
-
-    with st.expander("空头最终观点"):
-        if bear_case:
-            st.markdown(f"**核心论点：** {bear_case.get('thesis', '暂无')}")
-            st.markdown("**主要理由：**")
-            for item in bear_case.get("key_arguments", []):
-                st.write(f"- {item}")
-            st.markdown("**主要担忧：**")
-            for item in bear_case.get("main_concerns", []):
-                st.write(f"- {item}")
-            st.markdown("**失效条件：**")
-            for item in bear_case.get("invalidation_conditions", []):
-                st.write(f"- {item}")
-        else:
-            st.write("暂无空头观点。")
-
-    with st.expander("风险官最终评估"):
-        if risk_review:
-            st.write(f"**风险等级：** {risk_review.get('risk_level', '-')}")
-            st.write(f"**是否阻断：** {'是' if risk_review.get('blocking') else '否'}")
-            st.write(f"**风险总结：** {risk_review.get('risk_summary', '暂无')}")
-            st.write(f"**建议仓位：** {risk_review.get('max_position', '-')}")
-            st.markdown("**风险触发条件：**")
-            for item in risk_review.get("risk_triggers", []):
-                st.write(f"- {item}")
-        else:
-            st.write("暂无风险官评估。")
-
-    with st.expander("辩论历程", expanded=False):
-        if debate_history:
-            for entry in debate_history:
-                rnd = entry.get("round", "?")
-                etype = entry.get("type", "")
-                speaker = entry.get("speaker", "?")
-                if etype == "initial":
-                    st.caption(f"第 {rnd} 轮 · 初始并行分析")
-                elif etype == "supervisor_judgment":
-                    decision = entry.get("decision", {})
-                    st.caption(
-                        f"第 {rnd} 轮 · Supervisor 判定 —— "
-                        f"{'✅ 收敛' if decision.get('is_converged') else '🔄 继续辩论'}"
-                    )
-                    if decision.get("convergence_reason"):
-                        st.caption(f"收敛原因：{decision['convergence_reason']}")
-                    if decision.get("next_speaker"):
-                        st.caption(f"下一发言人：{decision['next_speaker']}")
-                    if decision.get("challenge"):
-                        st.write(f"质询：{decision['challenge']}")
-                    if decision.get("round_summary"):
-                        st.caption(decision["round_summary"])
-                elif etype == "challenge_response":
-                    ch = entry.get("challenge", "")
-                    st.caption(f"第 {rnd} 轮 · {speaker} 回应质询：{ch}")
-        else:
-            st.write("暂无辩论历史。")
-
-    st.subheader("人工调整")
-    action_options = ["不修改", "买入", "分批买入", "持有", "观察", "回避"]
-    selected_action = st.selectbox(
-        "覆盖最终操作建议", options=action_options, index=0,
-        help="选择「不修改」则保留 AI 原始建议；选择其他值将覆盖。",
-    )
-    reviewer_notes = st.text_area(
-        "审核备注", value="", placeholder="可在此记录审核意见、修改理由等……", height=80,
-    )
-
-    col_confirm, col_skip = st.columns(2)
-    with col_confirm:
-        confirm_button = st.button("确认审核并生成报告", type="primary", use_container_width=True)
-    with col_skip:
-        skip_button = st.button("放弃审核，自动通过", use_container_width=True)
-
-    if confirm_button or skip_button:
-        modified_state = {}
-        if confirm_button and selected_action != "不修改":
-            modified_state["action"] = selected_action
-        if reviewer_notes.strip():
-            modified_state["reviewer_notes"] = reviewer_notes.strip()
-        if skip_button:
-            modified_state = None
-
-        with st.spinner("正在完成报告生成……"):
-            try:
-                result = resume_hitl_research(
-                    partial_result=st.session_state["hitl_partial_result"],
-                    thread_id=st.session_state["hitl_thread_id"],
-                    modified_state=modified_state if modified_state else None,
-                )
-                cfg, theme = resolve_report_config(
-                    st.session_state.get("report_template"),
-                    st.session_state.get("report_theme"),
-                )
-                json_path = save_json_result(result)
-                markdown_path = save_markdown_report(result, template_config=cfg)
-                html_path = save_html_report(markdown_path, theme=theme)
-                pdf_path = save_pdf_report_with_playwright(html_path)
-                result["_artifact_paths"] = {
-                    "json": json_path, "markdown": markdown_path,
-                    "html": html_path, "pdf": pdf_path,
-                }
-                st.session_state["last_result"] = result
-                st.session_state["hitl_active"] = False
-                st.success("研究报告生成成功。")
-                st.rerun()
-            except Exception as exc:
-                st.exception(exc)
 
 
 def render_summary(result: dict):
@@ -414,8 +263,6 @@ with st.sidebar:
         help="生产研究优先使用 qmt；akshare 仅作为 fallback/调试；mock 用于离线测试。",
     )
     use_llm = st.checkbox("启用 DeepSeek 辩论", value=True)
-    # HITL 模式已屏蔽 UI，仍可通过 API 参数调用
-    hitl_mode = False
     async_mode = st.checkbox(
         "异步模式（显示实时进度）", value=True,
         help="提交到 FastAPI 异步执行，实时展示进度条。取消勾选则使用原有同步模式。",
@@ -444,11 +291,10 @@ if run_button:
     if not symbol.strip():
         st.error("请输入股票或 ETF 代码。")
     else:
-        # Store template/theme in session for HITL resume
         st.session_state["report_template"] = report_template
         st.session_state["report_theme"] = report_theme
 
-        if async_mode and not (hitl_mode and use_llm):
+        if async_mode:
             from apps.dashboard.components.progress_poller import (
                 submit_research_task, poll_task_progress, fetch_task_result,
             )
@@ -462,36 +308,11 @@ if run_button:
                     result = fetch_task_result(submitted["task_id"])
                     if result:
                         st.session_state["last_result"] = result
-                        st.session_state["hitl_active"] = False
                         st.success("研究报告生成成功。")
                     else:
                         st.error("获取结果失败，请检查 API 日志。")
             else:
                 st.warning("异步提交失败，请确认 FastAPI 服务已启动。可以取消勾选「异步模式」使用同步模式。")
-        elif hitl_mode and use_llm:
-            with st.spinner("正在执行多轮辩论，完成后将请您审核……"):
-                try:
-                    hitl_package = start_hitl_research(
-                        symbol=symbol.strip(), data_source=data_source,
-                    )
-                    st.session_state["hitl_thread_id"] = hitl_package["thread_id"]
-                    st.session_state["hitl_state"] = hitl_package["hitl_state"]
-                    st.session_state["hitl_partial_result"] = hitl_package["partial_result"]
-                    st.session_state["hitl_active"] = True
-                    st.session_state.pop("last_result", None)
-                    st.rerun()
-                except Exception as exc:
-                    st.warning(f"HITL 启动失败，回退到自动模式：{exc}")
-                    try:
-                        result = run_research(
-                            symbol=symbol.strip(), data_source=data_source, use_llm=True,
-                            report_template=report_template, report_theme=report_theme,
-                        )
-                        st.session_state["last_result"] = result
-                        st.session_state["hitl_active"] = False
-                        st.success("研究报告生成成功（自动模式）。")
-                    except Exception as exc2:
-                        st.exception(exc2)
         else:
             with st.spinner("正在生成研究报告，请稍候……"):
                 try:
@@ -500,13 +321,9 @@ if run_button:
                         report_template=report_template, report_theme=report_theme,
                     )
                     st.session_state["last_result"] = result
-                    st.session_state["hitl_active"] = False
                     st.success("研究报告生成成功。")
                 except Exception as exc:
                     st.exception(exc)
-
-if st.session_state.get("hitl_active"):
-    render_hitl_review()
 
 result = st.session_state.get("last_result")
 if result:
@@ -516,5 +333,5 @@ if result:
     render_debate(result)
     render_decision_guard(result)
     render_downloads(result)
-elif not st.session_state.get("hitl_active"):
+else:
     st.info("请在左侧输入股票/ETF代码，然后点击「生成研究报告」。")

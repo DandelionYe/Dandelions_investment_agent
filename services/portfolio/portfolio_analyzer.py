@@ -67,7 +67,7 @@ class PortfolioAnalysis:
     portfolio_rating: str | None = None
     risk_level: str | None = None
     # Deprecated: 使用 target_cash_weight 替代。保留此字段仅为向后兼容，
-    # 未来版本将移除。两者值始终相同。
+    # 未来版本将移除。构造时两者值相同（均在 analyze_portfolio 返回时赋值）。
     cash_weight: float = 0.0
     target_cash_weight: float = 0.0  # recommended cash allocation
     current_cash_weight: float | None = None  # 1 - sum(current_weights), None if no current weights

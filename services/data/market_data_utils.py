@@ -18,6 +18,20 @@ def strip_suffix_zfill6(symbol: str) -> str:
     return code.zfill(6)
 
 
+def canonical_symbol_with_suffix(symbol: str) -> str:
+    """标准化 symbol 并补全交易所后缀。如 '600519' → '600519.SH'，'600519.SH' → '600519.SH'。"""
+    value = str(symbol).strip().upper()
+    if "." in value:
+        code, exchange = value.split(".", 1)
+        return f"{code.zfill(6)}.{exchange}"
+    code = value.zfill(6)
+    if code.startswith(("6", "9")):
+        return f"{code}.SH"
+    if code.startswith(("4", "8")):
+        return f"{code}.BJ"
+    return f"{code}.SZ"
+
+
 def guess_asset_type(symbol: str) -> str:
     code = strip_exchange_suffix(symbol)
     if code.startswith(("51", "56", "58", "15", "16", "18")):

@@ -741,8 +741,6 @@ def _compute_percentile_missing_reasons(vd: dict) -> None:
             vd[reason_field] = invalid_reason
         elif _has_warning(warnings, f"insufficient_{metric}_samples"):
             vd[reason_field] = "insufficient_history_samples"
-        elif _has_warning(warnings, "insufficient"):
-            vd[reason_field] = "insufficient_history_samples"
         elif _has_warning(warnings, "unavailable") or _has_warning(warnings, "failed"):
             vd[reason_field] = "provider_unavailable"
         else:
@@ -779,8 +777,6 @@ def _compute_industry_missing_reasons(vd: dict) -> None:
             vd[reason_field] = "insufficient_peer_samples"
         elif _has_warning(warnings, WARN_TARGET_NOT_IN_PEERS):
             vd[reason_field] = "target_not_in_peer_inputs"
-        elif _has_warning(warnings, "insufficient"):
-            vd[reason_field] = "insufficient_peer_samples"
         else:
             vd[reason_field] = "unknown"
 

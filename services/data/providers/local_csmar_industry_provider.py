@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from time import perf_counter
 
+from services.data.market_data_utils import canonical_symbol_with_suffix
 from services.data.provider_contracts import (
     ProviderDataQualityError,
     ProviderMetadata,
@@ -197,19 +198,6 @@ def normalize_level(level: str | None) -> str:
         return "CSMAR_SECTION"
     return "CSMAR_ZX"
 
-
-def canonical_symbol_with_suffix(symbol: str) -> str:
-    """标准化 symbol 并补全交易所后缀。如 '600519' → '600519.SH'，'600519.SH' → '600519.SH'。"""
-    value = str(symbol).strip().upper()
-    if "." in value:
-        code, exchange = value.split(".", 1)
-        return f"{code.zfill(6)}.{exchange}"
-    code = value.zfill(6)
-    if code.startswith(("6", "9")):
-        return f"{code}.SH"
-    if code.startswith(("4", "8")):
-        return f"{code}.BJ"
-    return f"{code}.SZ"
 
 
 def _env_bool(name: str, default: bool) -> bool:
