@@ -3,13 +3,8 @@
 提供统一的进度消息格式和发布接口。
 """
 
-from datetime import datetime, timezone
-
+from apps.api.utils.time_utils import utc_now_iso
 from apps.api.websocket.redis_pubsub import publish_progress_sync
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _status_to_type(status: str) -> str:
@@ -50,7 +45,7 @@ def publish_task_progress(
         "rating": rating,
         "action": action,
         "error_message": error_message,
-        "timestamp": _utc_now_iso(),
+        "timestamp": utc_now_iso(),
     }
     publish_progress_sync(f"task:{task_id}", msg)
     publish_progress_sync("events", msg)
@@ -84,7 +79,7 @@ def publish_batch_progress(
         "item_status": item_status,
         "item_score": item_score,
         "item_rating": item_rating,
-        "timestamp": _utc_now_iso(),
+        "timestamp": utc_now_iso(),
     }
     publish_progress_sync(f"batch:{batch_id}", msg)
     publish_progress_sync("events", msg)
