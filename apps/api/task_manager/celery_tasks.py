@@ -30,10 +30,10 @@ def _generate_and_store_reports(
     *,
     report_template: str | None = None,
     report_theme: str | None = None,
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """生成 JSON/MD/HTML/PDF 报告并复制到 storage/reports/<task_id>/。
 
-    返回 report_paths dict（pdf key 在失败时为空字符串）。
+    返回 report_paths dict（pdf key 在失败时为 None）。
     JSON/MD/HTML 失败会抛异常；PDF 失败静默降级。
     """
     from services.report.html_builder import save_html_report
@@ -50,31 +50,33 @@ def _generate_and_store_reports(
     reports_dir = PROJECT_ROOT / "storage" / "reports" / task_id
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    for src, dst_name in [
-        (json_path, "result.json"),
-        (md_path, "report.md"),
-        (html_path, "report.html"),
+    report_paths: dict[str, str | None] = {}
+    for src, dst_name, key in [
+        (json_path, "result.json", "json"),
+        (md_path, "report.md", "markdown"),
+        (html_path, "report.html", "html"),
     ]:
-        dst = reports_dir / dst_name
-        if not dst.exists():
-            shutil.copy2(str(src), str(dst))
+        if src.exists():
+            dst = reports_dir / dst_name
+            shutil.copy2(src, dst)
+            report_paths[key] = str(dst)
+        else:
+            logger.warning("报告源文件缺失（task %s）: %s", task_id, src)
 
     pdf_path = None
     try:
-        pdf_src = Path(save_pdf_report_with_playwright(str(html_path)))
-        pdf_dst = reports_dir / "report.pdf"
-        if not pdf_dst.exists():
-            shutil.copy2(str(pdf_src), str(pdf_dst))
-        pdf_path = str(pdf_dst)
+        pdf_src = save_pdf_report_with_playwright(str(html_path))
+        if pdf_src is not None:
+            pdf_dst = reports_dir / "report.pdf"
+            shutil.copy2(pdf_src, pdf_dst)
+            pdf_path = str(pdf_dst)
+        else:
+            logger.warning("PDF 生成返回 None（task %s）", task_id)
     except Exception as exc:
         logger.warning("PDF 生成失败（task %s）: %s", task_id, exc)
 
-    return {
-        "json": str(reports_dir / "result.json"),
-        "markdown": str(reports_dir / "report.md"),
-        "html": str(reports_dir / "report.html"),
-        "pdf": pdf_path,
-    }
+    report_paths["pdf"] = pdf_path
+    return report_paths
 
 
 @celery_app.task(
@@ -375,8 +377,8 @@ def _update_and_publish_batch(
             item_score=item_score,
             item_rating=item_rating,
         )
-    except Exception:
-        pass  # batch 进度更新失败不阻断主流程
+    except Exception as exc:
+        logger.warning("batch 进度更新失败（batch %s, item %s）: %s", batch_id, item_id, exc)
 
 
 def _extract_structured_risk_review(result: dict) -> dict | None:

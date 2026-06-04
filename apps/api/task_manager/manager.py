@@ -26,6 +26,14 @@ from apps.api.task_manager.store import (
 REPORT_FORMATS = ("json", "markdown", "html", "pdf")
 
 
+def _available_formats(report_paths: dict) -> list[str]:
+    """返回 report_paths 中实际存在于磁盘上的格式列表。"""
+    return [
+        fmt for fmt in REPORT_FORMATS
+        if (rp := report_paths.get(fmt)) and Path(rp).exists()
+    ]
+
+
 class TaskQueueUnavailableError(RuntimeError):
     """Raised when the async task queue cannot accept a task."""
 
@@ -186,10 +194,9 @@ class TaskManager:
                     "started_at": t.get("started_at"),
                     "completed_at": t.get("completed_at"),
                     "error_message": t.get("error_message"),
-                    "report_formats": [
-                        fmt for fmt in REPORT_FORMATS
-                        if (t.get("report_paths") or {}).get(fmt)
-                    ],
+                    "report_formats": _available_formats(
+                        t.get("report_paths") or {}
+                    ),
                 }
                 for t in tasks
             ],
@@ -204,11 +211,7 @@ class TaskManager:
         report_paths = task.get("report_paths") or {}
         return {
             "task_id": task_id,
-            "formats": [
-                fmt
-                for fmt in REPORT_FORMATS
-                if report_paths.get(fmt) and Path(report_paths[fmt]).exists()
-            ],
+            "formats": _available_formats(report_paths),
             "json_path": report_paths.get("json"),
             "markdown_path": report_paths.get("markdown"),
             "html_path": report_paths.get("html"),
