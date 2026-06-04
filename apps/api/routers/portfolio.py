@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 
@@ -49,7 +48,7 @@ def analyze(
                 "symbol": p.symbol,
                 "asset_type": p.asset_type,
                 "asset_name": p.asset_name,
-                "current_weight": p.current_weight if p.current_weight is not None else 0.0,
+                "current_weight": p.current_weight,  # None if not provided
             }
             for p in req.positions
         ]
@@ -153,7 +152,7 @@ def _load_positions_from_watchlist(
             "symbol": normalize_symbol(it["symbol"]),
             "asset_type": it.get("asset_type", "stock"),
             "asset_name": it.get("asset_name", ""),
-            "current_weight": 0.0,  # watchlist doesn't track current_weight
+            "current_weight": None,  # watchlist doesn't track current_weight
         }
         for it in items
     ]
@@ -212,19 +211,19 @@ def _load_research_results(
     task_store = get_task_store()
     results: dict[str, dict] = {}
 
-    for pos in positions:
-        # 防御性规范化：上游（schema / _build_watchlist_positions）通常已规范化，
-        # 但 DB 中可能存储未规范化的 symbol。
-        symbol = normalize_symbol(pos["symbol"])
+    # Batch query: get latest completed task for all symbols at once
+    symbols = [normalize_symbol(pos["symbol"]) for pos in positions]
+    tasks_by_symbol = task_store.list_tasks_for_symbols(
+        symbols=symbols, status="completed", username=owner
+    )
 
-        # Find latest completed task for this symbol
-        tasks, _ = task_store.list_tasks(
-            symbol=symbol, status="completed", username=owner, page=1, page_size=1
-        )
+    for pos, symbol in zip(positions, symbols):
+
+        # Get task from batch query result
+        task = tasks_by_symbol.get(symbol)
 
         # Priority 1: result JSON file
-        if tasks:
-            task = tasks[0]
+        if task:
             report_paths = task.get("report_paths") or {}
             json_path = report_paths.get("json", "")
             if json_path and Path(json_path).exists():
@@ -239,7 +238,7 @@ def _load_research_results(
             # Priority 2: task summary fields, enriched with watchlist snapshot for
             # fields that task rows do not carry (valuation/risk/event snapshots).
             snapshot_entry = wl_snapshot_map.get(symbol, {})
-            summary: dict = copy.deepcopy(snapshot_entry)
+            summary: dict = dict(snapshot_entry)  # shallow copy is sufficient
             summary.pop("_snapshot_updated_at", None)
             if task.get("score") is not None:
                 summary["score"] = task["score"]
@@ -264,7 +263,7 @@ def _load_research_results(
 
         # Priority 3: watchlist last fields
         if symbol in wl_snapshot_map:
-            entry = copy.deepcopy(wl_snapshot_map[symbol])
+            entry = dict(wl_snapshot_map[symbol])  # shallow copy is sufficient
             entry.pop("_snapshot_updated_at", None)
             results[symbol] = entry
             continue

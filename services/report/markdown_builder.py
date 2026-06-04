@@ -398,6 +398,9 @@ def _build_valuation_summary_table(valuation_data: dict) -> str:
         cell = _build_missing_reason_cell(
             valuation_data.get(field), valuation_data, reason_key, formatter
         )
+        # Show CSMAR override note for PE TTM (only when PE value exists)
+        if field == "pe_ttm" and valuation_data.get("pe_ttm") is not None and valuation_data.get("pe_ttm_override_by_csmar"):
+            cell += " ⚠️ CSMAR覆盖"
         rows.append(f"| {title} | {cell} |")
     return "\n".join(rows)
 

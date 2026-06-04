@@ -4,6 +4,8 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
+from services.portfolio.portfolio_analyzer import normalize_symbol
+
 # 权重合计上限容忍度：允许浮点舍入误差（如 0.1+0.2+0.3+0.4 = 1.0000000000000002）
 MAX_WEIGHT_TOTAL = 1.0001
 
@@ -27,7 +29,7 @@ class PortfolioPosition(BaseModel):
     @classmethod
     def normalize_symbol(cls, v: str) -> str:
         """Strip whitespace and uppercase symbol."""
-        return str(v).strip().upper()
+        return normalize_symbol(v)
 
 
 class PortfolioAnalyzeRequest(BaseModel):
@@ -104,7 +106,7 @@ class HoldingResponse(BaseModel):
     industry: Optional[str] = None
     pe_percentile: Optional[float] = None
     pb_percentile: Optional[float] = None
-    current_weight: float = 0.0
+    current_weight: Optional[float] = None  # None if not provided
     target_weight: float = 0.0
     delta_weight: float = 0.0
     rebalance_action: Optional[str] = None

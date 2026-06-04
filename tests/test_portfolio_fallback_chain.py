@@ -63,11 +63,15 @@ class TestFallbackChain:
 
         mock_task_store = MagicMock()
 
-        def mock_list_tasks(symbol, status, username, page, page_size):
-            tasks = tasks_by_symbol.get(symbol, [])
-            return tasks, len(tasks)
+        def mock_list_tasks_for_symbols(symbols, status, username):
+            # Return latest task per symbol (first in list, since sorted by created_at DESC)
+            result = {}
+            for sym in symbols:
+                tasks = tasks_by_symbol.get(sym, [])
+                result[sym] = tasks[0] if tasks else None
+            return result
 
-        mock_task_store.list_tasks.side_effect = mock_list_tasks
+        mock_task_store.list_tasks_for_symbols.side_effect = mock_list_tasks_for_symbols
 
         with patch("apps.api.routers.portfolio.get_task_store", return_value=mock_task_store):
             return _load_research_results(positions, owner, wl_snapshot_map)

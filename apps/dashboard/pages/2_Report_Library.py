@@ -103,7 +103,7 @@ def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
 
     # 下载
     data = download_report_via_api(task_id, fmt)
-    if data:
+    if data:  # 非空字节才缓存为正结果；b'' 视为失败
         # 正缓存 + LRU 驱逐
         st.session_state[cache_key] = data
         order = list(st.session_state.get(order_key, []))
@@ -114,7 +114,7 @@ def _get_cached_report(task_id: str, fmt: str) -> bytes | None:
             st.session_state.pop(evict_key, None)
         st.session_state[order_key] = order
     else:
-        # 负缓存
+        # 负缓存（None 或 b'' 都视为失败）
         misses = dict(st.session_state.get(miss_key, {}))
         misses[cache_key] = time.time() + _CACHE_MISS_TTL
         st.session_state[miss_key] = misses

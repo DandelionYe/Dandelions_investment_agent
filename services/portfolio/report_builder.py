@@ -76,9 +76,11 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
     lines.append("|------|------|------|------|------|------|----------|----------|------|--------|")
     for h in a.holdings:
         has_score = h.score is not None
+        has_weight = h.current_weight is not None
         score_str = f"{h.score:.0f}" if has_score else "N/A"
         target_str = f"{h.target_weight:.1%}" if has_score else "N/A"
-        if not has_score:
+        current_str = f"{h.current_weight:.1%}" if has_weight else "N/A"
+        if not has_score or not has_weight:
             delta_str = "N/A"
         elif h.current_weight > 0:
             delta_str = f"{h.delta_weight:+.1%}"
@@ -88,7 +90,7 @@ def _build_markdown(a: PortfolioAnalysis) -> str:
         lines.append(
             f"| {h.symbol} | {h.asset_name} | {score_str} | {h.rating or '-'} "
             f"| {h.action or '-'} | {h.risk_level or '-'} "
-            f"| {h.current_weight:.1%} | {target_str} "
+            f"| {current_str} | {target_str} "
             f"| {delta_str} | {rebal_str} |"
         )
     lines.append("")

@@ -115,17 +115,17 @@ class TestCurrentCashWeight:
         )
         assert analysis.current_cash_weight is None
 
-    def test_current_cash_weight_none_when_all_zero(self):
-        """When all current weights are explicitly 0.0, system cannot distinguish
-        'not provided' from 'explicitly zero' — current_cash_weight is None."""
+    def test_current_cash_weight_100_when_all_zero(self):
+        """When all current weights are explicitly 0.0, user has no holdings,
+        so current_cash_weight should be 1.0 (100% cash)."""
         positions = [
             {"symbol": "A.SH", "asset_type": "stock", "current_weight": 0.0},
             {"symbol": "B.SH", "asset_type": "stock", "current_weight": 0.0},
         ]
         analysis = analyze_portfolio(positions, _research_results_with_scores())
-        # 0.0 is indistinguishable from 'not provided' after the or-0.0 defaulting,
-        # so current_cash_weight is None (data unavailable), not 1.0 (fully in cash).
-        assert analysis.current_cash_weight is None
+        # Explicitly providing 0.0 means "no holdings", so cash is 100%
+        assert analysis.current_cash_weight is not None
+        assert abs(analysis.current_cash_weight - 1.0) < 0.01
 
     def test_current_cash_weight_0_percent_when_fully_invested(self):
         """When current weights sum to 100%, current_cash_weight should be 0%."""
@@ -154,6 +154,35 @@ class TestCurrentCashWeight:
         analysis = analyze_portfolio(positions, _research_results_with_scores())
         assert analysis.current_cash_weight is not None
         assert abs(analysis.current_cash_weight - 0.50) < 0.01
+
+    def test_holding_current_weight_none_when_not_provided(self):
+        """HoldingAnalysis.current_weight should be None when not provided."""
+        positions = [
+            {"symbol": "A.SH", "asset_type": "stock"},
+        ]
+        analysis = analyze_portfolio(positions, _research_results_with_scores())
+        assert len(analysis.holdings) == 1
+        assert analysis.holdings[0].current_weight is None
+
+    def test_holding_current_weight_zero_when_explicitly_zero(self):
+        """HoldingAnalysis.current_weight should be 0.0 when explicitly provided as 0.0."""
+        positions = [
+            {"symbol": "A.SH", "asset_type": "stock", "current_weight": 0.0},
+        ]
+        analysis = analyze_portfolio(positions, _research_results_with_scores())
+        assert len(analysis.holdings) == 1
+        assert analysis.holdings[0].current_weight == 0.0
+
+    def test_current_cash_weight_none_when_mixed(self):
+        """When some positions have current_weight and others don't,
+        current_cash_weight should be None (data incomplete)."""
+        positions = [
+            {"symbol": "A.SH", "asset_type": "stock", "current_weight": 0.50},
+            {"symbol": "B.SH", "asset_type": "stock"},  # not provided
+        ]
+        analysis = analyze_portfolio(positions, _research_results_with_scores())
+        # Mixed: some provided, some not → current_cash_weight should be None
+        assert analysis.current_cash_weight is None
 
 
 # ── Test: target and current are independent ────────────────────────────────

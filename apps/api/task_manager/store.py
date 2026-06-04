@@ -264,6 +264,50 @@ class TaskStore:
         finally:
             conn.close()
 
+    def list_tasks_for_symbols(
+        self,
+        symbols: list[str],
+        status: str | None = None,
+        username: str | None = None,
+    ) -> dict[str, dict | None]:
+        """Batch query: return latest completed task per symbol.
+
+        Returns:
+            Dict mapping symbol → latest task dict (or None if no task found).
+        """
+        if not symbols:
+            return {}
+        conn = self._get_conn()
+        try:
+            # Build query: for each symbol, get the latest task matching filters
+            result: dict[str, dict | None] = {s: None for s in symbols}
+            placeholders = ",".join("?" for _ in symbols)
+            where = [f"symbol IN ({placeholders})"]
+            params: list = list(symbols)
+            if status:
+                where.append("status = ?")
+                params.append(status)
+            if username:
+                where.append("created_by = ?")
+                params.append(username)
+
+            where_clause = f"WHERE {' AND '.join(where)}"
+            # Use window function to get latest per symbol
+            rows = conn.execute(
+                f"SELECT * FROM ("
+                f"  SELECT *, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY created_at DESC) as rn"
+                f"  FROM research_tasks {where_clause}"
+                f") WHERE rn = 1",
+                params,
+            ).fetchall()
+            for row in rows:
+                d = self._row_to_dict(row)
+                d.pop("rn", None)  # Remove internal window function column
+                result[d["symbol"]] = d
+            return result
+        finally:
+            conn.close()
+
     def cancel_task(self, task_id: str) -> dict:
         task = self.get_task(task_id)
         if task["status"] not in (TaskStatus.PENDING, TaskStatus.RUNNING):

@@ -222,9 +222,9 @@ if result:
                 "建议": h.get("action") or "-",
                 "风险": h.get("risk_level") or "-",
                 "行业": h.get("industry") or "-",
-                "当前权重": f"{h.get('current_weight', 0):.1%}",
+                "当前权重": f"{h['current_weight']:.1%}" if h.get('current_weight') is not None else "N/A",
                 "目标权重": "N/A" if h.get("score") is None else f"{h.get('target_weight', 0):.1%}",
-                "变动": "N/A" if h.get("score") is None else f"{h.get('delta_weight', 0):+.1%}",
+                "变动": "N/A" if h.get("score") is None or h.get('current_weight') is None else f"{h.get('delta_weight', 0):+.1%}",
                 "再平衡": REBALANCE_LABELS.get(h.get("rebalance_action"), "-"),
                 "警告": "; ".join(h.get("data_warnings", [])) or "-",
             })

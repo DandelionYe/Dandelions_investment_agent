@@ -45,7 +45,7 @@ class HoldingAnalysis:
     industry: str | None = None
     pe_percentile: float | None = None
     pb_percentile: float | None = None
-    current_weight: float = 0.0  # user's current weight (0 if unknown)
+    current_weight: float | None = None  # user's current weight (None if not provided)
     raw_weight: float = 0.0  # weight before constraints
     target_weight: float = 0.0  # weight after constraints
     delta_weight: float = 0.0  # target - current
@@ -128,9 +128,12 @@ def analyze_portfolio(
     holding_total = sum(h.target_weight for h in holdings)
     target_cash_weight = max(constraints.min_cash_weight, round(1.0 - holding_total, 4))
 
-    # Current cash: only meaningful when user provided current weights
-    current_holdings_total = sum(h.current_weight for h in holdings)
-    if current_holdings_total > 0:
+    # Current cash: only meaningful when ALL holdings have known current weights
+    # Use None for current_weight when not provided; 0.0 means explicitly zero
+    # all([]) returns True, so also check holdings is non-empty
+    all_have_current = bool(holdings) and all(h.current_weight is not None for h in holdings)
+    if all_have_current:
+        current_holdings_total = sum(h.current_weight for h in holdings)
         current_cash_weight = round(max(0.0, 1.0 - current_holdings_total), 4)
     else:
         current_cash_weight = None
@@ -172,7 +175,7 @@ def _analyze_holding(
         symbol=symbol,
         asset_type=pos.get("asset_type", "stock"),
         asset_name=pos.get("asset_name", ""),
-        current_weight=pos.get("current_weight") or 0.0,
+        current_weight=pos.get("current_weight"),  # None if not provided
     )
 
     if not result:
@@ -342,17 +345,22 @@ def _allocate_weights(
     # Step 6: Compute delta_weight and rebalance_action
     _REBALANCE_THRESHOLD = 0.02  # 2% delta triggers rebalance suggestion
     for h in holdings:
-        h.delta_weight = round(h.target_weight - h.current_weight, 4)
-
         # Skip rebalance logic when research data is missing.
         # "No data" does NOT mean "should reduce position".
         if h.score is None:
-            h.delta_weight = 0.0  # no data → no meaningful delta
             h.rebalance_action = None
             h.rebalance_reason = "缺少研究结果，无法给出目标仓位和再平衡建议"
             continue
 
-        if h.current_weight <= 0:
+        # delta_weight only meaningful when current_weight is provided
+        if h.current_weight is not None:
+            h.delta_weight = round(h.target_weight - h.current_weight, 4)
+
+        if h.current_weight is None:
+            # Current weight unknown — cannot recommend rebalance
+            h.rebalance_action = None
+            h.rebalance_reason = "当前权重未知，无法给出再平衡建议"
+        elif h.current_weight <= 0:
             # No current position — this is a new holding suggestion
             h.rebalance_action = "add" if h.target_weight > 0 else None
             h.rebalance_reason = (
