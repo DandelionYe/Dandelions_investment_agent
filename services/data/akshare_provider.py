@@ -7,7 +7,7 @@ from services.data.market_data_utils import (
     build_price_data_from_frame,
     build_price_source_metadata,
     guess_asset_type,
-    normalize_symbol,
+    strip_exchange_suffix,
     to_prefixed_symbol,
 )
 from services.network.proxy_policy import disable_proxy_for_current_process
@@ -119,7 +119,7 @@ def _load_price_history(symbol: str, asset_type: str) -> pd.DataFrame:
     ETF：
     暂时仍使用 fund_etf_hist_em
     """
-    code = normalize_symbol(symbol)
+    code = strip_exchange_suffix(symbol)
     prefixed_symbol = to_prefixed_symbol(symbol)
 
     end_date = date.today()
@@ -229,7 +229,7 @@ def get_akshare_asset_data(symbol: str) -> dict:
     price_data["price_history_source"] = "akshare"
     price_data["price_uses_intraday_tick"] = False
 
-    name = f"{normalize_symbol(symbol)} ETF" if asset_type == "etf" else symbol
+    name = f"{strip_exchange_suffix(symbol)} ETF" if asset_type == "etf" else symbol
 
     return {
         "symbol": symbol,

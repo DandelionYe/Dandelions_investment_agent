@@ -767,21 +767,21 @@ def test_single_asset_research_still_works(monkeypatch):
 # ── 多个 thread_id 隔离测试 ───────────────────────────────────────
 
 def test_different_thread_ids_isolated(monkeypatch):
-    call_count = [0]
+    import queue
+
+    # 使用线程安全的 queue 替代共享计数器，避免 ThreadPoolExecutor 竞态
+    mock_responses = queue.Queue()
+    for output in [
+        _mock_bull_output,
+        _mock_bear_output,
+        _mock_risk_output,
+        _mock_supervisor_converged,
+        _mock_committee_output,
+    ]:
+        mock_responses.put(output())
 
     def mock_chat_json(self, system_prompt, user_prompt, model, max_tokens):
-        call_count[0] += 1
-        if call_count[0] <= 3:
-            if call_count[0] == 1:
-                return _mock_bull_output()
-            elif call_count[0] == 2:
-                return _mock_bear_output()
-            else:
-                return _mock_risk_output()
-        elif call_count[0] == 4:
-            return _mock_supervisor_converged()
-        else:
-            return _mock_committee_output()
+        return mock_responses.get(timeout=5)
 
     monkeypatch.setattr(
         "services.llm.deepseek_client.DeepSeekClient.chat_json",
@@ -793,7 +793,15 @@ def test_different_thread_ids_isolated(monkeypatch):
         thread_id="thread-1",
     )
 
-    call_count[0] = 0
+    # 为第二次运行重新填充 mock 响应队列
+    for output in [
+        _mock_bull_output,
+        _mock_bear_output,
+        _mock_risk_output,
+        _mock_supervisor_converged,
+        _mock_committee_output,
+    ]:
+        mock_responses.put(output())
 
     r2 = generate_debate_result_langgraph(
         _research_result(symbol="000001.SZ"),

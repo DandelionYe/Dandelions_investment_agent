@@ -26,11 +26,11 @@ def _fetch_akshare_supplement_history_close(symbol: str) -> list[float]:
         # 动态导入，避免在非 AKShare 环境（如 QMT-only）导入失败
         import akshare as ak
 
-        from services.data.akshare_provider import normalize_symbol, to_prefixed_symbol
+        from services.data.akshare_provider import strip_exchange_suffix, to_prefixed_symbol
     except ImportError:
         return []
 
-    code = normalize_symbol(symbol)
+    code = strip_exchange_suffix(symbol)
     prefixed = to_prefixed_symbol(symbol)
     end_date = date.today()
     start_date = end_date - timedelta(days=2500)

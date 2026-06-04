@@ -197,6 +197,8 @@ def _load_research_results(
     results: dict[str, dict] = {}
 
     for pos in positions:
+        # 防御性规范化：上游（schema / _build_watchlist_positions）通常已规范化，
+        # 但 DB 中可能存储未规范化的 symbol。
         symbol = normalize_symbol(pos["symbol"])
 
         # Find latest completed task for this symbol

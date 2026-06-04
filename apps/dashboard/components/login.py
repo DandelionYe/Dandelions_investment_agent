@@ -12,9 +12,11 @@ RBAC 支持：
 import base64
 import json
 import logging
+import time
 
 import requests
 import streamlit as st
+from jose import jwt as jose_jwt
 from requests import Response
 
 logger = logging.getLogger(__name__)
@@ -23,20 +25,57 @@ API_BASE = "http://localhost:8000"
 
 _AUTH_PARAM = "auth"
 
+# JWT 过期提前量（秒）：token 在 exp 前 30 秒即视为过期，
+# 避免使用即将过期的 token 导致请求失败。
+_TOKEN_EXPIRY_MARGIN = 30
+
+
+def _is_token_expired(token: str) -> bool:
+    """检查 JWT access token 是否已过期（基于 exp claim）。
+
+    使用 python-jose 解码 JWT payload（不验证签名）。如果 token 格式无效
+    或缺少 exp，视为过期（安全降级：宁可要求重新登录，也不使用可能无效的 token）。
+    """
+    try:
+        payload = jose_jwt.decode(
+            token, "",
+            options={"verify_signature": False, "verify_exp": False},
+        )
+        exp = payload.get("exp")
+        if exp is None:
+            return True  # 无 exp 字段，视为过期
+        return time.time() >= exp - _TOKEN_EXPIRY_MARGIN
+    except Exception as exc:
+        logger.debug("JWT 解析失败（视为过期）: %s", exc)
+        return True
+
 
 def _restore_from_query_params() -> bool:
-    """尝试从 URL query params 恢复登录状态（每个浏览器独立）。"""
+    """尝试从 URL query params 恢复登录状态（每个浏览器独立）。
+
+    恢复前校验 JWT 过期时间：如果 access token 已过期，清除 URL 并返回 False，
+    防止网络异常时因保留过期 token 导致的僵尸循环（401 → 刷新失败 → 恢复 → 401）。
+    """
     auth_param = st.query_params.get(_AUTH_PARAM)
     if not auth_param:
         return False
     try:
         data = json.loads(base64.b64decode(auth_param))
-        if data.get("access_token"):
-            st.session_state["auth_token"] = data["access_token"]
-            st.session_state["refresh_token"] = data.get("refresh_token", "")
-            st.session_state["auth_user"] = data.get("username", "")
-            _fetch_user_info(data["access_token"])
-            return True
+        access_token = data.get("access_token")
+        if not access_token:
+            return False
+        # 校验 token 是否过期，过期则清除 auth 参数防止僵尸循环
+        # 注意：只删除 auth key，不清除所有 query params，
+        # 避免丢失其他 URL 参数（如页面筛选条件）
+        if _is_token_expired(access_token):
+            logger.info("URL 中的 token 已过期，清除登录状态")
+            del st.query_params[_AUTH_PARAM]
+            return False
+        st.session_state["auth_token"] = access_token
+        st.session_state["refresh_token"] = data.get("refresh_token", "")
+        st.session_state["auth_user"] = data.get("username", "")
+        _fetch_user_info(access_token)
+        return True
     except Exception:
         pass
     return False

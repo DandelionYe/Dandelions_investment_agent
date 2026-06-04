@@ -44,7 +44,7 @@ class LocalCSMARIndustryProvider:
     ) -> ProviderResult:
         started = perf_counter()
         resolved_as_of = as_of or str(date.today())
-        normalized_symbol = normalize_symbol(symbol)
+        normalized_symbol = canonical_symbol_with_suffix(symbol)
 
         try:
             payload = self._resolve_payload(normalized_symbol, level)
@@ -198,7 +198,8 @@ def normalize_level(level: str | None) -> str:
     return "CSMAR_ZX"
 
 
-def normalize_symbol(symbol: str) -> str:
+def canonical_symbol_with_suffix(symbol: str) -> str:
+    """标准化 symbol 并补全交易所后缀。如 '600519' → '600519.SH'，'600519.SH' → '600519.SH'。"""
     value = str(symbol).strip().upper()
     if "." in value:
         code, exchange = value.split(".", 1)

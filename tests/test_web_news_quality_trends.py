@@ -20,6 +20,7 @@
 import json
 import shutil
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from services.data.news_quality_trends import (
@@ -31,6 +32,11 @@ from services.data.news_quality_trends import (
     load_history_runs,
     save_trend_artifacts,
 )
+
+
+def _recent_date(days_ago: int = 0) -> str:
+    """返回相对于今天的 ISO 日期字符串，确保在 7 天窗口内。"""
+    return (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%dT10:00:00")
 
 
 def _make_policy() -> TrendPolicy:
@@ -68,7 +74,9 @@ def _make_policy() -> TrendPolicy:
     )
 
 
-def _make_run(run_id="r1", completed_at="2026-05-20T10:00:00", per_provider=None):
+def _make_run(run_id="r1", completed_at=None, per_provider=None):
+    if completed_at is None:
+        completed_at = _recent_date()
     return {
         "run_id": run_id,
         "started_at": completed_at,
@@ -83,9 +91,11 @@ def _make_run(run_id="r1", completed_at="2026-05-20T10:00:00", per_provider=None
 def _make_provider_info(
     status="ok", success_rate=0.8, timeout_rate=0.1, empty_rate=0.2,
     avg_latency=2.0, avg_relevance=0.5, avg_low_quality=0.2, attempts=10,
-    last_success_at="2026-05-20T10:00:00",
+    last_success_at=None,
     raw_counts=None,
 ):
+    if last_success_at is None:
+        last_success_at = _recent_date()
     info = {
         "status": status,
         "success_rate": success_rate,
@@ -108,8 +118,8 @@ class TestLoadHistoryRuns:
         tmp_dir = Path(tempfile.mkdtemp())
         try:
             history_path = tmp_dir / "history.jsonl"
-            run1 = _make_run("r1", "2026-05-20T10:00:00")
-            run2 = _make_run("r2", "2026-05-21T10:00:00")
+            run1 = _make_run("r1", _recent_date())
+            run2 = _make_run("r2", _recent_date(1))
             history_path.write_text(
                 json.dumps(run1) + "\n" + json.dumps(run2) + "\n",
                 encoding="utf-8",
@@ -144,9 +154,9 @@ class TestLoadHistoryRuns:
         tmp_dir = Path(tempfile.mkdtemp())
         try:
             history_path = tmp_dir / "history.jsonl"
-            run1 = _make_run("r1", "2026-05-20T10:00:00")
+            run1 = _make_run("r1", _recent_date())
             history_path.write_text(
-                json.dumps(run1) + "\n{invalid json\n" + json.dumps(_make_run("r2", "2026-05-21T10:00:00")) + "\n",
+                json.dumps(run1) + "\n{invalid json\n" + json.dumps(_make_run("r2", _recent_date(1))) + "\n",
                 encoding="utf-8",
             )
             runs, warnings = load_history_runs(history_path)
@@ -160,7 +170,7 @@ class TestLoadHistoryRuns:
         tmp_dir = Path(tempfile.mkdtemp())
         try:
             history_path = tmp_dir / "history.jsonl"
-            run = {"run_id": "r1", "completed_at": "2026-05-20T10:00:00"}
+            run = {"run_id": "r1", "completed_at": _recent_date()}
             history_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
             runs, warnings = load_history_runs(history_path)
             assert len(runs) == 1
@@ -173,7 +183,7 @@ class TestLoadHistoryRuns:
         try:
             history_path = tmp_dir / "history.jsonl"
             run_old = _make_run("old", "2020-01-01T10:00:00")
-            run_new = _make_run("new", "2026-05-25T10:00:00")
+            run_new = _make_run("new", _recent_date(2))
             history_path.write_text(
                 json.dumps(run_old) + "\n" + json.dumps(run_new) + "\n",
                 encoding="utf-8",
@@ -225,7 +235,7 @@ class TestAnalyzeTrends:
             for i in range(5):
                 runs.append(_make_run(
                     f"r{i}",
-                    f"2026-05-{20+i}T10:00:00",
+                    _recent_date(i),
                     per_provider={
                         "eastmoney": _make_provider_info("ok", success_rate=0.8),
                         "sina": _make_provider_info("ok", success_rate=0.5),
@@ -255,7 +265,7 @@ class TestAnalyzeTrends:
             for i in range(4):
                 runs.append(_make_run(
                     f"r{i}",
-                    f"2026-05-{20+i}T10:00:00",
+                    _recent_date(i),
                     per_provider={
                         "sina": _make_provider_info("ok", success_rate=0.5),
                     },
@@ -283,7 +293,7 @@ class TestAnalyzeTrends:
             for i in range(4):
                 runs.append(_make_run(
                     f"r{i}",
-                    f"2026-05-{20+i}T10:00:00",
+                    _recent_date(i),
                     per_provider={
                         "eastmoney": _make_provider_info("fail", success_rate=0.0),
                     },
@@ -309,7 +319,7 @@ class TestAnalyzeTrends:
             for i in range(4):
                 runs.append(_make_run(
                     f"r{i}",
-                    f"2026-05-{20+i}T10:00:00",
+                    _recent_date(i),
                     per_provider={
                         "eastmoney": _make_provider_info("ok", success_rate=0.8),
                         "hotrank": _make_provider_info("fail", success_rate=0.0),
@@ -338,7 +348,7 @@ class TestAnalyzeTrends:
             for i in range(5):
                 runs.append(_make_run(
                     f"r{i}",
-                    f"2026-05-{20+i}T10:00:00",
+                    _recent_date(i),
                     per_provider={
                         "eastmoney": _make_provider_info("fail", success_rate=0.0),
                     },
@@ -361,7 +371,7 @@ class TestAnalyzeTrends:
         tmp_dir = Path(tempfile.mkdtemp())
         try:
             history_path = tmp_dir / "history.jsonl"
-            run = _make_run("r1", "2026-05-20T10:00:00", per_provider={})
+            run = _make_run("r1", _recent_date(), per_provider={})
             history_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
 
             policy = _make_policy()
@@ -378,7 +388,7 @@ class TestAnalyzeTrends:
         tmp_dir = Path(tempfile.mkdtemp())
         try:
             history_path = tmp_dir / "history.jsonl"
-            run = _make_run("r1", "2026-05-20T10:00:00", per_provider={})
+            run = _make_run("r1", _recent_date(), per_provider={})
             history_path.write_text(
                 json.dumps(run) + "\n{bad json\n",
                 encoding="utf-8",
@@ -397,7 +407,7 @@ class TestAnalyzeTrends:
         try:
             history_path = tmp_dir / "history.jsonl"
             run = _make_run(
-                "r1", "2026-05-20T10:00:00",
+                "r1", _recent_date(),
                 per_provider={
                     "eastmoney": _make_provider_info(
                         "ok", success_rate=0.8, attempts=10,
@@ -435,7 +445,7 @@ class TestTrendSummarySchema:
         try:
             history_path = tmp_dir / "history.jsonl"
             run = _make_run(
-                "r1", "2026-05-20T10:00:00",
+                "r1", _recent_date(),
                 per_provider={"eastmoney": _make_provider_info()},
             )
             history_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
@@ -464,7 +474,7 @@ class TestTrendReportMarkdown:
         try:
             history_path = tmp_dir / "history.jsonl"
             run = _make_run(
-                "r1", "2026-05-20T10:00:00",
+                "r1", _recent_date(),
                 per_provider={"eastmoney": _make_provider_info()},
             )
             history_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
@@ -488,7 +498,7 @@ class TestSaveTrendArtifacts:
         try:
             history_path = tmp_dir / "history.jsonl"
             run = _make_run(
-                "r1", "2026-05-20T10:00:00",
+                "r1", _recent_date(),
                 per_provider={"eastmoney": _make_provider_info()},
             )
             history_path.write_text(json.dumps(run) + "\n", encoding="utf-8")
@@ -519,7 +529,7 @@ class TestGovernanceIntegration:
         try:
             trend_data = {
                 "run_id": "test123",
-                "generated_at": "2026-05-25T10:00:00",
+                "generated_at": _recent_date(2),
                 "window_days": 7,
                 "run_count": 5,
                 "day_count": 5,
@@ -571,7 +581,7 @@ class TestGovernanceIntegration:
         try:
             trend_data = {
                 "run_id": "test123",
-                "generated_at": "2026-05-25T10:00:00",
+                "generated_at": _recent_date(2),
                 "window_days": 7,
                 "run_count": 5,
                 "day_count": 5,

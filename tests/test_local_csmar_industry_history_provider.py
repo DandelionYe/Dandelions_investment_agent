@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import pytest
 
+from services.data.market_data_utils import strip_suffix_zfill6
 from services.data.providers.local_csmar_industry_history_provider import (
     LocalCSMARIndustryHistoryProvider,
-    _normalize_symbol,
     is_csmar_industry_history_enabled,
 )
 
@@ -33,18 +33,18 @@ def is_available() -> bool:
 class TestSymbolNormalization:
 
     def test_6_digit_code(self):
-        assert _normalize_symbol("000001") == "000001"
+        assert strip_suffix_zfill6("000001") == "000001"
 
     def test_with_exchange_suffix(self):
-        assert _normalize_symbol("000001.SZ") == "000001"
-        assert _normalize_symbol("600519.SH") == "600519"
+        assert strip_suffix_zfill6("000001.SZ") == "000001"
+        assert strip_suffix_zfill6("600519.SH") == "600519"
 
     def test_padded(self):
-        assert _normalize_symbol("1") == "000001"
-        assert _normalize_symbol("1.SZ") == "000001"
+        assert strip_suffix_zfill6("1") == "000001"
+        assert strip_suffix_zfill6("1.SZ") == "000001"
 
     def test_already_padded(self):
-        assert _normalize_symbol("000001") == "000001"
+        assert strip_suffix_zfill6("000001") == "000001"
 
 
 # ── Provider integration ──────────────────────────────────────

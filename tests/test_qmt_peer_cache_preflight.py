@@ -68,12 +68,18 @@ class _FakeXtData:
 @pytest.fixture(autouse=True)
 def _patch_qmt(monkeypatch):
     """Ensure _import_xtdata and connect_qmt are available as module attrs
-    so _make_loader can patch them without polluting other tests."""
+    so _make_loader can patch them without polluting other tests.
+    Also mock AKShare fallback to prevent network-dependent behavior."""
     monkeypatch.setenv("CSMAR_EVA_STRUCTURE_PROVIDER", "false")
     import services.data.providers.qmt_peer_cache_preflight as mod
     # Keep original references so they're restored after each test
     monkeypatch.setattr(mod, "_import_xtdata", mod._import_xtdata, raising=False)
     monkeypatch.setattr(mod, "connect_qmt", mod.connect_qmt, raising=False)
+    # Mock AKShare share capital fallback to return empty (deterministic)
+    monkeypatch.setattr(
+        mod, "resolve_share_capital_fallback",
+        lambda symbols, close_map=None: {"values": {}, "errors": [], "attempted_symbols": symbols},
+    )
 
 
 def _make_loader(fake_xtdata, monkeypatch) -> QMTPeerValuationLoader:

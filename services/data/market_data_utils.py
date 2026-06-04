@@ -3,19 +3,30 @@ from datetime import date
 import pandas as pd
 
 
-def normalize_symbol(symbol: str) -> str:
+def strip_exchange_suffix(symbol: str) -> str:
+    """去掉交易所后缀，返回裸代码。如 '600519.SH' → '600519'。"""
     return symbol.split(".")[0]
 
 
+def strip_suffix_zfill6(symbol: str) -> str:
+    """去掉交易所后缀并补零到 6 位。如 '600519.SH' → '600519'，'1' → '000001'。"""
+    value = str(symbol).strip().upper()
+    if "." in value:
+        code = value.split(".")[0]
+    else:
+        code = value
+    return code.zfill(6)
+
+
 def guess_asset_type(symbol: str) -> str:
-    code = normalize_symbol(symbol)
+    code = strip_exchange_suffix(symbol)
     if code.startswith(("51", "56", "58", "15", "16", "18")):
         return "etf"
     return "stock"
 
 
 def to_prefixed_symbol(symbol: str) -> str:
-    code = normalize_symbol(symbol)
+    code = strip_exchange_suffix(symbol)
 
     if symbol.endswith(".SH"):
         return f"sh{code}"

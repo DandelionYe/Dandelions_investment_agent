@@ -17,6 +17,7 @@ from typing import Any
 
 import pandas as pd
 
+from services.data.market_data_utils import strip_suffix_zfill6
 from services.data.provider_contracts import (
     ProviderDataQualityError,
     ProviderMetadata,
@@ -65,7 +66,7 @@ class LocalCSMARIndustryHistoryProvider:
         """
         started = perf_counter()
         resolved_as_of = as_of or str(date.today())
-        normalized = _normalize_symbol(symbol)
+        normalized = strip_suffix_zfill6(symbol)
 
         try:
             payload = self._resolve(normalized, resolved_as_of)
@@ -257,15 +258,6 @@ class LocalCSMARIndustryHistoryProvider:
         self._cache = df
         return self._cache
 
-
-def _normalize_symbol(symbol: str) -> str:
-    """Normalize to 6-digit code without exchange suffix for CSV matching."""
-    value = str(symbol).strip().upper()
-    if "." in value:
-        code = value.split(".")[0]
-    else:
-        code = value
-    return code.zfill(6)
 
 
 def _format_symbol(code: str) -> str:

@@ -9,7 +9,7 @@ from services.data.market_data_utils import (
     build_price_data_from_frame,
     build_price_source_metadata,
     guess_asset_type,
-    normalize_symbol,
+    strip_exchange_suffix,
 )
 from services.data.provider_contracts import (
     ProviderSchemaError,
@@ -929,7 +929,7 @@ def get_qmt_asset_data(symbol: str) -> dict:
         detail.get("InstrumentName")
         or detail.get("instrument_name")
         or detail.get("name")
-        or (f"{normalize_symbol(symbol)} ETF" if asset_type == "etf" else symbol)
+        or (f"{strip_exchange_suffix(symbol)} ETF" if asset_type == "etf" else symbol)
     )
 
     return {

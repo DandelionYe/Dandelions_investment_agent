@@ -17,6 +17,7 @@ from typing import Any
 
 import pandas as pd
 
+from services.data.market_data_utils import strip_suffix_zfill6
 from services.data.provider_contracts import (
     ProviderDataQualityError,
     ProviderMetadata,
@@ -134,17 +135,6 @@ def _is_visible(accper: str, as_of: str) -> bool:
     return vis_date <= as_of_date
 
 
-# ── Symbol normalization ───────────────────────────────────────
-
-def _normalize_symbol(symbol: str) -> str:
-    """Normalize to 6-digit code without exchange suffix for CSV matching."""
-    value = str(symbol).strip().upper()
-    if "." in value:
-        code = value.split(".")[0]
-    else:
-        code = value
-    return code.zfill(6)
-
 
 def _add_exchange_suffix(code: str, original: str) -> str:
     """Add exchange suffix based on code prefix."""
@@ -254,7 +244,7 @@ class LocalCSMARFinancialStatementProvider:
         margins, ROE, debt ratio, and cash flow quality.
         """
         started = perf_counter()
-        code = _normalize_symbol(symbol)
+        code = strip_suffix_zfill6(symbol)
 
         try:
             data = self._compute_fundamentals(code, as_of)
