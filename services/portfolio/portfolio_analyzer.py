@@ -66,7 +66,9 @@ class PortfolioAnalysis:
     portfolio_score: float | None = None
     portfolio_rating: str | None = None
     risk_level: str | None = None
-    cash_weight: float = 0.0  # backward compat alias for target_cash_weight
+    # Deprecated: 使用 target_cash_weight 替代。保留此字段仅为向后兼容，
+    # 未来版本将移除。两者值始终相同。
+    cash_weight: float = 0.0
     target_cash_weight: float = 0.0  # recommended cash allocation
     current_cash_weight: float | None = None  # 1 - sum(current_weights), None if no current weights
     industry_exposure: dict[str, float] = field(default_factory=dict)

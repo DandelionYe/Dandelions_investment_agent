@@ -118,7 +118,10 @@ class PortfolioAnalyzeResponse(BaseModel):
     portfolio_score: Optional[float] = None
     portfolio_rating: Optional[str] = None
     risk_level: Optional[str] = None
-    cash_weight: float = Field(default=0.0, description="现金权重（兼容别名，等同 target_cash_weight）")
+    cash_weight: float = Field(
+        default=0.0,
+        description="[Deprecated] 现金权重兼容别名，等同 target_cash_weight。请使用 target_cash_weight，未来版本将移除此字段。",
+    )
     target_cash_weight: float = Field(default=0.0, description="目标现金权重")
     current_cash_weight: Optional[float] = Field(default=None, description="当前现金权重（仅在提供当前权重时有值）")
     holdings: list[HoldingResponse] = Field(default_factory=list)
