@@ -2,6 +2,25 @@
 
 投研智能体 MVP：输入单只沪深京 A 股或 ETF，经过 LangGraph 双层图编排——辩论子图（8 节点多轮辩论 + Supervisor + 三标准收敛）+ 完整端到端 pipeline 图（数据加载→评分→辩论→HITL→决策保护→验证），输出量化评分、买卖建议、决策保护器说明，以及 JSON/Markdown/HTML/PDF 报告。支持 Streamlit 看板 HITL 人工审核、异步实时进度、JWT 登录认证。已构建 FastAPI 后端网关（Celery + Redis + JWT + WebSocket + 37 端点全保护）和观察池批量研究系统。
 
+## License / 许可说明
+
+**This repository is public for display purposes only. All rights reserved.**
+
+This is **not** an open-source project. No permission is granted to copy, modify,
+redistribute, commercialize, productize, deploy as a service, or create derivative
+works without prior written permission from the author.
+
+For details, see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+---
+
+**本仓库公开仅用于展示研究框架、工程能力和策略研究流程。保留所有权利。**
+
+本仓库**不是开源项目**。未经作者事先书面许可，禁止复制、复用、修改、分发、
+商用、打包、二次开发、SaaS 化部署或创建衍生作品。
+
+详情见 [`LICENSE`](LICENSE) 和 [`NOTICE`](NOTICE)。
+
 ## 当前边界
 
 - 主数据源：QMT/xtquant，本地 Windows + MiniQMT 环境优先。
